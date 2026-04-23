@@ -70,6 +70,8 @@
   var authBootResolved = false;
   var cloudSyncTimer = null;
   var sharedSyncTimer = null;
+  var cloudSubscriptions = [];
+  var remoteApplyDepth = 0;
   var originalSetSetting = api.setSetting.bind(api);
   var CLOUD_SYNC_KEYS = [
     "class_year",
@@ -92,7 +94,7 @@
 
   api.setSetting = function (key, value) {
     return Promise.resolve(originalSetSetting(key, value)).then(function (result) {
-      queueCloudSync(key);
+      if (!isApplyingRemoteData()) queueCloudSync(key);
       return result;
     });
   };
@@ -106,43 +108,43 @@
 
   api.addTodo = function (payload) {
     return Promise.resolve(originalAddTodo(payload)).then(function (result) {
-      queueSharedCollectionSync("todos");
+      if (!isApplyingRemoteData()) queueSharedCollectionSync("todos");
       return result;
     });
   };
   api.updateTodo = function (id, payload) {
     return Promise.resolve(originalUpdateTodo(id, payload)).then(function (result) {
-      queueSharedCollectionSync("todos");
+      if (!isApplyingRemoteData()) queueSharedCollectionSync("todos");
       return result;
     });
   };
   api.toggleTodo = function (id) {
     return Promise.resolve(originalToggleTodo(id)).then(function (result) {
-      queueSharedCollectionSync("todos");
+      if (!isApplyingRemoteData()) queueSharedCollectionSync("todos");
       return result;
     });
   };
   api.deleteTodo = function (id) {
     return Promise.resolve(originalDeleteTodo(id)).then(function (result) {
-      queueSharedCollectionSync("todos");
+      if (!isApplyingRemoteData()) queueSharedCollectionSync("todos");
       return result;
     });
   };
   api.setTodoGcalId = function (id, gcalId) {
     return Promise.resolve(originalSetTodoGcalId(id, gcalId)).then(function (result) {
-      queueSharedCollectionSync("todos");
+      if (!isApplyingRemoteData()) queueSharedCollectionSync("todos");
       return result;
     });
   };
   api.setTimetableCell = function (payload) {
     return Promise.resolve(originalSetTimetableCell(payload)).then(function (result) {
-      queueSharedCollectionSync("timetable");
+      if (!isApplyingRemoteData()) queueSharedCollectionSync("timetable");
       return result;
     });
   };
   api.clearTimetable = function () {
     return Promise.resolve(originalClearTimetable()).then(function (result) {
-      queueSharedCollectionSync("timetable");
+      if (!isApplyingRemoteData()) queueSharedCollectionSync("timetable");
       return result;
     });
   };
@@ -326,6 +328,17 @@
     return CLOUD_SYNC_KEYS.indexOf(key) >= 0;
   }
 
+  function isApplyingRemoteData() {
+    return remoteApplyDepth > 0;
+  }
+
+  function withRemoteApply(work) {
+    remoteApplyDepth += 1;
+    return Promise.resolve().then(work).finally(function () {
+      remoteApplyDepth = Math.max(0, remoteApplyDepth - 1);
+    });
+  }
+
   function buildCloudSettingsPayload(settings) {
     var payload = {};
     CLOUD_SYNC_KEYS.forEach(function (key) {
@@ -344,6 +357,15 @@
   function getSharedCollectionDoc(name) {
     if (!authUser) return null;
     return getUserDoc(authUser.uid).collection("shared").doc(name);
+  }
+
+  function clearCloudSubscriptions() {
+    cloudSubscriptions.forEach(function (unsubscribe) {
+      try {
+        if (typeof unsubscribe === "function") unsubscribe();
+      } catch (_) {}
+    });
+    cloudSubscriptions = [];
   }
 
   function ensureAuthOverlay() {
@@ -488,6 +510,30 @@
     });
   };
 
+  function applyCloudSettingsPayload(data) {
+    var payload = buildCloudSettingsPayload(data || {});
+    var keys = Object.keys(payload);
+    if (!keys.length) return Promise.resolve(false);
+
+    return withRemoteApply(function () {
+      return keys.reduce(function (chain, key) {
+        return chain.then(function () {
+          return originalSetSetting(key, payload[key]);
+        });
+      }, Promise.resolve());
+    }).then(function () {
+      var tasks = [];
+      if (window.reloadTopNavigation) tasks.push(Promise.resolve(window.reloadTopNavigation()));
+      if (window.updateClassInfo) tasks.push(Promise.resolve(window.updateClassInfo()));
+      if (window.__pages && window.__pages.dashboard && window.__pages.dashboard.refresh) {
+        tasks.push(Promise.resolve(window.__pages.dashboard.refresh()));
+      }
+      return Promise.all(tasks).then(function () {
+        return true;
+      });
+    });
+  }
+
   function sanitizeTodoForCloud(todo) {
     return {
       id: Number(todo.id) || 0,
@@ -586,6 +632,19 @@
     });
   };
 
+  function applyCloudSharedItems(todoItems, timetableItems) {
+    var tasks = [];
+    return withRemoteApply(function () {
+      if (Array.isArray(todoItems)) tasks.push(api.replaceTodos(todoItems));
+      if (Array.isArray(timetableItems)) tasks.push(api.replaceTimetable(timetableItems));
+      return Promise.all(tasks);
+    }).then(function () {
+      return refreshSharedPages().then(function () {
+        return tasks.length > 0;
+      });
+    });
+  }
+
   window.syncCloudSettingsNow = function () {
     ensureFirebase();
     if (!authUser || !authProfile || authProfile.active === false) {
@@ -600,6 +659,65 @@
       });
     });
   };
+
+  window.syncCloudNow = function () {
+    return Promise.all([
+      window.syncCloudSettingsNow(),
+      window.syncCloudSharedNow()
+    ]).then(function (results) {
+      return results.some(function (item) { return !!item; });
+    });
+  };
+
+  window.pullCloudNow = function () {
+    return Promise.all([
+      window.pullCloudSettingsNow(),
+      window.pullCloudSharedNow()
+    ]).then(function (results) {
+      return results.some(function (item) { return !!item; });
+    });
+  };
+
+  function startCloudSubscriptions() {
+    ensureFirebase();
+    clearCloudSubscriptions();
+    if (!authUser || !authProfile || authProfile.active === false) return;
+
+    cloudSubscriptions.push(
+      getUserDoc(authUser.uid).collection("settings").doc("app").onSnapshot(function (snap) {
+        if (!snap.exists) return;
+        applyCloudSettingsPayload(snap.data() || {}).catch(function (error) {
+          console.error("cloud settings subscribe failed", error);
+        });
+      }, function (error) {
+        console.error("cloud settings snapshot failed", error);
+      })
+    );
+
+    cloudSubscriptions.push(
+      getSharedCollectionDoc("todos").onSnapshot(function (snap) {
+        if (!snap.exists) return;
+        var todoData = snap.data() || {};
+        applyCloudSharedItems(Array.isArray(todoData.items) ? todoData.items : [], null).catch(function (error) {
+          console.error("cloud todos subscribe failed", error);
+        });
+      }, function (error) {
+        console.error("cloud todos snapshot failed", error);
+      })
+    );
+
+    cloudSubscriptions.push(
+      getSharedCollectionDoc("timetable").onSnapshot(function (snap) {
+        if (!snap.exists) return;
+        var timetableData = snap.data() || {};
+        applyCloudSharedItems(null, Array.isArray(timetableData.items) ? timetableData.items : []).catch(function (error) {
+          console.error("cloud timetable subscribe failed", error);
+        });
+      }, function (error) {
+        console.error("cloud timetable snapshot failed", error);
+      })
+    );
+  }
 
   function queueCloudSync(key) {
     if (!canSyncKey(key)) return;
@@ -759,6 +877,7 @@
   function evaluateAuthenticatedUser(user) {
     authUser = user || null;
     if (!user) {
+      clearCloudSubscriptions();
       authProfile = null;
       renderAuthOverlay("form", "", "");
       return Promise.resolve(false);
@@ -780,6 +899,7 @@
           return false;
         });
       }).then(function () {
+        startCloudSubscriptions();
         closeAuthOverlay();
         return true;
       });

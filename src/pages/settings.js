@@ -86,8 +86,8 @@ async function render(container) {
             </div>
           </div>
           <div class="settings-actions">
-            <button class="btn btn-secondary btn-sm" id="cloud-pull-btn">클라우드 설정 불러오기</button>
-            <button class="btn btn-secondary btn-sm" id="cloud-push-btn">현재 설정 업로드</button>
+            <button class="btn btn-secondary btn-sm" id="cloud-pull-btn">클라우드 전체 불러오기</button>
+            <button class="btn btn-secondary btn-sm" id="cloud-push-btn">지금 전체 동기화</button>
             ${authState?.isAdmin ? '<button class="btn btn-secondary btn-sm" id="open-user-management-btn">회원 관리</button>' : ''}
             <button class="btn btn-primary btn-sm" id="auth-logout-btn">로그아웃</button>
           </div>
@@ -298,16 +298,20 @@ async function render(container) {
 
 async function init() {
   document.getElementById('cloud-pull-btn')?.addEventListener('click', async () => {
-    if (!window.pullCloudSettingsNow) return;
-    const ok = await window.pullCloudSettingsNow();
-    toast(ok ? '클라우드 설정을 불러왔습니다.' : '불러올 클라우드 설정이 없습니다.', ok ? 'success' : 'warning');
+    if (!window.pullCloudNow) return;
+    const ok = await window.pullCloudNow();
+    toast(ok ? '클라우드 내용을 불러왔습니다.' : '불러올 클라우드 내용이 없습니다.', ok ? 'success' : 'warning');
+    if (ok && window.navigateTo) {
+      await window.navigateTo('settings');
+      return;
+    }
     if (window.updateClassInfo) await window.updateClassInfo();
   });
 
   document.getElementById('cloud-push-btn')?.addEventListener('click', async () => {
-    if (!window.syncCloudSettingsNow) return;
-    const ok = await window.syncCloudSettingsNow();
-    toast(ok ? '현재 설정을 클라우드에 저장했습니다.' : '저장할 수 있는 로그인 상태가 아닙니다.', ok ? 'success' : 'warning');
+    if (!window.syncCloudNow) return;
+    const ok = await window.syncCloudNow();
+    toast(ok ? '현재 내용을 클라우드와 동기화했습니다.' : '동기화할 수 있는 로그인 상태가 아닙니다.', ok ? 'success' : 'warning');
   });
 
   document.getElementById('auth-logout-btn')?.addEventListener('click', async () => {
