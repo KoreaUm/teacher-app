@@ -1,0 +1,64 @@
+{
+  "name": "teacher-app",
+  "version": "2.0.0",
+  "description": "교사 업무 관리 Electron 앱",
+  "author": "충상",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win nsis",
+    "build:patch": "powershell -ExecutionPolicy Bypass -File ./패키지만들기.ps1",
+    "release:win": "electron-builder --win nsis --publish always"
+  },
+  "dependencies": {
+    "@xmldom/xmldom": "*",
+    "better-sqlite3": "^9.4.3",
+    "electron-updater": "^6.8.3",
+    "firebase": "^12.12.1",
+    "yauzl": "*"
+  },
+  "devDependencies": {
+    "electron": "^29.4.6",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.teacher.app",
+    "productName": "교사 업무 관리",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json",
+      "src/**/*",
+      "node_modules/**/*",
+      "!node_modules/.cache/**/*",
+      "!node_modules/electron/**/*",
+      "!node_modules/electron-builder/**/*"
+    ],
+    "asar": false,
+    "win": {
+      "target": "nsis",
+      "artifactName": "teacher-app-setup-${version}.${ext}",
+      "executableName": "교사 업무 관리",
+      "signAndEditExecutable": false,
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "교사 업무 관리",
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "KoreaUm",
+      "repo": "teacher-app",
+      "releaseType": "release"
+    }
+  }
+}

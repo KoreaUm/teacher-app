@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.env
+.env.*
+*.log
+
+# Local temp / editor files
+tmp_*.js
+temp_*.xlsx
+*.db-shm
+*.db-wal
+Thumbs.db
+.DS_Store

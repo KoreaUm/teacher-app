@@ -1,0 +1,1051 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>교사 업무 관리</title>
+<link rel="stylesheet" href="styles.css">
+<script src="../node_modules/firebase/firebase-app-compat.js"></script>
+<script src="../node_modules/firebase/firebase-auth-compat.js"></script>
+<script src="../node_modules/firebase/firebase-firestore-compat.js"></script>
+<script src="firebase/config.js"></script>
+</head>
+<body>
+<div id="titlebar">
+  <div id="titlebar-drag">
+    <span id="app-title">교사 업무 관리</span>
+  </div>
+  <div id="titlebar-btns">
+    <button id="min-btn" title="최소화">─</button>
+    <button id="max-btn" title="최대화">▢</button>
+    <button id="close-btn" title="닫기">✕</button>
+  </div>
+</div>
+
+<div id="app-layout">
+  <div id="content-wrap">
+    <header id="topbar">
+      <div id="topbar-left">
+        <button id="home-btn" class="topbar-btn home-btn" title="홈 대시보드">🏠</button>
+        <span id="class-info">--학년 --반 · --교사</span>
+        <div class="vdiv"></div>
+        <nav id="page-tabs"></nav>
+      </div>
+      <div id="topbar-right">
+        <button id="update-btn" class="topbar-btn" style="display:none">업데이트 확인</button>
+        <button id="edit-layout-btn" class="topbar-btn" style="display:none">배열 편집</button>
+        <button id="widget-mode-btn" class="topbar-btn" style="display:none">위젯 모드</button>
+        <div style="position:relative">
+          <button id="opacity-btn" class="topbar-btn" title="투명도 조절">투명도</button>
+          <div id="opacity-panel" style="display:none;position:absolute;right:0;top:38px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 16px;box-shadow:var(--shadow-md);z-index:9999;align-items:center;gap:10px;white-space:nowrap;min-width:220px">
+            <span style="font-size:12px;color:var(--text2)">투명도</span>
+            <input id="opacity-slider" type="range" min="20" max="100" value="100" style="flex:1;accent-color:var(--accent)">
+            <span id="opacity-lbl" style="font-size:12px;font-weight:600;color:var(--accent);width:34px;text-align:right">100%</span>
+          </div>
+        </div>
+        <div class="vdiv"></div>
+        <span id="header-date"></span>
+      </div>
+    </header>
+
+    <main id="page-content"></main>
+  </div>
+</div>
+
+<script>
+(function () {
+  var api = window.api;
+  var pageCache = {};
+  var currentPage = "dashboard";
+  var openGroupKey = "";
+  var closeGroupTimer = null;
+  var widgetMode = false;
+  var firebaseApp = null;
+  var firebaseAuth = null;
+  var firebaseDb = null;
+  var authUser = null;
+  var authProfile = null;
+  var authOverlayEl = null;
+  var authScreenMode = "login";
+  var authBootResolved = false;
+  var cloudSyncTimer = null;
+  var originalSetSetting = api.setSetting.bind(api);
+  var CLOUD_SYNC_KEYS = [
+    "class_year",
+    "class_num",
+    "teacher_name",
+    "weather_region",
+    "edu_office_code",
+    "school_code",
+    "menu_groups_config",
+    "quick_links_config",
+    "class_timetable_subject_colors"
+  ];
+
+  api.setSetting = function (key, value) {
+    return Promise.resolve(originalSetSetting(key, value)).then(function (result) {
+      queueCloudSync(key);
+      return result;
+    });
+  };
+
+  var MENU_PAGE_OPTIONS = [
+    { key: "students", label: "학생 명단" },
+    { key: "attendance", label: "출석 관리" },
+    { key: "daily_memo", label: "학급 메모" },
+    { key: "timetable", label: "시간표 관리" },
+    { key: "counseling", label: "상담 일지" },
+    { key: "observations", label: "관찰 기록" },
+    { key: "lessons", label: "수업 지도" },
+    { key: "assessments", label: "수행평가" },
+    { key: "submissions", label: "제출물 관리" },
+    { key: "statistics", label: "통계와 출력" },
+    { key: "ai_analysis", label: "AI 분석" },
+    { key: "meal", label: "급식 메뉴" },
+    { key: "school_calendar", label: "학사 일정" },
+    { key: "calculator", label: "계산기" },
+    { key: "todos", label: "할일 목록" },
+    { key: "settings", label: "설정" }
+  ];
+  var ADMIN_MENU_PAGE = { key: "user_management", label: "회원 관리" };
+
+  var DEFAULT_MENU_GROUPS = [
+    { key: "class", label: "학급 관리", items: ["students", "attendance", "daily_memo", "timetable"] },
+    { key: "records", label: "기록", items: ["counseling", "observations", "lessons"] },
+    { key: "evaluation", label: "평가", items: ["assessments", "submissions", "statistics", "ai_analysis"] },
+    { key: "tools", label: "도구", items: ["meal", "school_calendar", "calculator", "settings"] }
+  ];
+
+  var menuGroups = cloneMenuGroups(DEFAULT_MENU_GROUPS);
+  var menuItems = flattenMenuItems(menuGroups);
+
+  window.__pages = window.__pages || {};
+  window.registerPage = function (key, mod) {
+    window.__pages[key] = mod;
+    pageCache[key] = mod;
+    if (window.__pageResolvers && window.__pageResolvers[key]) {
+      window.__pageResolvers[key](mod);
+      delete window.__pageResolvers[key];
+    }
+  };
+
+  function cloneMenuGroups(groups) {
+    return groups.map(function (group, index) {
+      return {
+        key: group.key || ("group_" + index),
+        label: group.label || ("범주 " + (index + 1)),
+        items: Array.isArray(group.items) ? group.items.slice() : []
+      };
+    });
+  }
+
+  function flattenMenuItems(groups) {
+    var result = [];
+    groups.forEach(function (group) {
+      group.items.forEach(function (itemKey) {
+        var option = findMenuPage(itemKey);
+        if (option) result.push(option);
+      });
+    });
+    return result;
+  }
+
+  function findMenuPage(key) {
+    return getMenuPageOptions().find(function (item) { return item.key === key; }) || null;
+  }
+
+  function getMenuPageOptions() {
+    var state = getAuthState();
+    return state.isAdmin ? MENU_PAGE_OPTIONS.concat([ADMIN_MENU_PAGE]) : MENU_PAGE_OPTIONS.slice();
+  }
+
+  function ensureAdminMenuAccess(groups) {
+    var next = cloneMenuGroups(groups || DEFAULT_MENU_GROUPS);
+    var isAdmin = getAuthState().isAdmin;
+
+    next.forEach(function (group) {
+      group.items = group.items.filter(function (itemKey) {
+        return itemKey !== ADMIN_MENU_PAGE.key;
+      });
+    });
+
+    if (!isAdmin) return next;
+
+    var toolsGroup = next.find(function (group) {
+      return group.key === "tools";
+    });
+    if (!toolsGroup) {
+      toolsGroup = { key: "tools", label: "도구", items: [] };
+      next.push(toolsGroup);
+    }
+    if (toolsGroup.items.indexOf(ADMIN_MENU_PAGE.key) < 0) {
+      toolsGroup.items.push(ADMIN_MENU_PAGE.key);
+    }
+    return next;
+  }
+
+  function parseMenuGroups(raw) {
+    if (!raw) return ensureAdminMenuAccess(DEFAULT_MENU_GROUPS);
+    try {
+      var parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) throw new Error("invalid");
+
+      var used = {};
+      var next = parsed.map(function (group, index) {
+        var label = String(group.label || "").trim() || ("범주 " + (index + 1));
+        var key = String(group.key || ("group_" + index)).trim() || ("group_" + index);
+        var items = Array.isArray(group.items) ? group.items.filter(function (itemKey) {
+          var item = findMenuPage(itemKey);
+          if (!item || used[itemKey]) return false;
+          used[itemKey] = true;
+          return true;
+        }) : [];
+        return { key: key, label: label, items: items };
+      }).filter(function (group) {
+        return group.items.length > 0;
+      });
+
+      getMenuPageOptions().forEach(function (item) {
+        if (!used[item.key]) {
+          var toolsGroup = next[next.length - 1];
+          if (toolsGroup) {
+            toolsGroup.items.push(item.key);
+          }
+        }
+      });
+
+      return ensureAdminMenuAccess(next.length ? next : DEFAULT_MENU_GROUPS);
+    } catch (error) {
+      return ensureAdminMenuAccess(DEFAULT_MENU_GROUPS);
+    }
+  }
+
+  function text(id, value) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = value;
+  }
+
+  function ensureFirebase() {
+    if (firebaseApp) return;
+    if (!window.firebase || !window.__firebaseConfig) {
+      throw new Error("Firebase 설정을 불러오지 못했습니다.");
+    }
+    firebaseApp = window.firebase.apps.length
+      ? window.firebase.app()
+      : window.firebase.initializeApp(window.__firebaseConfig);
+    firebaseAuth = window.firebase.auth();
+    firebaseDb = window.firebase.firestore();
+    firebaseDb.settings({
+      experimentalForceLongPolling: true
+    });
+    firebaseAuth.setPersistence(window.firebase.auth.Auth.Persistence.LOCAL).catch(function () {});
+  }
+
+  function normalizeEmail(value) {
+    return String(value || "").trim().toLowerCase();
+  }
+
+  function parseFirebaseError(error, fallback) {
+    var code = String(error && error.code || "");
+    if (code === "auth/invalid-email") return "이메일 형식이 올바르지 않습니다.";
+    if (code === "auth/user-not-found") return "가입되지 않은 계정입니다.";
+    if (code === "auth/wrong-password") return "비밀번호가 올바르지 않습니다.";
+    if (code === "auth/invalid-credential") return "이메일 또는 비밀번호가 올바르지 않습니다.";
+    if (code === "auth/email-already-in-use") return "이미 가입된 이메일입니다. 로그인으로 들어가 주세요.";
+    if (code === "auth/weak-password") return "비밀번호는 6자 이상으로 입력해 주세요.";
+    if (code === "auth/network-request-failed") return "네트워크 연결을 확인해 주세요.";
+    if (code === "permission-denied" || code === "firestore/permission-denied") {
+      return "Firestore 보안 규칙이 아직 적용되지 않았습니다. Firebase 콘솔에서 규칙을 붙여넣고 배포해 주세요.";
+    }
+    return error && error.message ? error.message : (fallback || "로그인 처리 중 문제가 발생했습니다.");
+  }
+
+  function isAdminProfile(profile) {
+    return !!profile && profile.role === "admin";
+  }
+
+  function canSyncKey(key) {
+    return CLOUD_SYNC_KEYS.indexOf(key) >= 0;
+  }
+
+  function buildCloudSettingsPayload(settings) {
+    var payload = {};
+    CLOUD_SYNC_KEYS.forEach(function (key) {
+      if (Object.prototype.hasOwnProperty.call(settings, key)) {
+        payload[key] = settings[key];
+      }
+    });
+    return payload;
+  }
+
+  function getUserDoc(uid) {
+    ensureFirebase();
+    return firebaseDb.collection("users").doc(uid);
+  }
+
+  function ensureAuthOverlay() {
+    if (authOverlayEl) return authOverlayEl;
+    authOverlayEl = document.createElement("div");
+    authOverlayEl.id = "auth-overlay";
+    document.body.appendChild(authOverlayEl);
+    return authOverlayEl;
+  }
+
+  function setAuthLocked(locked) {
+    document.body.classList.toggle("auth-locked", !!locked);
+  }
+
+  function closeAuthOverlay() {
+    if (authOverlayEl) authOverlayEl.remove();
+    authOverlayEl = null;
+    setAuthLocked(false);
+  }
+
+  function getAuthState() {
+    return {
+      loggedIn: !!authUser,
+      uid: authUser ? authUser.uid : "",
+      email: authUser ? normalizeEmail(authUser.email) : "",
+      displayName: authProfile ? String(authProfile.displayName || "") : "",
+      approved: authProfile ? authProfile.approved !== false : false,
+      active: authProfile ? authProfile.active !== false : false,
+      role: authProfile ? String(authProfile.role || "user") : "user",
+      isAdmin: isAdminProfile(authProfile)
+    };
+  }
+
+  window.appAuthGetState = getAuthState;
+
+  window.appAuthLogout = function () {
+    ensureFirebase();
+    return firebaseAuth.signOut();
+  };
+
+  window.appAuthListUsers = function () {
+    ensureFirebase();
+    if (!isAdminProfile(authProfile)) return Promise.resolve([]);
+    return firebaseDb.collection("users").get().then(function (snap) {
+      var users = [];
+      snap.forEach(function (doc) {
+        var data = doc.data() || {};
+        users.push({
+          uid: doc.id,
+          email: String(data.email || ""),
+          displayName: String(data.displayName || ""),
+          approved: data.approved !== false,
+          active: data.active !== false,
+          role: String(data.role || "user")
+        });
+      });
+      users.sort(function (a, b) {
+        if (a.role !== b.role) return a.role === "admin" ? -1 : 1;
+        if (a.active !== b.active) return a.active ? -1 : 1;
+        return a.email.localeCompare(b.email, "ko");
+      });
+      return users;
+    });
+  };
+
+  window.appAuthUpdateUser = function (uid, patch) {
+    ensureFirebase();
+    if (!isAdminProfile(authProfile)) return Promise.reject(new Error("관리자만 변경할 수 있습니다."));
+    if (!uid) return Promise.reject(new Error("사용자 정보가 올바르지 않습니다."));
+    if (uid === (authUser && authUser.uid) && patch && patch.active === false) {
+      return Promise.reject(new Error("관리자 본인은 비활성화할 수 없습니다."));
+    }
+    return getUserDoc(uid).set(patch || {}, { merge: true });
+  };
+
+  window.pullCloudSettingsNow = function () {
+    ensureFirebase();
+    if (!authUser || !authProfile || authProfile.active === false) {
+      return Promise.resolve(false);
+    }
+    return getUserDoc(authUser.uid).collection("settings").doc("app").get().then(function (snap) {
+      if (!snap.exists) return false;
+      var data = snap.data() || {};
+      var payload = buildCloudSettingsPayload(data);
+      var keys = Object.keys(payload);
+      return keys.reduce(function (chain, key) {
+        return chain.then(function () {
+          return originalSetSetting(key, payload[key]);
+        });
+      }, Promise.resolve()).then(function () {
+        if (window.reloadTopNavigation && payload.menu_groups_config !== undefined) {
+          return Promise.resolve(window.reloadTopNavigation()).then(function () {
+            return payload;
+          });
+        }
+        return payload;
+      }).then(function (savedPayload) {
+        if (window.updateClassInfo && (
+          savedPayload.class_year !== undefined ||
+          savedPayload.class_num !== undefined ||
+          savedPayload.teacher_name !== undefined
+        )) {
+          return Promise.resolve(window.updateClassInfo()).then(function () {
+            return savedPayload;
+          });
+        }
+        return savedPayload;
+      }).then(function () {
+        if (window.__pages && window.__pages.dashboard && window.__pages.dashboard.refresh) {
+          return Promise.resolve(window.__pages.dashboard.refresh()).then(function () {
+            return true;
+          });
+        }
+        return true;
+      });
+    });
+  };
+
+  window.syncCloudSettingsNow = function () {
+    ensureFirebase();
+    if (!authUser || !authProfile || authProfile.active === false) {
+      return Promise.resolve(false);
+    }
+    return api.getAllSettings().then(function (settings) {
+      var payload = buildCloudSettingsPayload(settings || {});
+      payload.updatedAt = window.firebase.firestore.FieldValue.serverTimestamp();
+      payload.updatedBy = normalizeEmail(authUser.email);
+      return getUserDoc(authUser.uid).collection("settings").doc("app").set(payload, { merge: true }).then(function () {
+        return true;
+      });
+    });
+  };
+
+  function queueCloudSync(key) {
+    if (!canSyncKey(key)) return;
+    if (!authUser || !authProfile || authProfile.active === false) return;
+    if (cloudSyncTimer) clearTimeout(cloudSyncTimer);
+    cloudSyncTimer = setTimeout(function () {
+      cloudSyncTimer = null;
+      window.syncCloudSettingsNow().catch(function (error) {
+        console.error("cloud sync failed", error);
+      });
+    }, 300);
+  }
+
+  function renderAuthOverlay(view, message, emailValue) {
+    var overlay = ensureAuthOverlay();
+    var safeMessage = message ? '<div class="auth-message">' + message + '</div>' : "";
+    var safeEmail = String(emailValue || "").replace(/"/g, "&quot;");
+    var state = getAuthState();
+    var modeTabs = view === "form" ? (
+      '<div class="auth-tabs">' +
+        '<button type="button" class="auth-tab' + (authScreenMode === "login" ? ' active' : '') + '" data-auth-mode="login">로그인</button>' +
+        '<button type="button" class="auth-tab' + (authScreenMode === "signup" ? ' active' : '') + '" data-auth-mode="signup">회원가입</button>' +
+      '</div>'
+    ) : "";
+    var formHtml = view === "form" ? (
+      '<div class="auth-fields">' +
+        (authScreenMode === "signup"
+          ? '<label class="auth-label">이름</label><input id="auth-name" class="input auth-input" placeholder="예: 임재환">'
+          : '') +
+        '<label class="auth-label">이메일</label><input id="auth-email" class="input auth-input" type="email" value="' + safeEmail + '" placeholder="teacher@example.com">' +
+        '<label class="auth-label">비밀번호</label><input id="auth-password" class="input auth-input" type="password" placeholder="비밀번호 입력">' +
+      '</div>' +
+      '<div class="settings-actions auth-actions">' +
+        '<button type="button" class="btn btn-primary" id="auth-submit-btn">' + (authScreenMode === "signup" ? '가입하고 시작하기' : '로그인') + '</button>' +
+      '</div>'
+    ) : "";
+    var infoHtml = view === "blocked"
+        ? '<div class="auth-state-box"><div class="auth-state-title">사용 제한됨</div><div class="auth-state-note">이 계정은 현재 사용이 제한되어 있습니다.</div><div class="auth-state-email">' + (state.email || "") + '</div></div>'
+        : "";
+    var secondaryButtons = view === "form"
+      ? ""
+      : '<div class="settings-actions auth-actions"><button type="button" class="btn btn-secondary" id="auth-refresh-btn">상태 다시 확인</button><button type="button" class="btn btn-primary" id="auth-logout-btn">로그아웃</button></div>';
+
+    overlay.innerHTML =
+      '<div class="auth-overlay-backdrop"></div>' +
+      '<section class="auth-card">' +
+        '<div class="auth-brand">교사 업무 관리</div>' +
+        '<h2 class="auth-title">계정 확인</h2>' +
+        '<div class="auth-note">가입 후 바로 사용할 수 있으며, 관리자가 필요한 경우 사용을 제한할 수 있습니다.</div>' +
+        modeTabs +
+        safeMessage +
+        formHtml +
+        infoHtml +
+        secondaryButtons +
+      '</section>';
+
+    setAuthLocked(true);
+
+    overlay.querySelectorAll("[data-auth-mode]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        authScreenMode = button.getAttribute("data-auth-mode");
+        renderAuthOverlay("form", "", document.getElementById("auth-email") ? document.getElementById("auth-email").value : safeEmail);
+      });
+    });
+
+    var submitButton = document.getElementById("auth-submit-btn");
+    if (submitButton) {
+      submitButton.addEventListener("click", function () {
+        var email = normalizeEmail(document.getElementById("auth-email").value);
+        var password = document.getElementById("auth-password").value;
+        var displayName = document.getElementById("auth-name") ? document.getElementById("auth-name").value.trim() : "";
+        if (!email || !password) {
+          renderAuthOverlay("form", "이메일과 비밀번호를 입력해 주세요.", email);
+          return;
+        }
+        if (authScreenMode === "signup") {
+          firebaseAuth.createUserWithEmailAndPassword(email, password)
+            .then(function (cred) {
+              return createOrUpdateUserProfile(cred.user, displayName);
+            })
+            .catch(function (error) {
+              renderAuthOverlay("form", parseFirebaseError(error, "회원가입에 실패했습니다."), email);
+            });
+        } else {
+          firebaseAuth.signInWithEmailAndPassword(email, password).catch(function (error) {
+            renderAuthOverlay("form", parseFirebaseError(error, "로그인에 실패했습니다."), email);
+          });
+        }
+      });
+    }
+
+    var refreshButton = document.getElementById("auth-refresh-btn");
+    if (refreshButton) {
+      refreshButton.addEventListener("click", function () {
+        if (!authUser) {
+          renderAuthOverlay("form", "", "");
+          return;
+        }
+        getUserDoc(authUser.uid).get().then(function (snap) {
+          authProfile = snap.exists ? snap.data() : authProfile;
+          evaluateAuthenticatedUser(authUser);
+        });
+      });
+    }
+
+    var logoutButton = document.getElementById("auth-logout-btn");
+    if (logoutButton) {
+      logoutButton.addEventListener("click", function () {
+        firebaseAuth.signOut();
+      });
+    }
+  }
+
+  function createOrUpdateUserProfile(user, displayName) {
+    ensureFirebase();
+    var docRef = getUserDoc(user.uid);
+    return docRef.get().then(function (snap) {
+      var baseData = snap.exists ? (snap.data() || {}) : null;
+      if (baseData) {
+        return docRef.set({
+          email: normalizeEmail(user.email),
+          displayName: displayName || baseData.displayName || "",
+          active: baseData.active !== false,
+          lastLoginAt: window.firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true }).then(function () {
+          return docRef.get();
+        });
+      }
+      return docRef.set({
+        email: normalizeEmail(user.email),
+        displayName: displayName || "",
+        approved: true,
+        active: true,
+        role: "user",
+        createdAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+        lastLoginAt: window.firebase.firestore.FieldValue.serverTimestamp()
+      }, { merge: true }).then(function () {
+        return docRef.get();
+      });
+    }).then(function (nextSnap) {
+      authProfile = nextSnap.exists ? nextSnap.data() : null;
+      return authProfile;
+    });
+  }
+
+  function evaluateAuthenticatedUser(user) {
+    authUser = user || null;
+    if (!user) {
+      authProfile = null;
+      renderAuthOverlay("form", "", "");
+      return Promise.resolve(false);
+    }
+    return createOrUpdateUserProfile(user, "").then(function (profile) {
+      authProfile = profile || {};
+      if (authProfile.active === false) {
+        renderAuthOverlay("blocked", "", normalizeEmail(user.email));
+        return false;
+      }
+      return window.pullCloudSettingsNow().catch(function () {
+        return false;
+      }).then(function () {
+        closeAuthOverlay();
+        return true;
+      });
+    });
+  }
+
+  function initAuthGate() {
+    ensureFirebase();
+    return new Promise(function (resolve, reject) {
+      firebaseAuth.onAuthStateChanged(function (user) {
+        evaluateAuthenticatedUser(user).then(function (ok) {
+          if (ok && !authBootResolved) {
+            authBootResolved = true;
+            resolve();
+          }
+        }).catch(function (error) {
+          console.error(error);
+          renderAuthOverlay("form", parseFirebaseError(error, "로그인 준비 중 문제가 발생했습니다."), "");
+          if (!authBootResolved) {
+            reject(error);
+          }
+        });
+      });
+    });
+  }
+
+  function updateDate() {
+    var d = new Date();
+    var days = ["일", "월", "화", "수", "목", "금", "토"];
+    text("header-date", d.getFullYear() + "년 " + (d.getMonth() + 1) + "월 " + d.getDate() + "일 (" + days[d.getDay()] + ")");
+  }
+
+  function setDashboardControls(isDashboard) {
+    document.getElementById("edit-layout-btn").style.display = isDashboard ? "" : "none";
+    document.getElementById("widget-mode-btn").style.display = isDashboard ? "" : "none";
+  }
+
+  function updateUpdateButton(state) {
+    var btn = document.getElementById("update-btn");
+    if (!btn) return;
+    var next = state || {};
+    btn.disabled = false;
+    btn.classList.remove("active");
+
+    if (next.status === "dev") {
+      btn.style.display = "";
+      btn.textContent = "개발 실행";
+      btn.disabled = true;
+      btn.title = next.message || "개발 실행에서는 자동 업데이트를 확인하지 않습니다.";
+      return;
+    }
+    if (next.status === "checking") {
+      btn.style.display = "";
+      btn.textContent = "업데이트 확인 중";
+      btn.disabled = true;
+      btn.title = next.message || "";
+      return;
+    }
+    if (next.status === "available") {
+      btn.style.display = "";
+      btn.textContent = "업데이트 다운로드";
+      btn.classList.add("active");
+      btn.title = next.message || "";
+      return;
+    }
+    if (next.status === "downloading") {
+      btn.style.display = "";
+      btn.textContent = "다운로드 " + Math.round(next.progress || 0) + "%";
+      btn.disabled = true;
+      btn.title = next.message || "";
+      return;
+    }
+    if (next.status === "downloaded") {
+      btn.style.display = "";
+      btn.textContent = "재시작 후 설치";
+      btn.classList.add("active");
+      btn.title = next.message || "";
+      return;
+    }
+    if (next.status === "error") {
+      btn.style.display = "";
+      btn.textContent = "업데이트 오류";
+      btn.title = next.message || "";
+      return;
+    }
+    btn.style.display = "";
+    btn.textContent = "업데이트 확인";
+    btn.title = next.message || "최신 버전을 확인합니다.";
+  }
+
+  function initUpdateButton() {
+    var btn = document.getElementById("update-btn");
+    if (!btn || !api.getUpdateStatus) return;
+
+    btn.addEventListener("click", function () {
+      api.getUpdateStatus().then(function (state) {
+        if (state.status === "available") {
+          return api.downloadUpdate();
+        }
+        if (state.status === "downloaded") {
+          return api.quitAndInstallUpdate();
+        }
+        return api.checkForUpdates();
+      }).catch(function (error) {
+        toast(error.message || "업데이트 확인에 실패했습니다.", "error");
+      });
+    });
+
+    api.onUpdateStatus(function (state) {
+      updateUpdateButton(state);
+      if (state.status === "available") {
+        toast(state.message || "새 업데이트가 있습니다.", "success", 3500);
+      } else if (state.status === "downloaded") {
+        toast("업데이트 다운로드가 완료되었습니다. 버튼을 눌러 설치할 수 있습니다.", "success", 4500);
+      } else if (state.status === "error") {
+        toast(state.message || "업데이트 확인 중 문제가 발생했습니다.", "warning", 4000);
+      }
+    });
+
+    api.getUpdateStatus().then(updateUpdateButton).catch(function () {
+      updateUpdateButton({ status: "idle" });
+    });
+  }
+
+  function syncActiveTabs() {
+    var homeBtn = document.getElementById("home-btn");
+    if (homeBtn) homeBtn.classList.toggle("active", currentPage === "dashboard");
+
+    document.querySelectorAll(".tab-link").forEach(function (button) {
+      button.classList.toggle("active", button.getAttribute("data-key") === currentPage);
+    });
+
+    document.querySelectorAll(".tab-group").forEach(function (groupEl) {
+      var groupKey = groupEl.getAttribute("data-group-key");
+      var group = menuGroups.find(function (entry) { return entry.key === groupKey; });
+      if (!group) return;
+
+      var currentItemKey = group.items.find(function (itemKey) { return itemKey === currentPage; });
+      var currentItem = currentItemKey ? findMenuPage(currentItemKey) : null;
+      var valueEl = groupEl.querySelector(".tab-group-value");
+      if (valueEl) {
+        valueEl.textContent = currentItem ? currentItem.label : (group.items[0] ? findMenuPage(group.items[0]).label : "");
+      }
+      groupEl.classList.toggle("open", openGroupKey === groupKey);
+      groupEl.classList.toggle("selected", !!currentItem);
+    });
+  }
+
+  function buildTopTabs() {
+    var nav = document.getElementById("page-tabs");
+    nav.innerHTML = "";
+
+    menuGroups.forEach(function (group) {
+      if (!group.items.length) return;
+
+      var section = document.createElement("section");
+      section.className = "tab-group";
+      section.setAttribute("data-group-key", group.key);
+      section.addEventListener("mouseenter", function () {
+        if (closeGroupTimer) {
+          clearTimeout(closeGroupTimer);
+          closeGroupTimer = null;
+        }
+        openGroupKey = group.key;
+        syncActiveTabs();
+      });
+      section.addEventListener("mouseleave", function () {
+        closeGroupTimer = setTimeout(function () {
+          if (openGroupKey === group.key) {
+            openGroupKey = "";
+            syncActiveTabs();
+          }
+        }, 140);
+      });
+      section.addEventListener("focusin", function () {
+        openGroupKey = group.key;
+        syncActiveTabs();
+      });
+      section.addEventListener("focusout", function () {
+        setTimeout(function () {
+          if (!section.contains(document.activeElement) && openGroupKey === group.key) {
+            openGroupKey = "";
+            syncActiveTabs();
+          }
+        }, 0);
+      });
+
+      var label = document.createElement("button");
+      label.className = "tab-group-label";
+      label.type = "button";
+
+      var labelText = document.createElement("span");
+      labelText.className = "tab-group-text";
+      labelText.textContent = group.label;
+
+      var labelValue = document.createElement("span");
+      labelValue.className = "tab-group-value";
+      labelValue.textContent = findMenuPage(group.items[0]).label;
+
+      label.appendChild(labelText);
+      label.appendChild(labelValue);
+      label.addEventListener("click", function () {
+        openGroupKey = openGroupKey === group.key ? "" : group.key;
+        syncActiveTabs();
+      });
+      section.appendChild(label);
+
+      var items = document.createElement("div");
+      items.className = "tab-group-items";
+
+      group.items.forEach(function (itemKey) {
+        var item = findMenuPage(itemKey);
+        if (!item) return;
+
+        var button = document.createElement("button");
+        button.className = "tab-link";
+        button.type = "button";
+        button.setAttribute("data-key", item.key);
+        button.textContent = item.label;
+        if (item.key === currentPage) button.classList.add("active");
+        button.addEventListener("click", function () {
+          openGroupKey = "";
+          navigateTo(item.key);
+        });
+        items.appendChild(button);
+      });
+
+      section.appendChild(items);
+      nav.appendChild(section);
+    });
+
+    syncActiveTabs();
+  }
+
+  function loadPage(key) {
+    if (pageCache[key]) return Promise.resolve(pageCache[key]);
+    return new Promise(function (resolve, reject) {
+      if (window.__pages && window.__pages[key]) {
+        pageCache[key] = window.__pages[key];
+        resolve(window.__pages[key]);
+        return;
+      }
+
+      window.__pageResolvers = window.__pageResolvers || {};
+      window.__pageResolvers[key] = function (mod) {
+        pageCache[key] = mod;
+        resolve(mod);
+      };
+
+      var script = document.createElement("script");
+      script.src = "pages/" + key + ".js";
+      script.onerror = function () {
+        reject(new Error("페이지를 불러올 수 없습니다: " + key));
+      };
+      document.head.appendChild(script);
+    });
+  }
+
+  function showLoading() {
+    document.getElementById("page-content").innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:center;height:200px;color:var(--text3)">불러오는 중...</div>';
+  }
+
+  function showError(message) {
+    document.getElementById("page-content").innerHTML =
+      '<div class="page-wrap"><div class="empty-state"><div class="icon">!</div><p>' + message + "</p></div></div>";
+  }
+
+  function navigateTo(key) {
+    currentPage = key;
+    var parentGroup = menuGroups.find(function (group) {
+      return group.items.some(function (itemKey) { return itemKey === key; });
+    });
+    openGroupKey = parentGroup ? parentGroup.key : "";
+    syncActiveTabs();
+
+    var item = findMenuPage(key);
+    text("page-title", key === "dashboard" ? "대시보드" : (key === "user_management" ? "회원 관리" : (item ? item.label : "")));
+    setDashboardControls(key === "dashboard");
+    showLoading();
+
+    return loadPage(key)
+      .then(function (mod) {
+        var content = document.getElementById("page-content");
+        content.innerHTML = "";
+        return Promise.resolve(mod.render(content)).then(function () {
+          if (mod.init) return mod.init();
+        });
+      })
+      .catch(function (error) {
+        showError(error.message);
+        console.error(error);
+      });
+  }
+
+  function updateClassInfo() {
+    return Promise.all([
+      api.getSetting("class_year", "-"),
+      api.getSetting("class_num", "-"),
+      api.getSetting("teacher_name", "담임")
+    ]).then(function (values) {
+      text("class-info", "🏫 " + values[0] + "학년 " + values[1] + "반 · " + values[2]);
+    });
+  }
+  window.updateClassInfo = updateClassInfo;
+
+  window.navigateTo = navigateTo;
+
+  function initWindowButtons() {
+    document.getElementById("min-btn").addEventListener("click", function () { api.minimize(); });
+    document.getElementById("max-btn").addEventListener("click", function () { api.maximize(); });
+    document.getElementById("close-btn").addEventListener("click", function () { api.close(); });
+  }
+
+  function initHomeButton() {
+    document.getElementById("home-btn").addEventListener("click", function () {
+      navigateTo("dashboard");
+    });
+  }
+
+  function initWidgetButton() {
+    document.getElementById("widget-mode-btn").addEventListener("click", function () {
+      widgetMode = !widgetMode;
+      this.classList.toggle("active", widgetMode);
+      this.textContent = widgetMode ? "위젯 모드 종료" : "위젯 모드";
+      api.widgetMode(widgetMode);
+      document.body.classList.toggle("widget-mode", widgetMode);
+    });
+  }
+
+  function initEditButton() {
+    document.getElementById("edit-layout-btn").addEventListener("click", function () {
+      var active = this.classList.toggle("active");
+      this.textContent = active ? "배열 편집 완료" : "배열 편집";
+      if (window.__pages.dashboard && window.__pages.dashboard.setEditMode) {
+        window.__pages.dashboard.setEditMode(active);
+      }
+    });
+  }
+
+  function initOpacityPanel() {
+    var btn = document.getElementById("opacity-btn");
+    var panel = document.getElementById("opacity-panel");
+    var slider = document.getElementById("opacity-slider");
+    var label = document.getElementById("opacity-lbl");
+
+    btn.addEventListener("click", function (event) {
+      event.stopPropagation();
+      panel.style.display = panel.style.display === "flex" ? "none" : "flex";
+    });
+
+    document.addEventListener("click", function () {
+      panel.style.display = "none";
+    });
+
+    panel.addEventListener("click", function (event) {
+      event.stopPropagation();
+    });
+
+    slider.addEventListener("input", function () {
+      var opacity = slider.value / 100;
+      label.textContent = slider.value + "%";
+      api.setOpacity(opacity);
+    });
+
+    api.getOpacity().then(function (opacity) {
+      var pct = Math.round(opacity * 100);
+      slider.value = pct;
+      label.textContent = pct + "%";
+    }).catch(function () {});
+  }
+
+  window.reloadTopNavigation = function () {
+    return api.getSetting("menu_groups_config", "").then(function (raw) {
+      menuGroups = parseMenuGroups(raw);
+      menuItems = flattenMenuItems(menuGroups);
+      buildTopTabs();
+      syncActiveTabs();
+    });
+  };
+
+  var toastContainer = document.createElement("div");
+  toastContainer.id = "toast-container";
+  document.body.appendChild(toastContainer);
+
+  window.toast = function (msg, type, duration) {
+    var actualType = type || "default";
+    var actualDuration = duration || 2500;
+    var el = document.createElement("div");
+    el.className = "toast" + (actualType !== "default" ? " " + actualType : "");
+    el.textContent = msg;
+    toastContainer.appendChild(el);
+    setTimeout(function () {
+      el.style.opacity = "0";
+      el.style.transition = "opacity .3s";
+      setTimeout(function () {
+        el.remove();
+      }, 300);
+    }, actualDuration);
+  };
+
+  window.showModal = function (html, onClose) {
+    var overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    overlay.innerHTML = '<div class="modal">' + html + "</div>";
+    overlay.addEventListener("click", function (event) {
+      if (event.target === overlay) closeModal();
+    });
+    document.body.appendChild(overlay);
+
+    var close = function () {
+      overlay.remove();
+      if (onClose) onClose();
+    };
+
+    window.__closeModal = close;
+    overlay.querySelectorAll("[data-close]").forEach(function (button) {
+      button.addEventListener("click", close);
+    });
+    return { close: close, el: overlay };
+  };
+
+  window.closeModal = function () {
+    if (window.__closeModal) window.__closeModal();
+  };
+
+  window.today = function () {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  };
+
+  window.formatDate = function (str) {
+    if (!str) return "";
+    return str.replace(/-/g, ".");
+  };
+
+  window.diffDays = function (dateStr) {
+    var now = new Date();
+    now.setHours(0, 0, 0, 0);
+    var target = new Date(dateStr);
+    target.setHours(0, 0, 0, 0);
+    return Math.round((target - now) / 86400000);
+  };
+
+  Promise.resolve()
+    .then(function () {
+      initWindowButtons();
+      initHomeButton();
+      initUpdateButton();
+      initWidgetButton();
+      initEditButton();
+      initOpacityPanel();
+      updateDate();
+      setInterval(updateDate, 60000);
+      return initAuthGate();
+    })
+    .then(function () {
+      return window.reloadTopNavigation();
+    })
+    .then(function () {
+      return updateClassInfo();
+    })
+    .then(function () {
+      return navigateTo("dashboard");
+    })
+    .catch(function (error) {
+      document.getElementById("page-tabs").innerHTML =
+        '<div style="padding:12px 18px;color:#d14343;font-weight:600">탭을 불러오지 못했습니다.</div>';
+      showError(error.message);
+      console.error(error);
+    });
+})();
+</script>
+</body>
+</html>
