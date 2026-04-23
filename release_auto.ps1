@@ -33,6 +33,11 @@ function Get-NextVersion($version) {
     return "$major.$minor.$($patch + 1)"
 }
 
+function Write-Utf8NoBom($path, $content) {
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($path, $content, $utf8NoBom)
+}
+
 if (-not $env:GH_TOKEN) {
     Fail 'GH_TOKEN is not set. Run: $env:GH_TOKEN="your_token"'
 }
@@ -55,7 +60,7 @@ $updatedPkgRaw = $pkgRaw -replace ('"version"\s*:\s*"' + [regex]::Escape($curren
 if ($updatedPkgRaw -eq $pkgRaw) {
     Fail "Could not update version in package.json"
 }
-Set-Content -Path $pkgPath -Value $updatedPkgRaw -Encoding UTF8
+Write-Utf8NoBom $pkgPath $updatedPkgRaw
 Write-Host "Updated package.json to $nextVersion" -ForegroundColor Green
 
 Write-Step "Git add / commit / push"
