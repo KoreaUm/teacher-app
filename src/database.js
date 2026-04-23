@@ -145,6 +145,13 @@ class AppDatabase {
         updated_at TEXT DEFAULT (datetime('now'))
       );
     `);
+    this._ensureTodoCalendarColumn();
+  }
+
+  _ensureTodoCalendarColumn() {
+    try {
+      this.db.exec('ALTER TABLE todos ADD COLUMN gcal_event_id TEXT');
+    } catch (_) {}
   }
 
   getPath() {
@@ -460,12 +467,14 @@ class AppDatabase {
   }
 
   getTodos(includeDone = false) {
+    this._ensureTodoCalendarColumn();
     return includeDone
       ? this.db.prepare('SELECT * FROM todos ORDER BY is_done, created_at DESC').all()
       : this.db.prepare('SELECT * FROM todos WHERE is_done=0 ORDER BY created_at DESC').all();
   }
 
   addTodo(data) {
+    this._ensureTodoCalendarColumn();
     const result = this.db.prepare(
       'INSERT INTO todos(title,deadline,priority,category,is_ai_generated,source_text) VALUES(?,?,?,?,?,?)'
     ).run(data.title, data.deadline || '', data.priority || '보통', data.category || '기타', data.is_ai_generated ? 1 : 0, data.source_text || '');
@@ -473,6 +482,7 @@ class AppDatabase {
   }
 
   updateTodo(id, data) {
+    this._ensureTodoCalendarColumn();
     this.db.prepare(
       'UPDATE todos SET title=?,deadline=?,priority=?,category=? WHERE id=?'
     ).run(data.title, data.deadline || '', data.priority || '보통', data.category || '기타', id);
@@ -480,17 +490,13 @@ class AppDatabase {
   }
 
   setTodoGcalId(id, gcalEventId) {
-    try {
-      this.db.exec('ALTER TABLE todos ADD COLUMN gcal_event_id TEXT');
-    } catch (_) {}
+    this._ensureTodoCalendarColumn();
     this.db.prepare('UPDATE todos SET gcal_event_id=? WHERE id=?').run(gcalEventId, id);
     return true;
   }
 
   getTodoGcalId(id) {
-    try {
-      this.db.exec('ALTER TABLE todos ADD COLUMN gcal_event_id TEXT');
-    } catch (_) {}
+    this._ensureTodoCalendarColumn();
     const row = this.db.prepare('SELECT gcal_event_id FROM todos WHERE id=?').get(id);
     return row ? row.gcal_event_id : null;
   }
@@ -502,6 +508,32 @@ class AppDatabase {
 
   deleteTodo(id) {
     this.db.prepare('DELETE FROM todos WHERE id=?').run(id);
+    return true;
+  }
+
+  replaceTodos(items = []) {
+    this._ensureTodoCalendarColumn();
+    const replaceAll = this.db.transaction((rows) => {
+      this.db.prepare('DELETE FROM todos').run();
+      const insert = this.db.prepare(
+        'INSERT INTO todos(id,title,deadline,priority,category,is_done,is_ai_generated,source_text,created_at,gcal_event_id) VALUES(?,?,?,?,?,?,?,?,?,?)'
+      );
+      for (const row of rows) {
+        insert.run(
+          row.id,
+          row.title || '',
+          row.deadline || '',
+          row.priority || '보통',
+          row.category || '기타',
+          row.is_done ? 1 : 0,
+          row.is_ai_generated ? 1 : 0,
+          row.source_text || '',
+          row.created_at || '',
+          row.gcal_event_id || ''
+        );
+      }
+    });
+    replaceAll(items);
     return true;
   }
 
@@ -534,6 +566,27 @@ class AppDatabase {
 
   clearTimetable() {
     this.db.prepare('DELETE FROM timetable').run();
+    return true;
+  }
+
+  replaceTimetable(items = []) {
+    const replaceAll = this.db.transaction((rows) => {
+      this.db.prepare('DELETE FROM timetable').run();
+      const insert = this.db.prepare(
+        'INSERT INTO timetable(day_of_week,period,subject,teacher,room,is_my_class) VALUES(?,?,?,?,?,?)'
+      );
+      for (const row of rows) {
+        insert.run(
+          row.day_of_week,
+          row.period,
+          row.subject || '',
+          row.teacher || '',
+          row.room || '',
+          row.is_my_class ? 1 : 0
+        );
+      }
+    });
+    replaceAll(items);
     return true;
   }
 

@@ -69,6 +69,7 @@
   var authScreenMode = "login";
   var authBootResolved = false;
   var cloudSyncTimer = null;
+  var sharedSyncTimer = null;
   var originalSetSetting = api.setSetting.bind(api);
   var CLOUD_SYNC_KEYS = [
     "class_year",
@@ -79,12 +80,68 @@
     "school_code",
     "menu_groups_config",
     "quick_links_config",
-    "class_timetable_subject_colors"
+    "class_timetable_subject_colors",
+    "class_timetable_json",
+    "class_timetable_file_name",
+    "gcal_client_id",
+    "gcal_client_secret",
+    "gcal_refresh_token",
+    "todo_manual_order"
   ];
 
   api.setSetting = function (key, value) {
     return Promise.resolve(originalSetSetting(key, value)).then(function (result) {
       queueCloudSync(key);
+      return result;
+    });
+  };
+  var originalAddTodo = api.addTodo.bind(api);
+  var originalUpdateTodo = api.updateTodo.bind(api);
+  var originalToggleTodo = api.toggleTodo.bind(api);
+  var originalDeleteTodo = api.deleteTodo.bind(api);
+  var originalSetTodoGcalId = api.setTodoGcalId.bind(api);
+  var originalSetTimetableCell = api.setTimetableCell.bind(api);
+  var originalClearTimetable = api.clearTimetable.bind(api);
+
+  api.addTodo = function (payload) {
+    return Promise.resolve(originalAddTodo(payload)).then(function (result) {
+      queueSharedCollectionSync("todos");
+      return result;
+    });
+  };
+  api.updateTodo = function (id, payload) {
+    return Promise.resolve(originalUpdateTodo(id, payload)).then(function (result) {
+      queueSharedCollectionSync("todos");
+      return result;
+    });
+  };
+  api.toggleTodo = function (id) {
+    return Promise.resolve(originalToggleTodo(id)).then(function (result) {
+      queueSharedCollectionSync("todos");
+      return result;
+    });
+  };
+  api.deleteTodo = function (id) {
+    return Promise.resolve(originalDeleteTodo(id)).then(function (result) {
+      queueSharedCollectionSync("todos");
+      return result;
+    });
+  };
+  api.setTodoGcalId = function (id, gcalId) {
+    return Promise.resolve(originalSetTodoGcalId(id, gcalId)).then(function (result) {
+      queueSharedCollectionSync("todos");
+      return result;
+    });
+  };
+  api.setTimetableCell = function (payload) {
+    return Promise.resolve(originalSetTimetableCell(payload)).then(function (result) {
+      queueSharedCollectionSync("timetable");
+      return result;
+    });
+  };
+  api.clearTimetable = function () {
+    return Promise.resolve(originalClearTimetable()).then(function (result) {
+      queueSharedCollectionSync("timetable");
       return result;
     });
   };
@@ -283,6 +340,11 @@
     return firebaseDb.collection("users").doc(uid);
   }
 
+  function getSharedCollectionDoc(name) {
+    if (!authUser) return null;
+    return getUserDoc(authUser.uid).collection("shared").doc(name);
+  }
+
   function ensureAuthOverlay() {
     if (authOverlayEl) return authOverlayEl;
     authOverlayEl = document.createElement("div");
@@ -399,6 +461,104 @@
     });
   };
 
+  function sanitizeTodoForCloud(todo) {
+    return {
+      id: Number(todo.id) || 0,
+      title: String(todo.title || ""),
+      deadline: String(todo.deadline || ""),
+      priority: String(todo.priority || "보통"),
+      category: String(todo.category || "기타"),
+      is_done: !!todo.is_done,
+      is_ai_generated: !!todo.is_ai_generated,
+      source_text: String(todo.source_text || ""),
+      created_at: String(todo.created_at || ""),
+      gcal_event_id: String(todo.gcal_event_id || "")
+    };
+  }
+
+  function sanitizeTimetableForCloud(item) {
+    return {
+      day_of_week: Number(item.day_of_week) || 0,
+      period: Number(item.period) || 0,
+      subject: String(item.subject || ""),
+      teacher: String(item.teacher || ""),
+      room: String(item.room || ""),
+      is_my_class: !!item.is_my_class
+    };
+  }
+
+  function refreshSharedPages() {
+    var tasks = [];
+    if (window.updateClassInfo) tasks.push(Promise.resolve(window.updateClassInfo()));
+    if (window.reloadTopNavigation) tasks.push(Promise.resolve(window.reloadTopNavigation()));
+    if (window.__pages && window.__pages.dashboard && window.__pages.dashboard.refresh) {
+      tasks.push(Promise.resolve(window.__pages.dashboard.refresh()));
+    }
+    if (window.__pages && window.__pages.todos && window.__pages.todos.refresh) {
+      tasks.push(Promise.resolve(window.__pages.todos.refresh()));
+    }
+    if (window.__pages && window.__pages.timetable && window.__pages.timetable.init) {
+      tasks.push(Promise.resolve(window.__pages.timetable.init()));
+    }
+    return Promise.all(tasks).catch(function () {});
+  }
+
+  window.syncCloudSharedNow = function () {
+    ensureFirebase();
+    if (!authUser || !authProfile || authProfile.active === false) {
+      return Promise.resolve(false);
+    }
+    return Promise.all([
+      api.getTodos(true).then(function (todos) {
+        return getSharedCollectionDoc("todos").set({
+          items: (todos || []).map(sanitizeTodoForCloud),
+          updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+          updatedBy: normalizeEmail(authUser.email)
+        }, { merge: true });
+      }),
+      api.getTimetable().then(function (items) {
+        return getSharedCollectionDoc("timetable").set({
+          items: (items || []).map(sanitizeTimetableForCloud),
+          updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+          updatedBy: normalizeEmail(authUser.email)
+        }, { merge: true });
+      })
+    ]).then(function () {
+      return true;
+    });
+  };
+
+  window.pullCloudSharedNow = function () {
+    ensureFirebase();
+    if (!authUser || !authProfile || authProfile.active === false) {
+      return Promise.resolve(false);
+    }
+    return Promise.all([
+      getSharedCollectionDoc("todos").get(),
+      getSharedCollectionDoc("timetable").get()
+    ]).then(function (snapshots) {
+      var todoSnap = snapshots[0];
+      var timetableSnap = snapshots[1];
+      var tasks = [];
+
+      if (todoSnap.exists) {
+        var todoData = todoSnap.data() || {};
+        tasks.push(api.replaceTodos(Array.isArray(todoData.items) ? todoData.items : []));
+      }
+
+      if (timetableSnap.exists) {
+        var timetableData = timetableSnap.data() || {};
+        tasks.push(api.replaceTimetable(Array.isArray(timetableData.items) ? timetableData.items : []));
+      }
+
+      return Promise.all(tasks).then(function () {
+        return refreshSharedPages().then(function () {
+          return tasks.length > 0;
+        });
+      });
+    });
+  };
+
   window.syncCloudSettingsNow = function () {
     ensureFirebase();
     if (!authUser || !authProfile || authProfile.active === false) {
@@ -422,6 +582,17 @@
       cloudSyncTimer = null;
       window.syncCloudSettingsNow().catch(function (error) {
         console.error("cloud sync failed", error);
+      });
+    }, 300);
+  }
+
+  function queueSharedCollectionSync(kind) {
+    if (!authUser || !authProfile || authProfile.active === false) return;
+    if (sharedSyncTimer) clearTimeout(sharedSyncTimer);
+    sharedSyncTimer = setTimeout(function () {
+      sharedSyncTimer = null;
+      window.syncCloudSharedNow().catch(function (error) {
+        console.error(kind + " cloud sync failed", error);
       });
     }, 300);
   }
@@ -573,6 +744,10 @@
       }
       return window.pullCloudSettingsNow().catch(function () {
         return false;
+      }).then(function () {
+        return window.pullCloudSharedNow().catch(function () {
+          return false;
+        });
       }).then(function () {
         closeAuthOverlay();
         return true;

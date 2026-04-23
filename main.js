@@ -366,6 +366,7 @@ ipcMain.handle('add-todo', (e, data) => db.addTodo(data));
 ipcMain.handle('update-todo', (e, id, data) => db.updateTodo(id, data));
 ipcMain.handle('toggle-todo', (e, id) => db.toggleTodo(id));
 ipcMain.handle('delete-todo', (e, id) => db.deleteTodo(id));
+ipcMain.handle('replace-todos', (e, items) => db.replaceTodos(items));
 ipcMain.handle('set-todo-gcal-id', (e, id, gcalId) => db.setTodoGcalId(id, gcalId));
 ipcMain.handle('get-todo-gcal-id', (e, id) => db.getTodoGcalId(id));
 
@@ -442,6 +443,7 @@ ipcMain.handle('delete-dday', (e, id) => db.deleteDday(id));
 ipcMain.handle('get-timetable', () => db.getTimetable());
 ipcMain.handle('set-timetable-cell', (e, data) => db.setTimetableCell(data));
 ipcMain.handle('clear-timetable', () => db.clearTimetable());
+ipcMain.handle('replace-timetable', (e, items) => db.replaceTimetable(items));
 
 ipcMain.handle('get-daily-memo', (e, date) => db.getDailyMemo(date));
 ipcMain.handle('set-daily-memo', (e, date, content) => db.setDailyMemo(date, content));

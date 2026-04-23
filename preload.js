@@ -80,6 +80,7 @@ contextBridge.exposeInMainWorld('api', {
   updateTodo: (id, d) => ipcRenderer.invoke('update-todo', id, d),
   toggleTodo: (id) => ipcRenderer.invoke('toggle-todo', id),
   deleteTodo: (id) => ipcRenderer.invoke('delete-todo', id),
+  replaceTodos: (items) => ipcRenderer.invoke('replace-todos', items),
   setTodoGcalId: (id, gcalId) => ipcRenderer.invoke('set-todo-gcal-id', id, gcalId),
   getTodoGcalId: (id) => ipcRenderer.invoke('get-todo-gcal-id', id),
 
@@ -98,6 +99,7 @@ contextBridge.exposeInMainWorld('api', {
   getTimetable: () => ipcRenderer.invoke('get-timetable'),
   setTimetableCell: (d) => ipcRenderer.invoke('set-timetable-cell', d),
   clearTimetable: () => ipcRenderer.invoke('clear-timetable'),
+  replaceTimetable: (items) => ipcRenderer.invoke('replace-timetable', items),
 
   // Daily memo
   getDailyMemo: (date) => ipcRenderer.invoke('get-daily-memo', date),
