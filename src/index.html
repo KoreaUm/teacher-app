@@ -83,6 +83,7 @@
     "class_timetable_subject_colors",
     "class_timetable_json",
     "class_timetable_file_name",
+    "custom_calendar_events",
     "gcal_client_id",
     "gcal_client_secret",
     "gcal_refresh_token",
@@ -371,6 +372,7 @@
       displayName: authProfile ? String(authProfile.displayName || "") : "",
       approved: authProfile ? authProfile.approved !== false : false,
       active: authProfile ? authProfile.active !== false : false,
+      deleted: authProfile ? authProfile.deleted === true : false,
       role: authProfile ? String(authProfile.role || "user") : "user",
       isAdmin: isAdminProfile(authProfile)
     };
@@ -396,11 +398,13 @@
           displayName: String(data.displayName || ""),
           approved: data.approved !== false,
           active: data.active !== false,
+          deleted: data.deleted === true,
           role: String(data.role || "user")
         });
       });
       users.sort(function (a, b) {
         if (a.role !== b.role) return a.role === "admin" ? -1 : 1;
+        if (a.deleted !== b.deleted) return a.deleted ? 1 : -1;
         if (a.active !== b.active) return a.active ? -1 : 1;
         return a.email.localeCompare(b.email, "ko");
       });
@@ -416,6 +420,29 @@
       return Promise.reject(new Error("관리자 본인은 비활성화할 수 없습니다."));
     }
     return getUserDoc(uid).set(patch || {}, { merge: true });
+  };
+
+  window.appAuthDeleteUser = function (uid) {
+    ensureFirebase();
+    if (!isAdminProfile(authProfile)) return Promise.reject(new Error("관리자만 계정을 삭제할 수 있습니다."));
+    if (!uid) return Promise.reject(new Error("사용자 정보가 올바르지 않습니다."));
+    if (uid === (authUser && authUser.uid)) {
+      return Promise.reject(new Error("관리자 본인 계정은 삭제할 수 없습니다."));
+    }
+
+    var userDoc = getUserDoc(uid);
+    var batch = firebaseDb.batch();
+    batch.delete(userDoc.collection("settings").doc("app"));
+    batch.delete(userDoc.collection("shared").doc("todos"));
+    batch.delete(userDoc.collection("shared").doc("timetable"));
+    batch.set(userDoc, {
+      active: false,
+      approved: false,
+      deleted: true,
+      deletedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+      deletedBy: normalizeEmail(authUser && authUser.email)
+    }, { merge: true });
+    return batch.commit();
   };
 
   window.pullCloudSettingsNow = function () {
@@ -738,6 +765,10 @@
     }
     return createOrUpdateUserProfile(user, "").then(function (profile) {
       authProfile = profile || {};
+      if (authProfile.deleted === true) {
+        renderAuthOverlay("blocked", "이 계정은 관리자에 의해 삭제되어 사용할 수 없습니다.", normalizeEmail(user.email));
+        return false;
+      }
       if (authProfile.active === false) {
         renderAuthOverlay("blocked", "", normalizeEmail(user.email));
         return false;
