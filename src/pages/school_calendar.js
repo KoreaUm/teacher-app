@@ -19,6 +19,25 @@ let events = {};
 let customEvents = [];
 let selectedDate = '';
 
+function normalizeCustomEvents(items) {
+  const seen = new Set();
+  const result = [];
+  for (const item of Array.isArray(items) ? items : []) {
+    if (!item || !item.date || !item.name) continue;
+    const normalized = {
+      id: String(item.id || `custom-${item.date}-${String(item.name || '').trim()}`),
+      date: String(item.date),
+      name: String(item.name).trim(),
+      color: String(item.color || '#3b82f6'),
+    };
+    const dedupeKey = `${normalized.date}__${normalized.name}__${normalized.color}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    result.push(normalized);
+  }
+  return result;
+}
+
 async function render(container) {
   container.innerHTML = `
     <div class="page-wrap">
@@ -400,18 +419,14 @@ async function loadCustomEvents() {
     const raw = await api.getSetting(CUSTOM_EVENT_KEY, '[]');
     const parsed = JSON.parse(raw || '[]');
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((item) => item && item.id && item.date && item.name).map((item) => ({
-      id: String(item.id),
-      date: String(item.date),
-      name: String(item.name),
-      color: String(item.color || '#3b82f6'),
-    }));
+    return normalizeCustomEvents(parsed);
   } catch (error) {
     return [];
   }
 }
 
 async function saveCustomEvents() {
+  customEvents = normalizeCustomEvents(customEvents);
   await api.setSetting(CUSTOM_EVENT_KEY, JSON.stringify(customEvents));
 }
 

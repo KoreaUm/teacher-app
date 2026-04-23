@@ -10,6 +10,13 @@ let todoOrder = [];
 let lastSortedTodoIds = [];
 let lastVisibleTodoIds = [];
 
+async function syncCloudIfPossible() {
+  if (!window.syncCloudNow) return;
+  try {
+    await window.syncCloudNow();
+  } catch (_) {}
+}
+
 function render(container) {
   container.innerHTML = `
     <div class="page-wrap">
@@ -50,6 +57,7 @@ async function init() {
   document.getElementById('todos-reset-order-btn').onclick = async () => {
     if (!confirm('사용자 순서를 지우고 마감일 기준 정렬로 되돌릴까요?')) return;
     await saveTodoOrder([]);
+    await syncCloudIfPossible();
     await refreshList();
   };
 
@@ -152,6 +160,7 @@ function renderTodoList(allTodos) {
   list.querySelectorAll('.todo-check').forEach((checkbox) => {
     checkbox.onchange = async () => {
       await api.toggleTodo(Number(checkbox.dataset.id));
+      await syncCloudIfPossible();
       await refreshList();
     };
   });
@@ -168,6 +177,7 @@ function renderTodoList(allTodos) {
     button.onclick = async () => {
       if (!confirm('이 할일을 삭제할까요?')) return;
       await api.deleteTodo(Number(button.dataset.id));
+      await syncCloudIfPossible();
       await refreshList();
     };
   });
@@ -292,6 +302,7 @@ async function moveTodo(id, direction) {
 
   [nextOrder[sourceOrderIndex], nextOrder[targetOrderIndex]] = [nextOrder[targetOrderIndex], nextOrder[sourceOrderIndex]];
   await saveTodoOrder(nextOrder);
+  await syncCloudIfPossible();
   await refreshList();
 }
 
@@ -402,6 +413,7 @@ function openEditModal(todo) {
         await api.updateTodo(todo.id, payload);
       }
 
+      await syncCloudIfPossible();
       closeModalHelper();
       await refreshList();
     };
@@ -410,6 +422,7 @@ function openEditModal(todo) {
       document.getElementById('todo-modal-delete').onclick = async () => {
         if (!confirm('이 할일을 삭제할까요?')) return;
         await api.deleteTodo(todo.id);
+        await syncCloudIfPossible();
         closeModalHelper();
         await refreshList();
       };

@@ -1865,21 +1865,42 @@ loadDashboardCustomEvents = async function () {
     const raw = await api.getSetting(CUSTOM_EVENT_KEY, '[]');
     const parsed = JSON.parse(raw || '[]');
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((item) => item && item.id && item.date && item.name).map((item) => ({
-      id: String(item.id),
-      date: String(item.date),
-      name: String(item.name),
-      color: String(item.color || '#3b82f6'),
-      source: 'custom',
-      is_holiday: false,
-    }));
+    const seen = new Set();
+    return parsed
+      .filter((item) => item && item.date && item.name)
+      .map((item) => ({
+        id: String(item.id || `custom-${item.date}-${String(item.name || '').trim()}`),
+        date: String(item.date),
+        name: String(item.name).trim(),
+        color: String(item.color || '#3b82f6'),
+        source: 'custom',
+        is_holiday: false,
+      }))
+      .filter((item) => {
+        const dedupeKey = `${item.date}__${item.name}__${item.color}`;
+        if (seen.has(dedupeKey)) return false;
+        seen.add(dedupeKey);
+        return true;
+      });
   } catch (error) {
     return [];
   }
 };
 
 saveDashboardCustomEvents = async function (events) {
-  await api.setSetting(CUSTOM_EVENT_KEY, JSON.stringify(events));
+  const seen = new Set();
+  const normalized = (Array.isArray(events) ? events : []).filter((item) => item && item.date && item.name).map((item) => ({
+    id: String(item.id || `custom-${item.date}-${String(item.name || '').trim()}`),
+    date: String(item.date),
+    name: String(item.name).trim(),
+    color: String(item.color || '#3b82f6'),
+  })).filter((item) => {
+    const dedupeKey = `${item.date}__${item.name}__${item.color}`;
+    if (seen.has(dedupeKey)) return false;
+    seen.add(dedupeKey);
+    return true;
+  });
+  await api.setSetting(CUSTOM_EVENT_KEY, JSON.stringify(normalized));
 };
 
 renderCalendar = function () {

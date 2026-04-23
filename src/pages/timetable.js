@@ -7,6 +7,13 @@ const MAX_PERIOD = 7;
 let timetableData = {};
 let selectedImage = null;
 
+async function syncCloudIfPossible() {
+  if (!window.syncCloudNow) return;
+  try {
+    await window.syncCloudNow();
+  } catch (_) {}
+}
+
 async function render(container) {
   container.innerHTML = `
     <div class="page-wrap">
@@ -104,6 +111,7 @@ function renderTable() {
 async function clearAll() {
   if (!confirm('시간표를 초기화할까요?')) return;
   await api.clearTimetable();
+  await syncCloudIfPossible();
   timetableData = {};
   renderTable();
   setStatus('시간표를 초기화했습니다.', 'success');
@@ -139,6 +147,7 @@ async function persistTimetable(cells) {
     await api.setTimetableCell(cell);
     nextData[`${cell.day_of_week}_${cell.period}`] = cell;
   }
+  await syncCloudIfPossible();
   timetableData = nextData;
   renderTable();
 }
