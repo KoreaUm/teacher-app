@@ -1,6 +1,6 @@
 {
   "name": "teacher-app",
-  "version": "2.0.18",
+  "version": "2.0.19",
   "description": "교사 업무 관리 Electron 앱",
   "author": "충상",
   "main": "main.js",
