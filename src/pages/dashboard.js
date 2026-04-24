@@ -1152,8 +1152,7 @@ async function refreshTimetable(){
       const number=extractTeacherTimetableNumber(cell);
       const palette=numberSettings.enabled&&number?buildTeacherNumberPalette(number,numberSettings.overrides):null;
       const style=palette?`background:${palette[0]};color:${palette[1]};border-left:4px solid ${palette[2]};cursor:pointer;`:'';
-      const numberBadge=numberSettings.enabled&&number?`<span style="display:block;margin-top:3px;font-size:10px;font-weight:800;color:${palette[1]};opacity:.78">${escapeHtml(number)}</span>`:'';
-      html+=`<div class="tt-cell ${cls}" data-number="${escapeHtml(number)}" title="${escapeHtml(title||subj||'')}" style="${style}">${escapeHtml(display)}${numberBadge}</div>`;
+      html+=`<div class="tt-cell ${cls}" data-number="${escapeHtml(number)}" title="${escapeHtml(title||subj||'')}" style="${style}">${escapeHtml(display)}</div>`;
     }
   }
   html+='</div>';
