@@ -1150,7 +1150,10 @@
         renderAuthOverlay("blocked", "", normalizeEmail(user.email));
         return false;
       }
-      return claimLoginSession(user).then(function (sessionOk) {
+      return claimLoginSession(user).catch(function (error) {
+        console.error("login session claim failed", error);
+        return true;
+      }).then(function (sessionOk) {
         if (!sessionOk) return false;
         return window.pullCloudSettingsNow().catch(function () {
           return false;
@@ -1165,7 +1168,7 @@
           return true;
         });
       }).catch(function (error) {
-        console.error("login session claim failed", error);
+        console.error("login failed", error);
         renderAuthOverlay("form", "로그인 세션을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.", normalizeEmail(user.email));
         return false;
       });
