@@ -96,7 +96,7 @@
 
   api.setSetting = function (key, value) {
     return Promise.resolve(originalSetSetting(key, value)).then(function (result) {
-      if (!isApplyingRemoteData()) queueCloudSync(key);
+      if (!isApplyingRemoteData()) pushCloudSettingNow(key, value);
       return result;
     });
   };
@@ -110,43 +110,43 @@
 
   api.addTodo = function (payload) {
     return Promise.resolve(originalAddTodo(payload)).then(function (result) {
-      if (!isApplyingRemoteData()) queueSharedCollectionSync("todos");
+      if (!isApplyingRemoteData()) pushCloudSharedNow("todos");
       return result;
     });
   };
   api.updateTodo = function (id, payload) {
     return Promise.resolve(originalUpdateTodo(id, payload)).then(function (result) {
-      if (!isApplyingRemoteData()) queueSharedCollectionSync("todos");
+      if (!isApplyingRemoteData()) pushCloudSharedNow("todos");
       return result;
     });
   };
   api.toggleTodo = function (id) {
     return Promise.resolve(originalToggleTodo(id)).then(function (result) {
-      if (!isApplyingRemoteData()) queueSharedCollectionSync("todos");
+      if (!isApplyingRemoteData()) pushCloudSharedNow("todos");
       return result;
     });
   };
   api.deleteTodo = function (id) {
     return Promise.resolve(originalDeleteTodo(id)).then(function (result) {
-      if (!isApplyingRemoteData()) queueSharedCollectionSync("todos");
+      if (!isApplyingRemoteData()) pushCloudSharedNow("todos");
       return result;
     });
   };
   api.setTodoGcalId = function (id, gcalId) {
     return Promise.resolve(originalSetTodoGcalId(id, gcalId)).then(function (result) {
-      if (!isApplyingRemoteData()) queueSharedCollectionSync("todos");
+      if (!isApplyingRemoteData()) pushCloudSharedNow("todos");
       return result;
     });
   };
   api.setTimetableCell = function (payload) {
     return Promise.resolve(originalSetTimetableCell(payload)).then(function (result) {
-      if (!isApplyingRemoteData()) queueSharedCollectionSync("timetable");
+      if (!isApplyingRemoteData()) pushCloudSharedNow("timetable");
       return result;
     });
   };
   api.clearTimetable = function () {
     return Promise.resolve(originalClearTimetable()).then(function (result) {
-      if (!isApplyingRemoteData()) queueSharedCollectionSync("timetable");
+      if (!isApplyingRemoteData()) pushCloudSharedNow("timetable");
       return result;
     });
   };
@@ -680,6 +680,31 @@
     });
   };
 
+  function pushCloudSettingNow(key, value) {
+    if (!canSyncKey(key)) return Promise.resolve(false);
+    if (!authUser || !authProfile || authProfile.active === false) return Promise.resolve(false);
+
+    var payload = {};
+    payload[key] = String(value);
+    payload.updatedAt = window.firebase.firestore.FieldValue.serverTimestamp();
+    payload.updatedBy = normalizeEmail(authUser.email);
+
+    return getUserDoc(authUser.uid).collection("settings").doc("app")
+      .set(payload, { merge: true })
+      .catch(function (error) {
+        console.error("cloud setting push failed", key, error);
+        return false;
+      });
+  }
+
+  function pushCloudSharedNow(kind) {
+    if (!authUser || !authProfile || authProfile.active === false) return Promise.resolve(false);
+    return window.syncCloudSharedNow().catch(function (error) {
+      console.error((kind || "shared") + " cloud push failed", error);
+      return false;
+    });
+  }
+
   window.syncCloudNow = function () {
     return Promise.all([
       window.syncCloudSettingsNow(),
@@ -745,24 +770,16 @@
   function queueCloudSync(key) {
     if (!canSyncKey(key)) return;
     if (!authUser || !authProfile || authProfile.active === false) return;
-    if (cloudSyncTimer) clearTimeout(cloudSyncTimer);
-    cloudSyncTimer = setTimeout(function () {
-      cloudSyncTimer = null;
-      window.syncCloudSettingsNow().catch(function (error) {
-        console.error("cloud sync failed", error);
-      });
-    }, 300);
+    api.getSetting(key, "").then(function (value) {
+      return pushCloudSettingNow(key, value);
+    }).catch(function (error) {
+      console.error("cloud sync failed", error);
+    });
   }
 
   function queueSharedCollectionSync(kind) {
     if (!authUser || !authProfile || authProfile.active === false) return;
-    if (sharedSyncTimer) clearTimeout(sharedSyncTimer);
-    sharedSyncTimer = setTimeout(function () {
-      sharedSyncTimer = null;
-      window.syncCloudSharedNow().catch(function (error) {
-        console.error(kind + " cloud sync failed", error);
-      });
-    }, 300);
+    pushCloudSharedNow(kind);
   }
 
   function renderAuthOverlay(view, message, emailValue) {
