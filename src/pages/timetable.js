@@ -6,6 +6,7 @@ const MAX_PERIOD = 7;
 
 let timetableData = {};
 let selectedImage = null;
+let autosaveTimer = null;
 
 async function syncCloudIfPossible() {
   if (!window.syncCloudNow) return;
@@ -77,6 +78,7 @@ function bindEvents() {
   document.getElementById('tt-ai-run').onclick = runTimetableAI;
   document.getElementById('tt-image-pick').onclick = () => document.getElementById('tt-image-input').click();
   document.getElementById('tt-image-input').onchange = onImageSelected;
+  document.getElementById('tt-body')?.addEventListener('input', scheduleAutosave);
 }
 
 function renderTable() {
@@ -110,8 +112,7 @@ function renderTable() {
 
 async function clearAll() {
   if (!confirm('시간표를 초기화할까요?')) return;
-  await api.clearTimetable();
-  await syncCloudIfPossible();
+  await api.replaceTimetable([]);
   timetableData = {};
   renderTable();
   setStatus('시간표를 초기화했습니다.', 'success');
@@ -140,16 +141,23 @@ function readTableData() {
   return next;
 }
 
-async function persistTimetable(cells) {
-  await api.clearTimetable();
+async function persistTimetable(cells, shouldRender = true) {
+  await api.replaceTimetable(cells);
   const nextData = {};
   for (const cell of cells) {
-    await api.setTimetableCell(cell);
     nextData[`${cell.day_of_week}_${cell.period}`] = cell;
   }
-  await syncCloudIfPossible();
   timetableData = nextData;
-  renderTable();
+  if (shouldRender) renderTable();
+}
+
+function scheduleAutosave() {
+  if (autosaveTimer) clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(async () => {
+    autosaveTimer = null;
+    await persistTimetable(readTableData(), false);
+    setStatus('시간표를 자동 저장했습니다.', 'success');
+  }, 500);
 }
 
 async function onImageSelected(event) {

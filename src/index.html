@@ -71,6 +71,9 @@
   var cloudSyncTimer = null;
   var sharedSyncTimer = null;
   var cloudSubscriptions = [];
+  var sessionUnsubscribe = null;
+  var sessionHeartbeatTimer = null;
+  var sessionTakeoverInProgress = false;
   var remoteApplyDepth = 0;
   var originalSetSetting = api.setSetting.bind(api);
   var CLOUD_SYNC_KEYS = [
@@ -107,6 +110,7 @@
   var originalSetTodoGcalId = api.setTodoGcalId.bind(api);
   var originalSetTimetableCell = api.setTimetableCell.bind(api);
   var originalClearTimetable = api.clearTimetable.bind(api);
+  var originalReplaceTimetable = api.replaceTimetable ? api.replaceTimetable.bind(api) : null;
 
   api.addTodo = function (payload) {
     return Promise.resolve(originalAddTodo(payload)).then(function (result) {
@@ -150,6 +154,14 @@
       return result;
     });
   };
+  if (originalReplaceTimetable) {
+    api.replaceTimetable = function (items) {
+      return Promise.resolve(originalReplaceTimetable(items)).then(function (result) {
+        if (!isApplyingRemoteData()) pushCloudSharedNow("timetable");
+        return result;
+      });
+    };
+  }
 
   var MENU_PAGE_OPTIONS = [
     { key: "students", label: "학생 명단" },
@@ -361,6 +373,26 @@
     return getUserDoc(authUser.uid).collection("shared").doc(name);
   }
 
+  function getLocalDeviceId() {
+    var key = "teacher_app_device_id";
+    var saved = "";
+    try {
+      saved = localStorage.getItem(key) || "";
+      if (!saved) {
+        saved = "device-" + Date.now() + "-" + Math.random().toString(36).slice(2);
+        localStorage.setItem(key, saved);
+      }
+    } catch (_) {
+      saved = saved || ("device-" + Date.now() + "-" + Math.random().toString(36).slice(2));
+    }
+    return saved;
+  }
+
+  function getSessionDoc(uid) {
+    ensureFirebase();
+    return getUserDoc(uid).collection("session").doc("current");
+  }
+
   function clearCloudSubscriptions() {
     cloudSubscriptions.forEach(function (unsubscribe) {
       try {
@@ -368,6 +400,189 @@
       } catch (_) {}
     });
     cloudSubscriptions = [];
+  }
+
+  function clearSessionWatch() {
+    if (sessionUnsubscribe) {
+      try {
+        sessionUnsubscribe();
+      } catch (_) {}
+    }
+    sessionUnsubscribe = null;
+    if (sessionHeartbeatTimer) {
+      clearInterval(sessionHeartbeatTimer);
+      sessionHeartbeatTimer = null;
+    }
+    sessionTakeoverInProgress = false;
+  }
+
+  function getSessionTime(data, key) {
+    var value = data ? data[key] : null;
+    if (!value) return 0;
+    if (typeof value.toMillis === "function") return value.toMillis();
+    if (typeof value.seconds === "number") return value.seconds * 1000;
+    if (typeof value === "number") return value;
+    return 0;
+  }
+
+  function isSessionStale(data) {
+    var lastSeen = getSessionTime(data, "lastSeenAt") || getSessionTime(data, "updatedAt");
+    if (!lastSeen) return false;
+    return Date.now() - lastSeen > 5 * 60 * 1000;
+  }
+
+  function writeActiveSession(user, extra) {
+    var payload = Object.assign({
+      deviceId: getLocalDeviceId(),
+      email: normalizeEmail(user.email),
+      displayName: user.displayName || "",
+      status: "active",
+      updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+      lastSeenAt: window.firebase.firestore.FieldValue.serverTimestamp()
+    }, extra || {});
+    return getSessionDoc(user.uid).set(payload, { merge: true });
+  }
+
+  function waitForPreviousDeviceSync(uid, previousDeviceId) {
+    if (!previousDeviceId) return Promise.resolve();
+    return new Promise(function (resolve) {
+      var settled = false;
+      var unsubscribe = null;
+      var timer = setTimeout(function () {
+        if (settled) return;
+        settled = true;
+        if (unsubscribe) unsubscribe();
+        resolve();
+      }, 4000);
+      unsubscribe = getSessionDoc(uid).onSnapshot(function (snap) {
+        var data = snap.exists ? (snap.data() || {}) : {};
+        if (data.lastHandoffFrom === previousDeviceId) {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          if (unsubscribe) unsubscribe();
+          resolve();
+        }
+      }, function () {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+  }
+
+  function claimLoginSession(user) {
+    var deviceId = getLocalDeviceId();
+    return getSessionDoc(user.uid).get().then(function (snap) {
+      var existing = snap.exists ? (snap.data() || {}) : {};
+      var existingDeviceId = String(existing.deviceId || "");
+      var hasOtherActiveSession = existingDeviceId && existingDeviceId !== deviceId && existing.status === "active" && !isSessionStale(existing);
+      if (!hasOtherActiveSession) {
+        return writeActiveSession(user).then(function () {
+          return true;
+        });
+      }
+
+      var ok = window.confirm(
+        "다른 컴퓨터에서 이미 로그인 중입니다.\n\n" +
+        "기존 컴퓨터의 접속을 끊고 이 컴퓨터에서 로그인할까요?\n" +
+        "예를 누르면 기존 컴퓨터는 마지막 변경사항을 클라우드에 저장한 뒤 로그아웃됩니다."
+      );
+      if (!ok) {
+        return firebaseAuth.signOut().then(function () {
+          renderAuthOverlay("form", "기존 접속을 유지했습니다. 이 컴퓨터에서는 로그인하지 않았습니다.", normalizeEmail(user.email));
+          return false;
+        });
+      }
+
+      return writeActiveSession(user, {
+        previousDeviceId: existingDeviceId,
+        takeoverRequestedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+      }).then(function () {
+        return waitForPreviousDeviceSync(user.uid, existingDeviceId);
+      }).then(function () {
+        return true;
+      });
+    });
+  }
+
+  function acknowledgeRemoteTakeover(user, previousDeviceId) {
+    if (!user || !previousDeviceId) return Promise.resolve();
+    return getSessionDoc(user.uid).set({
+      lastHandoffFrom: previousDeviceId,
+      lastHandoffAt: window.firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  }
+
+  function handleRemoteSessionTakeover(data) {
+    if (sessionTakeoverInProgress || !authUser) return;
+    sessionTakeoverInProgress = true;
+    var user = authUser;
+    var deviceId = getLocalDeviceId();
+    Promise.resolve(window.syncCloudNow ? window.syncCloudNow() : false)
+      .catch(function (error) {
+        console.error("session handoff sync failed", error);
+      })
+      .then(function () {
+        return acknowledgeRemoteTakeover(user, deviceId);
+      })
+      .catch(function (error) {
+        console.error("session handoff acknowledge failed", error);
+      })
+      .then(function () {
+        return firebaseAuth.signOut();
+      });
+  }
+
+  function startSessionWatch(user) {
+    clearSessionWatch();
+    if (!user) return;
+    var deviceId = getLocalDeviceId();
+    sessionUnsubscribe = getSessionDoc(user.uid).onSnapshot(function (snap) {
+      if (!snap.exists) return;
+      var data = snap.data() || {};
+      if (data.status === "active" && data.deviceId && data.deviceId !== deviceId) {
+        handleRemoteSessionTakeover(data);
+      }
+    }, function (error) {
+      console.error("session watch failed", error);
+    });
+
+    sessionHeartbeatTimer = setInterval(function () {
+      if (!authUser || authUser.uid !== user.uid) return;
+      getSessionDoc(user.uid).get().then(function (snap) {
+        var data = snap.exists ? (snap.data() || {}) : {};
+        if (data.deviceId !== deviceId || data.status !== "active") return;
+        return getSessionDoc(user.uid).set({
+          lastSeenAt: window.firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+      }).catch(function (error) {
+        console.error("session heartbeat failed", error);
+      });
+    }, 30000);
+  }
+
+  function releaseCurrentSession() {
+    if (!authUser) return Promise.resolve();
+    var user = authUser;
+    var deviceId = getLocalDeviceId();
+    return Promise.resolve(window.syncCloudNow ? window.syncCloudNow() : false)
+      .catch(function (error) {
+        console.error("logout sync failed", error);
+      })
+      .then(function () {
+        return getSessionDoc(user.uid).get();
+      })
+      .then(function (snap) {
+        var data = snap.exists ? (snap.data() || {}) : {};
+        if (data.deviceId !== deviceId) return;
+        return getSessionDoc(user.uid).set({
+          status: "signed_out",
+          signedOutAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+          updatedAt: window.firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+      });
   }
 
   function ensureAuthOverlay() {
@@ -406,7 +621,9 @@
 
   window.appAuthLogout = function () {
     ensureFirebase();
-    return firebaseAuth.signOut();
+    return releaseCurrentSession().finally(function () {
+      return firebaseAuth.signOut();
+    });
   };
 
   window.appAuthListUsers = function () {
@@ -877,7 +1094,7 @@
     var logoutButton = document.getElementById("auth-logout-btn");
     if (logoutButton) {
       logoutButton.addEventListener("click", function () {
-        firebaseAuth.signOut();
+        window.appAuthLogout();
       });
     }
   }
@@ -918,6 +1135,7 @@
     authUser = user || null;
     if (!user) {
       clearCloudSubscriptions();
+      clearSessionWatch();
       authProfile = null;
       renderAuthOverlay("form", "", "");
       return Promise.resolve(false);
@@ -932,16 +1150,24 @@
         renderAuthOverlay("blocked", "", normalizeEmail(user.email));
         return false;
       }
-      return window.pullCloudSettingsNow().catch(function () {
-        return false;
-      }).then(function () {
-        return window.pullCloudSharedNow().catch(function () {
+      return claimLoginSession(user).then(function (sessionOk) {
+        if (!sessionOk) return false;
+        return window.pullCloudSettingsNow().catch(function () {
           return false;
+        }).then(function () {
+          return window.pullCloudSharedNow().catch(function () {
+            return false;
+          });
+        }).then(function () {
+          startCloudSubscriptions();
+          startSessionWatch(user);
+          closeAuthOverlay();
+          return true;
         });
-      }).then(function () {
-        startCloudSubscriptions();
-        closeAuthOverlay();
-        return true;
+      }).catch(function (error) {
+        console.error("login session claim failed", error);
+        renderAuthOverlay("form", "로그인 세션을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.", normalizeEmail(user.email));
+        return false;
       });
     });
   }

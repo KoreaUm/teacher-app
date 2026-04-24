@@ -47,6 +47,8 @@ let schoolResults = [];
 let menuConfigState = cloneMenuGroups(DEFAULT_MENU_GROUPS);
 let shortcutState = cloneShortcuts(DEFAULT_SHORTCUTS);
 let subjectColorState = {};
+let menuAutosaveTimer = null;
+let shortcutAutosaveTimer = null;
 
 async function render(container) {
   const settings = await api.getAllSettings();
@@ -297,6 +299,34 @@ async function render(container) {
 }
 
 async function init() {
+  const autosaveTimers = {};
+  const autosaveSetting = (id, key, options = {}) => {
+    const element = document.getElementById(id);
+    if (!element) return;
+    const delay = options.delay || 500;
+    const eventName = options.event || (element.tagName === 'SELECT' ? 'change' : 'input');
+    element.addEventListener(eventName, () => {
+      if (autosaveTimers[key]) clearTimeout(autosaveTimers[key]);
+      autosaveTimers[key] = setTimeout(async () => {
+        const value = options.read ? options.read(element) : element.value.trim();
+        await api.setSetting(key, value);
+        if (options.after) await options.after();
+      }, delay);
+    });
+  };
+
+  autosaveSetting('sy', 'class_year', { after: () => window.updateClassInfo?.() });
+  autosaveSetting('sn', 'class_num', { after: () => window.updateClassInfo?.() });
+  autosaveSetting('st', 'teacher_name', { after: () => window.updateClassInfo?.() });
+  autosaveSetting('sr', 'weather_region');
+  autosaveSetting('se', 'edu_office_code');
+  autosaveSetting('ss', 'school_code');
+  autosaveSetting('sp', 'ai_provider', { event: 'change', read: (element) => element.value });
+  autosaveSetting('sk', 'ai_api_key');
+  autosaveSetting('sm', 'ai_model', { event: 'change', read: (element) => element.value });
+  autosaveSetting('gcal-cid', 'gcal_client_id');
+  autosaveSetting('gcal-csec', 'gcal_client_secret');
+
   document.getElementById('cloud-pull-btn')?.addEventListener('click', async () => {
     if (!window.pullCloudNow) return;
     const ok = await window.pullCloudNow();
@@ -339,11 +369,13 @@ async function init() {
       items: [],
     });
     renderMenuConfigEditor();
+    scheduleMenuAutosave();
   };
 
   document.getElementById('menu-reset-default').onclick = () => {
     menuConfigState = cloneMenuGroups(DEFAULT_MENU_GROUPS);
     renderMenuConfigEditor();
+    scheduleMenuAutosave();
     toast('\uAE30\uBCF8 \uBA54\uB274 \uAD6C\uC131\uC744 \uBD88\uB7EC\uC654\uC2B5\uB2C8\uB2E4.', 'success');
   };
 
@@ -382,6 +414,8 @@ async function init() {
       status.textContent = `${file.name} · ${result.count}칸 반영됨`;
     }
     const refreshed = await api.getAllSettings();
+    await api.setSetting('class_timetable_json', refreshed.class_timetable_json || '[]');
+    await api.setSetting('class_timetable_file_name', refreshed.class_timetable_file_name || file.name);
     subjectColorState = parseSubjectColors(refreshed.class_timetable_subject_colors, parseClassTimetableSubjects(refreshed.class_timetable_json));
     renderSubjectColorEditor();
     if (window.__pages?.dashboard?.refresh) await window.__pages.dashboard.refresh();
@@ -393,6 +427,7 @@ async function init() {
     const currentSubjects = Array.from(document.querySelectorAll('.subject-color-input')).map((input) => input.dataset.subject).filter(Boolean);
     subjectColorState = buildDefaultSubjectColors(currentSubjects);
     renderSubjectColorEditor();
+    api.setSetting('class_timetable_subject_colors', JSON.stringify(subjectColorState));
   });
 
   document.getElementById('subject-color-save')?.addEventListener('click', async () => {
@@ -415,11 +450,13 @@ async function init() {
   document.getElementById('shortcut-add-url').onclick = () => {
     shortcutState.push({ type: 'url', label: '새 웹사이트', value: 'https://' });
     renderShortcutEditor();
+    scheduleShortcutAutosave();
   };
 
   document.getElementById('shortcut-add-folder').onclick = () => {
     shortcutState.push({ type: 'path', label: '새 폴더', value: '' });
     renderShortcutEditor();
+    scheduleShortcutAutosave();
   };
 
   document.getElementById('shortcut-save').onclick = saveShortcuts;
@@ -581,6 +618,7 @@ function bindShortcutEvents() {
   document.querySelectorAll('.shortcut-label').forEach((input) => {
     input.oninput = (event) => {
       shortcutState[Number(event.target.dataset.index)].label = event.target.value;
+      scheduleShortcutAutosave();
     };
   });
 
@@ -588,27 +626,36 @@ function bindShortcutEvents() {
     select.onchange = (event) => {
       shortcutState[Number(event.target.dataset.index)].type = event.target.value;
       renderShortcutEditor();
+      scheduleShortcutAutosave();
     };
   });
 
   document.querySelectorAll('.shortcut-value').forEach((input) => {
     input.oninput = (event) => {
       shortcutState[Number(event.target.dataset.index)].value = event.target.value;
+      scheduleShortcutAutosave();
     };
   });
 
   document.querySelectorAll('.shortcut-up').forEach((button) => {
-    button.onclick = () => moveShortcutItem(Number(button.dataset.index), -1);
+    button.onclick = () => {
+      moveShortcutItem(Number(button.dataset.index), -1);
+      scheduleShortcutAutosave();
+    };
   });
 
   document.querySelectorAll('.shortcut-down').forEach((button) => {
-    button.onclick = () => moveShortcutItem(Number(button.dataset.index), 1);
+    button.onclick = () => {
+      moveShortcutItem(Number(button.dataset.index), 1);
+      scheduleShortcutAutosave();
+    };
   });
 
   document.querySelectorAll('.shortcut-remove').forEach((button) => {
     button.onclick = () => {
       shortcutState.splice(Number(button.dataset.index), 1);
       renderShortcutEditor();
+      scheduleShortcutAutosave();
     };
   });
 }
@@ -623,20 +670,39 @@ async function saveShortcuts() {
   renderShortcutEditor();
 }
 
+function scheduleShortcutAutosave() {
+  if (shortcutAutosaveTimer) clearTimeout(shortcutAutosaveTimer);
+  shortcutAutosaveTimer = setTimeout(async () => {
+    shortcutAutosaveTimer = null;
+    const cleaned = sanitizeShortcuts(shortcutState);
+    shortcutState = cleaned;
+    await api.setSetting('quick_links_config', JSON.stringify(cleaned));
+    if (window.__pages?.dashboard?.refresh) await window.__pages.dashboard.refresh();
+    if (window.refreshShortcuts) await window.refreshShortcuts();
+  }, 500);
+}
+
 function bindMenuConfigEvents() {
   document.querySelectorAll('.menu-group-label').forEach((input) => {
     input.addEventListener('input', (event) => {
       const groupIndex = Number(event.target.dataset.groupIndex);
       menuConfigState[groupIndex].label = event.target.value;
+      scheduleMenuAutosave();
     });
   });
 
   document.querySelectorAll('.menu-group-up').forEach((button) => {
-    button.onclick = () => moveArrayItem(menuConfigState, Number(button.dataset.groupIndex), -1);
+    button.onclick = () => {
+      moveArrayItem(menuConfigState, Number(button.dataset.groupIndex), -1);
+      scheduleMenuAutosave();
+    };
   });
 
   document.querySelectorAll('.menu-group-down').forEach((button) => {
-    button.onclick = () => moveArrayItem(menuConfigState, Number(button.dataset.groupIndex), 1);
+    button.onclick = () => {
+      moveArrayItem(menuConfigState, Number(button.dataset.groupIndex), 1);
+      scheduleMenuAutosave();
+    };
   });
 
   document.querySelectorAll('.menu-group-remove').forEach((button) => {
@@ -645,6 +711,7 @@ function bindMenuConfigEvents() {
       if (menuConfigState.length === 1) return;
       menuConfigState.splice(index, 1);
       renderMenuConfigEditor();
+      scheduleMenuAutosave();
     };
   });
 
@@ -652,6 +719,7 @@ function bindMenuConfigEvents() {
     button.onclick = () => {
       const groupIndex = Number(button.dataset.groupIndex);
       moveArrayItem(menuConfigState[groupIndex].items, Number(button.dataset.itemIndex), -1);
+      scheduleMenuAutosave();
     };
   });
 
@@ -659,6 +727,7 @@ function bindMenuConfigEvents() {
     button.onclick = () => {
       const groupIndex = Number(button.dataset.groupIndex);
       moveArrayItem(menuConfigState[groupIndex].items, Number(button.dataset.itemIndex), 1);
+      scheduleMenuAutosave();
     };
   });
 
@@ -671,6 +740,7 @@ function bindMenuConfigEvents() {
         menuConfigState.splice(groupIndex, 1);
       }
       renderMenuConfigEditor();
+      scheduleMenuAutosave();
     };
   });
 
@@ -688,6 +758,7 @@ function bindMenuConfigEvents() {
         menuConfigState[groupIndex].items.push(value);
       }
       renderMenuConfigEditor();
+      scheduleMenuAutosave();
     };
   });
 }
@@ -699,6 +770,17 @@ async function saveMenuConfig() {
   if (window.reloadTopNavigation) await window.reloadTopNavigation();
   toast('\uC0C1\uB2E8 \uBA54\uB274 \uAD6C\uC131\uC774 \uC800\uC7A5\uB418\uC5C8\uC2B5\uB2C8\uB2E4.', 'success');
   renderMenuConfigEditor();
+}
+
+function scheduleMenuAutosave() {
+  if (menuAutosaveTimer) clearTimeout(menuAutosaveTimer);
+  menuAutosaveTimer = setTimeout(async () => {
+    menuAutosaveTimer = null;
+    const cleaned = sanitizeMenuConfig(menuConfigState);
+    menuConfigState = cleaned;
+    await api.setSetting('menu_groups_config', JSON.stringify(cleaned));
+    if (window.reloadTopNavigation) await window.reloadTopNavigation();
+  }, 500);
 }
 
 function sanitizeMenuConfig(groups) {
@@ -852,6 +934,8 @@ function applySelectedSchool() {
   if (!item) return;
   document.getElementById('se').value = item.eduCode || '';
   document.getElementById('ss').value = item.schoolCode || '';
+  api.setSetting('edu_office_code', item.eduCode || '');
+  api.setSetting('school_code', item.schoolCode || '');
   toast(`${item.schoolName} \uCF54\uB4DC\uAC00 \uC785\uB825\uB418\uC5C8\uC2B5\uB2C8\uB2E4.`, 'success', 1800);
 }
 
@@ -928,6 +1012,7 @@ function renderSubjectColorEditor() {
   root.querySelectorAll('.subject-color-input').forEach((input) => {
     input.oninput = (event) => {
       subjectColorState[event.target.dataset.subject] = event.target.value;
+      api.setSetting('class_timetable_subject_colors', JSON.stringify(subjectColorState));
       renderSubjectColorEditor();
     };
   });

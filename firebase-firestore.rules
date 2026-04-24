@@ -36,5 +36,9 @@ service cloud.firestore {
     match /users/{userId}/shared/{docId} {
       allow read, write: if isSelf(userId) || isAdmin();
     }
+
+    match /users/{userId}/session/{docId} {
+      allow read, write: if isSelf(userId) || isAdmin();
+    }
   }
 }
