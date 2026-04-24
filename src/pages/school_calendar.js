@@ -19,6 +19,13 @@ let events = {};
 let customEvents = [];
 let selectedDate = '';
 
+async function syncCloudIfPossible() {
+  if (!window.syncCloudNow) return;
+  try {
+    await window.syncCloudNow();
+  } catch (_) {}
+}
+
 function normalizeCustomEvents(items) {
   const seen = new Set();
   const result = [];
@@ -36,6 +43,24 @@ function normalizeCustomEvents(items) {
     result.push(normalized);
   }
   return result;
+}
+
+function dedupeDayEvents() {
+  for (const dateKey of Object.keys(events)) {
+    const seen = new Set();
+    events[dateKey] = (events[dateKey] || []).filter((event) => {
+      const key = [
+        event.source || '',
+        event.date || dateKey,
+        String(event.name || '').trim(),
+        event.color || '',
+        event.is_holiday ? 'holiday' : 'normal'
+      ].join('__');
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
 }
 
 async function render(container) {
@@ -153,6 +178,7 @@ async function loadSchoolEvents() {
     (events[normalized.date] = events[normalized.date] || []).push(normalized);
   }
 
+  dedupeDayEvents();
   for (const dateKey of Object.keys(events)) {
     events[dateKey].sort((a, b) => {
       if (a.source === b.source) return String(a.name).localeCompare(String(b.name), 'ko');
@@ -428,6 +454,7 @@ async function loadCustomEvents() {
 async function saveCustomEvents() {
   customEvents = normalizeCustomEvents(customEvents);
   await api.setSetting(CUSTOM_EVENT_KEY, JSON.stringify(customEvents));
+  await syncCloudIfPossible();
 }
 
 function formatDateKey(inputYear, inputMonth, inputDay) {

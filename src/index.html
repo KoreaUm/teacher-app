@@ -524,12 +524,17 @@
         });
       }, Promise.resolve());
     }).then(function () {
+      if (payload.dashboard_layout_v4 !== undefined) {
+        localStorage.setItem("dashboard_layout_v4", String(payload.dashboard_layout_v4 || ""));
+        localStorage.setItem("dashLayout2", String(payload.dashboard_layout_v4 || ""));
+      }
       var tasks = [];
       if (window.reloadTopNavigation) tasks.push(Promise.resolve(window.reloadTopNavigation()));
       if (window.updateClassInfo) tasks.push(Promise.resolve(window.updateClassInfo()));
       if (window.__pages && window.__pages.dashboard && window.__pages.dashboard.refresh) {
         tasks.push(Promise.resolve(window.__pages.dashboard.refresh()));
       }
+      tasks.push(refreshCurrentPage());
       return Promise.all(tasks).then(function () {
         return true;
       });
@@ -576,6 +581,17 @@
       tasks.push(Promise.resolve(window.__pages.timetable.init()));
     }
     return Promise.all(tasks).catch(function () {});
+  }
+
+  function refreshCurrentPage() {
+    if (!currentPage || !window.navigateTo) return Promise.resolve();
+    if (currentPage === "dashboard") {
+      if (window.__pages && window.__pages.dashboard && window.__pages.dashboard.refresh) {
+        return Promise.resolve(window.__pages.dashboard.refresh()).catch(function () {});
+      }
+      return Promise.resolve();
+    }
+    return Promise.resolve(window.navigateTo(currentPage)).catch(function () {});
   }
 
   window.syncCloudSharedNow = function () {
@@ -642,6 +658,8 @@
       return Promise.all(tasks);
     }).then(function () {
       return refreshSharedPages().then(function () {
+        return refreshCurrentPage();
+      }).then(function () {
         return tasks.length > 0;
       });
     });
@@ -688,6 +706,7 @@
     cloudSubscriptions.push(
       getUserDoc(authUser.uid).collection("settings").doc("app").onSnapshot(function (snap) {
         if (!snap.exists) return;
+        if (snap.metadata && snap.metadata.hasPendingWrites) return;
         applyCloudSettingsPayload(snap.data() || {}).catch(function (error) {
           console.error("cloud settings subscribe failed", error);
         });
@@ -699,6 +718,7 @@
     cloudSubscriptions.push(
       getSharedCollectionDoc("todos").onSnapshot(function (snap) {
         if (!snap.exists) return;
+        if (snap.metadata && snap.metadata.hasPendingWrites) return;
         var todoData = snap.data() || {};
         applyCloudSharedItems(Array.isArray(todoData.items) ? todoData.items : [], null).catch(function (error) {
           console.error("cloud todos subscribe failed", error);
@@ -711,6 +731,7 @@
     cloudSubscriptions.push(
       getSharedCollectionDoc("timetable").onSnapshot(function (snap) {
         if (!snap.exists) return;
+        if (snap.metadata && snap.metadata.hasPendingWrites) return;
         var timetableData = snap.data() || {};
         applyCloudSharedItems(null, Array.isArray(timetableData.items) ? timetableData.items : []).catch(function (error) {
           console.error("cloud timetable subscribe failed", error);

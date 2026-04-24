@@ -43,6 +43,31 @@ const DEFAULT_POSITIONS = {
   'w-dday-list':        {x:756, y:920, w:340, h:150},
 };
 
+async function syncCloudIfPossible(){
+  if(!window.syncCloudNow) return;
+  try{
+    await window.syncCloudNow();
+  }catch(_){}
+}
+
+function dedupeCalendarEvents(){
+  for(const dateKey of Object.keys(calEvents||{})){
+    const seen=new Set();
+    calEvents[dateKey]=(calEvents[dateKey]||[]).filter(ev=>{
+      const key=[
+        ev.source||'',
+        ev.date||dateKey,
+        String(ev.name||'').trim(),
+        ev.color||'',
+        ev.is_holiday?'holiday':'normal'
+      ].join('__');
+      if(seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+}
+
 // ─────────────────────────────────────────────────────────
 // render
 // ─────────────────────────────────────────────────────────
@@ -416,6 +441,7 @@ async function loadNeisCalendar(){
     if(!ev.date.startsWith(ym)) continue;
     (calEvents[ev.date]=calEvents[ev.date]||[]).push(ev);
   }
+  dedupeCalendarEvents();
   renderCalendar();
 }
 
@@ -1316,6 +1342,7 @@ function addCardHideButtons(){
         const list=JSON.parse(raw||'[]');
         if(!list.includes(id)) list.push(id);
         await api.setSetting('hidden_widgets',JSON.stringify(list));
+        await syncCloudIfPossible();
       }catch(err){}
       // 패널 갱신
       showHiddenPanel();
@@ -1379,6 +1406,7 @@ async function showHiddenPanel(){
         const list2=JSON.parse(raw2||'[]');
         const next=list2.filter(x=>x!==id);
         await api.setSetting('hidden_widgets',JSON.stringify(next));
+        await syncCloudIfPossible();
       }catch(err){}
       // 패널 갱신
       showHiddenPanel();
@@ -1484,17 +1512,21 @@ function saveLayout(){
     const payload=JSON.stringify({positions});
     localStorage.setItem(LAYOUT_KEY,payload);
     localStorage.setItem('dashLayout2',payload);
-    if(window.api?.setSetting) window.api.setSetting(LAYOUT_KEY,payload).catch(()=>{});
+    if(window.api?.setSetting) window.api.setSetting(LAYOUT_KEY,payload).then(()=>syncCloudIfPossible()).catch(()=>{});
   }catch(e){}
 }
 
 async function restoreLayout(){
   try{
-    let saved=localStorage.getItem(LAYOUT_KEY)||localStorage.getItem('dashLayout2');
-    if(!saved&&window.api?.getSetting){
+    let saved='';
+    if(window.api?.getSetting){
       saved=await window.api.getSetting(LAYOUT_KEY,'');
-      if(saved) localStorage.setItem(LAYOUT_KEY,saved);
+      if(saved){
+        localStorage.setItem(LAYOUT_KEY,saved);
+        localStorage.setItem('dashLayout2',saved);
+      }
     }
+    if(!saved) saved=localStorage.getItem(LAYOUT_KEY)||localStorage.getItem('dashLayout2');
     const parsed=saved?JSON.parse(saved):null;
     const positions=parsed?.positions||null;
 
@@ -1901,6 +1933,7 @@ saveDashboardCustomEvents = async function (events) {
     return true;
   });
   await api.setSetting(CUSTOM_EVENT_KEY, JSON.stringify(normalized));
+  await syncCloudIfPossible();
 };
 
 renderCalendar = function () {
