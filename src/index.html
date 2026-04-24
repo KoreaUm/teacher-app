@@ -440,6 +440,41 @@
     });
   }
 
+  function getLastLocalAuthUid() {
+    try {
+      return localStorage.getItem("teacher_app_last_auth_uid") || "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function setLastLocalAuthUid(uid) {
+    try {
+      localStorage.setItem("teacher_app_last_auth_uid", uid || "");
+    } catch (_) {}
+  }
+
+  function clearSyncedLocalDataForAccountSwitch(nextUid) {
+    var previousUid = getLastLocalAuthUid();
+    if (!previousUid || !nextUid || previousUid === nextUid) return Promise.resolve(false);
+
+    return withRemoteApply(function () {
+      var tasks = [];
+      CLOUD_SYNC_KEYS.forEach(function (key) {
+        tasks.push(originalSetSetting(key, ""));
+      });
+      if (api.replaceTodos) tasks.push(api.replaceTodos([]));
+      if (api.replaceTimetable) tasks.push(api.replaceTimetable([]));
+      try {
+        localStorage.removeItem("dashboard_layout_v4");
+        localStorage.removeItem("dashLayout2");
+      } catch (_) {}
+      return Promise.all(tasks);
+    }).then(function () {
+      return true;
+    });
+  }
+
   function buildCloudSettingsPayload(settings) {
     var payload = {};
     CLOUD_SYNC_KEYS.forEach(function (key) {
@@ -722,6 +757,7 @@
 
   window.appAuthLogout = function () {
     ensureFirebase();
+    if (authUser && authUser.uid) setLastLocalAuthUid(authUser.uid);
     return releaseCurrentSession().finally(function () {
       return firebaseAuth.signOut();
     });
@@ -1311,8 +1347,10 @@
   }
 
   function evaluateAuthenticatedUser(user) {
+    var previousAuthUser = authUser;
     authUser = user || null;
     if (!user) {
+      if (previousAuthUser && previousAuthUser.uid) setLastLocalAuthUid(previousAuthUser.uid);
       clearCloudSubscriptions();
       clearSessionWatch();
       authProfile = null;
@@ -1338,12 +1376,27 @@
         });
       }).then(function (sessionOk) {
         if (!sessionOk) return false;
-        return window.pullCloudSettingsNow().catch(function () {
-          return false;
+        var previousLocalUid = getLastLocalAuthUid();
+        var shouldMigrateLegacyDb = !previousLocalUid || previousLocalUid === user.uid;
+        return Promise.resolve(api.switchUserDatabase ? api.switchUserDatabase(user.uid, { migrateLegacy: shouldMigrateLegacyDb }) : null).then(function () {
+          if (api.switchUserDatabase) return true;
+          return clearSyncedLocalDataForAccountSwitch(user.uid).catch(function (error) {
+            console.error("account switch local clear failed", error);
+            return false;
+          });
+        }).then(function () {
+          return window.pullCloudSettingsNow().catch(function () {
+            return false;
+          });
         }).then(function () {
           return window.pullCloudSharedNow().catch(function () {
             return false;
           });
+        }).then(function () {
+          setLastLocalAuthUid(user.uid);
+          return true;
+        }).catch(function () {
+          return false;
         }).then(function () {
           startCloudSubscriptions();
           startSessionWatch(user);

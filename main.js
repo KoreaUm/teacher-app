@@ -13,6 +13,7 @@ let isWidgetMode   = false;
 let widgetInterval = null;
 let savedBounds    = null;
 let isClosingAfterCloudSync = false;
+let activeDbUserId = '';
 let updateState = {
   status: 'idle',
   version: app.getVersion(),
@@ -91,6 +92,28 @@ function setupAutoUpdater() {
       progress: 0,
     });
   });
+}
+
+function openDatabaseForUser(userId = '', options = {}) {
+  const nextUserId = String(userId || '');
+  if (db && activeDbUserId === nextUserId) return db;
+
+  const nextPath = AppDatabase.getPathForUser(nextUserId);
+  const legacyPath = AppDatabase.getDefaultPath();
+  const migrationMarkerPath = path.join(path.dirname(nextPath), '.legacy_migrated');
+  if (options.migrateLegacy === true && nextUserId && !fs.existsSync(nextPath) && fs.existsSync(legacyPath) && !fs.existsSync(migrationMarkerPath)) {
+    fs.mkdirSync(path.dirname(nextPath), { recursive: true });
+    fs.copyFileSync(legacyPath, nextPath);
+    removeSqliteSidecars(nextPath);
+    fs.writeFileSync(migrationMarkerPath, `${nextUserId}\n${new Date().toISOString()}`, 'utf8');
+  }
+
+  if (db) {
+    try { db.close(); } catch (_) {}
+  }
+  db = new AppDatabase({ userId: nextUserId });
+  activeDbUserId = nextUserId;
+  return db;
 }
 
 function createWindow() {
@@ -185,7 +208,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  db = new AppDatabase();
+  openDatabaseForUser('');
   setupAutoUpdater();
   createWindow();
   app.on('activate', () => {
@@ -294,6 +317,16 @@ ipcMain.on('window-widget-mode', (e, active) => {
   }
 });
 
+ipcMain.handle('switch-user-database', (e, uid, options = {}) => {
+  const safeUid = String(uid || '').trim();
+  openDatabaseForUser(safeUid, options || {});
+  return {
+    success: true,
+    userId: activeDbUserId,
+    dbPath: db.getPath(),
+  };
+});
+
 ipcMain.handle('get-setting', (e, key, def) => db.getSetting(key, def));
 ipcMain.handle('set-setting', (e, key, val) => db.setSetting(key, val));
 ipcMain.handle('get-all-settings', () => db.getAllSettings());
@@ -350,7 +383,7 @@ ipcMain.handle('import-backup', async () => {
     db.close();
     removeSqliteSidecars(dbPath);
     fs.copyFileSync(backupPath, dbPath);
-    db = new AppDatabase();
+    openDatabaseForUser(activeDbUserId);
     if (fs.existsSync(rollbackPath)) fs.rmSync(rollbackPath, { force: true });
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.reload();
@@ -363,7 +396,7 @@ ipcMain.handle('import-backup', async () => {
         fs.copyFileSync(rollbackPath, dbPath);
         removeSqliteSidecars(dbPath);
       }
-      db = new AppDatabase();
+      openDatabaseForUser(activeDbUserId);
     } catch (_) {}
     if (rollbackPath && fs.existsSync(rollbackPath)) {
       try { fs.rmSync(rollbackPath, { force: true }); } catch (_) {}

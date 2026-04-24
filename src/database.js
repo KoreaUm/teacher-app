@@ -1,15 +1,37 @@
 const path = require('path');
+const fs = require('fs');
 const { app } = require('electron');
 const Database = require('better-sqlite3');
 
 const DB_PATH = path.join(app.getPath('userData'), 'teacher_app.db');
+const USER_DB_DIR = path.join(app.getPath('userData'), 'user-databases');
+
+function sanitizeUserId(userId = '') {
+  return String(userId || 'default').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 96) || 'default';
+}
+
+function getDbPathForUser(userId = '') {
+  if (!userId) return DB_PATH;
+  return path.join(USER_DB_DIR, `teacher_app_${sanitizeUserId(userId)}.db`);
+}
 
 class AppDatabase {
-  constructor() {
-    this.db = new Database(DB_PATH);
+  constructor(options = {}) {
+    this.userId = options.userId || '';
+    this.dbPath = options.dbPath || getDbPathForUser(this.userId);
+    fs.mkdirSync(path.dirname(this.dbPath), { recursive: true });
+    this.db = new Database(this.dbPath);
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');
     this._init();
+  }
+
+  static getDefaultPath() {
+    return DB_PATH;
+  }
+
+  static getPathForUser(userId = '') {
+    return getDbPathForUser(userId);
   }
 
   _init() {
@@ -155,7 +177,7 @@ class AppDatabase {
   }
 
   getPath() {
-    return DB_PATH;
+    return this.dbPath;
   }
 
   async backupTo(targetPath) {

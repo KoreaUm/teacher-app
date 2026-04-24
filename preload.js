@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('api', {
   getSetting: (key, def) => ipcRenderer.invoke('get-setting', key, def),
   setSetting: (key, val) => ipcRenderer.invoke('set-setting', key, val),
   getAllSettings: () => ipcRenderer.invoke('get-all-settings'),
+  switchUserDatabase: (uid, options) => ipcRenderer.invoke('switch-user-database', uid, options),
   getAppMeta: () => ipcRenderer.invoke('get-app-meta'),
   exportBackup: () => ipcRenderer.invoke('export-backup'),
   importBackup: () => ipcRenderer.invoke('import-backup'),
