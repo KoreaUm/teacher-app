@@ -38,6 +38,64 @@ function Write-Utf8NoBom($path, $content) {
     [System.IO.File]::WriteAllText($path, $content, $utf8NoBom)
 }
 
+function Invoke-GitHubApi($method, $uri) {
+    return Invoke-RestMethod `
+        -Method $method `
+        -Uri $uri `
+        -Headers @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept = "application/vnd.github+json"
+            "X-GitHub-Api-Version" = "2022-11-28"
+        }
+}
+
+function Upload-ReleaseAsset($release, $filePath, $contentType) {
+    if (-not (Test-Path $filePath)) {
+        Fail "Release asset not found: $filePath"
+    }
+
+    $name = [System.IO.Path]::GetFileName($filePath)
+    $existing = @($release.assets | Where-Object { $_.name -eq $name })
+    foreach ($asset in $existing) {
+        Write-Host "Delete existing asset: $name" -ForegroundColor Yellow
+        Invoke-GitHubApi "DELETE" $asset.url | Out-Null
+    }
+
+    $uploadBase = $release.upload_url -replace "\{\?name,label\}$", ""
+    $uploadUri = $uploadBase + "?name=$([System.Uri]::EscapeDataString($name))"
+
+    Write-Host "Upload asset: $name" -ForegroundColor Yellow
+    Invoke-RestMethod `
+        -Method POST `
+        -Uri $uploadUri `
+        -Headers @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept = "application/vnd.github+json"
+            "X-GitHub-Api-Version" = "2022-11-28"
+            "Content-Type" = $contentType
+        } `
+        -InFile $filePath | Out-Null
+}
+
+function Ensure-ReleaseAssets($version) {
+    $tag = "v$version"
+    $distDir = Join-Path $scriptDir "dist"
+    $setupPath = Join-Path $distDir "teacher-app-setup-$version.exe"
+    $blockmapPath = Join-Path $distDir "teacher-app-setup-$version.exe.blockmap"
+    $latestPath = Join-Path $distDir "latest.yml"
+
+    Write-Step "Verify GitHub release assets"
+    $release = Invoke-GitHubApi "GET" "https://api.github.com/repos/KoreaUm/teacher-app/releases/tags/$tag"
+
+    Upload-ReleaseAsset $release $latestPath "application/x-yaml"
+    $release = Invoke-GitHubApi "GET" "https://api.github.com/repos/KoreaUm/teacher-app/releases/tags/$tag"
+    Upload-ReleaseAsset $release $setupPath "application/octet-stream"
+    $release = Invoke-GitHubApi "GET" "https://api.github.com/repos/KoreaUm/teacher-app/releases/tags/$tag"
+    Upload-ReleaseAsset $release $blockmapPath "application/octet-stream"
+
+    Write-Host "Release assets verified for $tag" -ForegroundColor Green
+}
+
 if (-not $env:GH_TOKEN) {
     Fail 'GH_TOKEN is not set. Run: $env:GH_TOKEN="your_token"'
 }
@@ -76,6 +134,8 @@ Ensure-LastExitCode $LASTEXITCODE "git push failed"
 Write-Step "Run release:win"
 & npm.cmd run release:win
 Ensure-LastExitCode $LASTEXITCODE "npm.cmd run release:win failed"
+
+Ensure-ReleaseAssets $nextVersion
 
 Write-Step "Done"
 Write-Host "Released version $nextVersion" -ForegroundColor Green
