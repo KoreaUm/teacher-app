@@ -71,11 +71,14 @@
   var authBootResolved = false;
   var cloudSyncTimer = null;
   var sharedSyncTimer = null;
-  var cloudPullTimer = null;
   var cloudSubscriptions = [];
   var sessionUnsubscribe = null;
   var sessionHeartbeatTimer = null;
   var sessionTakeoverInProgress = false;
+  var sharedLocalWriteUntil = {
+    todos: 0,
+    timetable: 0
+  };
   var remoteApplyDepth = 0;
   var originalSetSetting = api.setSetting.bind(api);
   var CLOUD_SYNC_KEYS = [
@@ -402,10 +405,6 @@
       } catch (_) {}
     });
     cloudSubscriptions = [];
-    if (cloudPullTimer) {
-      clearInterval(cloudPullTimer);
-      cloudPullTimer = null;
-    }
   }
 
   function clearSessionWatch() {
@@ -511,6 +510,20 @@
         return true;
       });
     });
+  }
+
+  function formatLoginSessionError(error) {
+    var code = error && error.code ? String(error.code) : "unknown";
+    var message = error && error.message ? String(error.message) : "";
+    var hint = "중복 로그인 확인에 실패했습니다.";
+    if (code.indexOf("permission-denied") >= 0) {
+      hint += " Firebase Firestore 규칙에 session 권한이 게시되지 않았을 가능성이 큽니다.";
+    } else if (code.indexOf("unavailable") >= 0 || code.indexOf("network") >= 0) {
+      hint += " 인터넷 연결 또는 Firebase 연결을 확인해 주세요.";
+    } else {
+      hint += " Firebase 연결 상태를 확인해 주세요.";
+    }
+    return hint + " 오류: " + code + (message ? " / " + message : "");
   }
 
   function acknowledgeRemoteTakeover(user, previousDeviceId) {
@@ -933,6 +946,9 @@
 
   function pushCloudSharedNow(kind) {
     if (!authUser || !authProfile || authProfile.active === false) return Promise.resolve(false);
+    if (kind === "todos" || kind === "timetable") {
+      sharedLocalWriteUntil[kind] = Date.now() + 3000;
+    }
     return window.syncCloudSharedNow(kind).catch(function (error) {
       console.error((kind || "shared") + " cloud push failed", error);
       return false;
@@ -978,6 +994,7 @@
       getSharedCollectionDoc("todos").onSnapshot(function (snap) {
         if (!snap.exists) return;
         if (snap.metadata && snap.metadata.hasPendingWrites) return;
+        if (Date.now() < sharedLocalWriteUntil.todos) return;
         var todoData = snap.data() || {};
         applyCloudSharedItems(Array.isArray(todoData.items) ? todoData.items : [], null).catch(function (error) {
           console.error("cloud todos subscribe failed", error);
@@ -991,6 +1008,7 @@
       getSharedCollectionDoc("timetable").onSnapshot(function (snap) {
         if (!snap.exists) return;
         if (snap.metadata && snap.metadata.hasPendingWrites) return;
+        if (Date.now() < sharedLocalWriteUntil.timetable) return;
         var timetableData = snap.data() || {};
         applyCloudSharedItems(null, Array.isArray(timetableData.items) ? timetableData.items : []).catch(function (error) {
           console.error("cloud timetable subscribe failed", error);
@@ -999,13 +1017,6 @@
         console.error("cloud timetable snapshot failed", error);
       })
     );
-
-    cloudPullTimer = setInterval(function () {
-      if (!authUser || !authProfile || authProfile.active === false) return;
-      window.pullCloudNow().catch(function (error) {
-        console.error("periodic cloud pull failed", error);
-      });
-    }, 20000);
   }
 
   function queueCloudSync(key) {
@@ -1177,7 +1188,7 @@
       }
       return claimLoginSession(user).catch(function (error) {
         console.error("login session claim failed", error);
-        authPendingMessage = "중복 로그인 확인에 실패했습니다. Firebase 규칙을 게시했는지 확인한 뒤 다시 로그인해 주세요.";
+        authPendingMessage = formatLoginSessionError(error);
         return firebaseAuth.signOut().then(function () {
           return false;
         });
