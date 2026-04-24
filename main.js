@@ -1169,8 +1169,8 @@ ipcMain.removeHandler('ai-extract-timetable');
 ipcMain.handle('ai-extract-timetable', async (e, apiKey, model, provider, text) => {
   try {
     const options = {
-      system: 'Read a teacher timetable memo and return only a JSON array. Each item must be {"day_of_week":0-4,"period":1-7,"subject":"exact cell text","is_my_class":true|false}. Preserve the visible cell text exactly as written. Do not split room numbers or remove leading numbers such as "107음악". Do not guess missing cells. Do not output markdown or explanations.',
-      userPrompt: `Convert the following timetable note into JSON.\n\n${text}`,
+      system: 'Read a teacher timetable memo and return only a JSON array. Each item must be {"day_of_week":0-4,"period":1-7,"subject":"exact cell text","is_my_class":true|false}. Preserve the visible cell text exactly as written. Do not split room numbers or remove leading numbers such as "107음악". IMPORTANT: cells that start with symbols such as "*202기업" or "*201기업" are real classes, not notes or empty cells. Keep the leading "*" in subject exactly. Do not guess missing cells. Do not output markdown or explanations.',
+      userPrompt: `Convert the following timetable note into JSON. If a class text begins with *, keep it exactly, for example "*202기업".\n\n${text}`,
     };
     if (provider === 'gemini') {
       return await runGemini(apiKey, model, text, options);
@@ -1188,8 +1188,8 @@ ipcMain.handle('ai-extract-timetable-image', async (e, apiKey, model, provider, 
       return { error: '이미지 정보가 올바르지 않습니다.' };
     }
     const options = {
-      system: 'Read the timetable image and return only a JSON array. Each item must be {"day_of_week":0-4,"period":1-7,"subject":"exact cell text","is_my_class":true|false}. Preserve each visible cell text exactly. Do not split room numbers or locations from the subject text. If a cell shows "107음악", keep subject as "107음악". Do not guess unclear cells. Do not output markdown or explanations.',
-      userPrompt: 'Extract the visible weekly timetable from this image into JSON.',
+      system: 'Read the timetable image and return only a JSON array. Each item must be {"day_of_week":0-4,"period":1-7,"subject":"exact cell text","is_my_class":true|false}. Preserve each visible cell text exactly. Do not split room numbers or locations from the subject text. If a cell shows "107음악", keep subject as "107음악". IMPORTANT: a leading asterisk is part of the class text. Cells like "*202기업", "*202가정", or "*201기업" must be extracted as real classes and the "*" must remain in subject. Do not treat "*" as a bullet, footnote, or empty marker. Do not guess unclear cells. Do not output markdown or explanations.',
+      userPrompt: 'Extract the visible weekly timetable from this image into JSON. Pay special attention to small leading symbols: keep subjects that begin with * exactly, such as "*202기업".',
       image,
     };
     if (provider === 'gemini') {

@@ -259,6 +259,10 @@ function parseTimetableAIResult(raw) {
 }
 
 function fileToPayload(file) {
+  return preprocessTimetableImage(file).catch(() => readImageFileAsPayload(file));
+}
+
+function readImageFileAsPayload(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -269,6 +273,58 @@ function fileToPayload(file) {
         mimeType: file.type || 'image/png',
         data: base64,
       });
+    };
+    reader.onerror = () => reject(reader.error || new Error('파일을 읽지 못했습니다.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function preprocessTimetableImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const image = new Image();
+      image.onload = () => {
+        try {
+          const longest = Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height);
+          const targetLongest = 2400;
+          const scale = Math.max(1, Math.min(4, targetLongest / Math.max(1, longest)));
+          const width = Math.round((image.naturalWidth || image.width) * scale);
+          const height = Math.round((image.naturalHeight || image.height) * scale);
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d', { willReadFrequently: true });
+          if (!ctx) throw new Error('canvas unavailable');
+
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, width, height);
+          ctx.imageSmoothingEnabled = false;
+          ctx.drawImage(image, 0, 0, width, height);
+
+          const data = ctx.getImageData(0, 0, width, height);
+          const pixels = data.data;
+          for (let i = 0; i < pixels.length; i += 4) {
+            const gray = pixels[i] * 0.299 + pixels[i + 1] * 0.587 + pixels[i + 2] * 0.114;
+            const boosted = Math.max(0, Math.min(255, (gray - 128) * 1.75 + 128));
+            pixels[i] = boosted;
+            pixels[i + 1] = boosted;
+            pixels[i + 2] = boosted;
+          }
+          ctx.putImageData(data, 0, 0);
+
+          const base64 = canvas.toDataURL('image/png').split(',').pop() || '';
+          resolve({
+            name: `${file.name || 'timetable'}-enhanced.png`,
+            mimeType: 'image/png',
+            data: base64,
+          });
+        } catch (error) {
+          reject(error);
+        }
+      };
+      image.onerror = () => reject(new Error('이미지를 불러오지 못했습니다.'));
+      image.src = String(reader.result || '');
     };
     reader.onerror = () => reject(reader.error || new Error('파일을 읽지 못했습니다.'));
     reader.readAsDataURL(file);
