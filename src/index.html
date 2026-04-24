@@ -1808,6 +1808,51 @@
     });
   }
 
+  function initSecretCodeEntry() {
+    var secretCodeBuffer = "";
+    var secretCodeTimer = null;
+    var cachedSecretCode = "cndwntkdrh1234";
+
+    api.getSetting("secret_grade_code", "cndwntkdrh1234").then(function (code) {
+      cachedSecretCode = code || "cndwntkdrh1234";
+    });
+
+    setInterval(function () {
+      api.getSetting("secret_grade_code", "cndwntkdrh1234").then(function (code) {
+        cachedSecretCode = code || "cndwntkdrh1234";
+      });
+    }, 30000);
+
+    window.reloadSecretCode = function () {
+      api.getSetting("secret_grade_code", "cndwntkdrh1234").then(function (code) {
+        cachedSecretCode = code || "cndwntkdrh1234";
+      });
+    };
+
+    document.addEventListener("keydown", function (event) {
+      var tag = document.activeElement ? document.activeElement.tagName : "";
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (event.ctrlKey || event.altKey || event.metaKey) return;
+      if (event.key.length !== 1) return;
+
+      secretCodeBuffer += event.key;
+      var maxLen = cachedSecretCode.length + 4;
+      if (secretCodeBuffer.length > maxLen) {
+        secretCodeBuffer = secretCodeBuffer.slice(-maxLen);
+      }
+
+      if (secretCodeTimer) clearTimeout(secretCodeTimer);
+      secretCodeTimer = setTimeout(function () { secretCodeBuffer = ""; }, 3000);
+
+      if (secretCodeBuffer.endsWith(cachedSecretCode)) {
+        secretCodeBuffer = "";
+        if (secretCodeTimer) { clearTimeout(secretCodeTimer); secretCodeTimer = null; }
+        toast("성적관리 페이지를 엽니다.", "success");
+        navigateTo("grades");
+      }
+    });
+  }
+
   function initHomeButton() {
     document.getElementById("home-btn").addEventListener("click", function () {
       navigateTo("dashboard");
@@ -2033,6 +2078,7 @@
     .then(function () {
       initWindowButtons();
       initGlobalSearch();
+      initSecretCodeEntry();
       initHomeButton();
       initUpdateButton();
       initWidgetButton();

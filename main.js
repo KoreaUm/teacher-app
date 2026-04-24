@@ -454,6 +454,13 @@ ipcMain.handle('replace-todos', (e, items) => db.replaceTodos(items));
 ipcMain.handle('set-todo-gcal-id', (e, id, gcalId) => db.setTodoGcalId(id, gcalId));
 ipcMain.handle('get-todo-gcal-id', (e, id) => db.getTodoGcalId(id));
 
+ipcMain.handle('get-grade-columns', () => db.getGradeColumns());
+ipcMain.handle('add-grade-column', (e, data) => db.addGradeColumn(data));
+ipcMain.handle('update-grade-column', (e, id, data) => db.updateGradeColumn(id, data));
+ipcMain.handle('delete-grade-column', (e, id) => db.deleteGradeColumn(id));
+ipcMain.handle('get-grade-scores', (e, columnId) => db.getGradeScores(columnId));
+ipcMain.handle('set-grade-score', (e, data) => db.setGradeScore(data));
+
 // ── Google Calendar OAuth ─────────────────────────────────
 ipcMain.handle('gcal-oauth-start', async (e, clientId, clientSecret) => {
   const http = require('http');

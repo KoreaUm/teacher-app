@@ -32,6 +32,30 @@ async function render(container) {
       <section class="card settings-card" style="margin-bottom:16px">
         <div class="settings-head">
           <div>
+            <div class="settings-title">성적관리 비밀코드</div>
+            <div class="settings-note">성적관리 페이지에 접근할 때 사용하는 비밀코드를 관리합니다. 기본 코드: cndwntkdrh1234</div>
+          </div>
+        </div>
+        <div class="form-row">
+          <label>현재 코드</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input class="input" id="secret-code-display" type="password" readonly style="max-width:220px;letter-spacing:2px">
+            <button class="btn btn-secondary btn-sm" id="secret-code-toggle">보기</button>
+          </div>
+        </div>
+        <div class="form-row">
+          <label>새 코드</label>
+          <input class="input" id="secret-code-new" type="text" placeholder="새 비밀코드 입력" style="max-width:220px">
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" id="secret-code-save-btn">비밀코드 변경</button>
+          <span id="secret-code-status" class="settings-note"></span>
+        </div>
+      </section>
+
+      <section class="card settings-card" style="margin-bottom:16px">
+        <div class="settings-head">
+          <div>
             <div class="settings-title">공지사항 배포</div>
             <div class="settings-note">사용자가 프로그램을 켰을 때 보여줄 공지사항을 배포합니다. 업데이트 내용, 사용 방법 변경 등을 적어 주세요.</div>
           </div>
@@ -90,6 +114,8 @@ async function init() {
     if (window.navigateTo) window.navigateTo('settings');
   });
 
+  await loadSecretCode();
+
   document.getElementById('user-management-refresh')?.addEventListener('click', async () => {
     await loadUsers(true);
   });
@@ -115,8 +141,51 @@ async function init() {
     });
   });
 
+  document.getElementById('secret-code-toggle')?.addEventListener('click', () => {
+    const input = document.getElementById('secret-code-display');
+    if (!input) return;
+    input.type = input.type === 'password' ? 'text' : 'password';
+    document.getElementById('secret-code-toggle').textContent = input.type === 'password' ? '보기' : '숨기기';
+  });
+
+  document.getElementById('secret-code-save-btn')?.addEventListener('click', async () => {
+    const newCode = document.getElementById('secret-code-new')?.value.trim();
+    const status = document.getElementById('secret-code-status');
+    if (!newCode) {
+      toast('새 비밀코드를 입력해 주세요.', 'error');
+      return;
+    }
+    if (newCode.length < 4) {
+      toast('비밀코드는 4자 이상으로 설정해 주세요.', 'error');
+      return;
+    }
+    try {
+      await api.setSetting('secret_grade_code', newCode);
+      if (window.reloadSecretCode) window.reloadSecretCode();
+      const displayInput = document.getElementById('secret-code-display');
+      if (displayInput) displayInput.value = newCode;
+      document.getElementById('secret-code-new').value = '';
+      if (status) status.textContent = '비밀코드가 변경되었습니다.';
+      toast('비밀코드를 변경했습니다.', 'success');
+    } catch (err) {
+      if (status) status.textContent = '변경에 실패했습니다.';
+      toast('비밀코드 변경에 실패했습니다.', 'error');
+    }
+  });
+
   await loadUsers(false);
   await loadNotice(false);
+}
+
+async function loadSecretCode() {
+  const display = document.getElementById('secret-code-display');
+  if (!display) return;
+  try {
+    const code = await api.getSetting('secret_grade_code', 'cndwntkdrh1234');
+    display.value = code || 'cndwntkdrh1234';
+  } catch (_) {
+    display.value = 'cndwntkdrh1234';
+  }
 }
 
 async function loadNotice(showToast) {

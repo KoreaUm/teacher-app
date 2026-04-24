@@ -166,6 +166,27 @@ class AppDatabase {
         content TEXT DEFAULT '',
         updated_at TEXT DEFAULT (datetime('now'))
       );
+      CREATE TABLE IF NOT EXISTS grade_columns (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        subject TEXT DEFAULT '',
+        exam_type TEXT DEFAULT '중간',
+        semester INTEGER DEFAULT 1,
+        max_score REAL DEFAULT 100,
+        date TEXT DEFAULT '',
+        sort_order INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS grade_scores (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        column_id INTEGER NOT NULL,
+        student_id INTEGER NOT NULL,
+        score REAL,
+        note TEXT DEFAULT '',
+        UNIQUE(column_id, student_id),
+        FOREIGN KEY(column_id) REFERENCES grade_columns(id) ON DELETE CASCADE,
+        FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
+      );
     `);
     this._ensureTodoCalendarColumn();
   }
@@ -627,6 +648,63 @@ class AppDatabase {
   getDailyMemos(year, month) {
     const prefix = `${year}-${String(month).padStart(2, '0')}`;
     return this.db.prepare('SELECT date, content FROM daily_memo WHERE date LIKE ? ORDER BY date').all(`${prefix}%`);
+  }
+
+  getGradeColumns() {
+    return this.db.prepare('SELECT * FROM grade_columns ORDER BY sort_order, id').all();
+  }
+
+  addGradeColumn(data) {
+    const result = this.db.prepare(
+      'INSERT INTO grade_columns(name,subject,exam_type,semester,max_score,date,sort_order) VALUES(?,?,?,?,?,?,?)'
+    ).run(
+      data.name,
+      data.subject || '',
+      data.exam_type || '중간',
+      data.semester || 1,
+      data.max_score || 100,
+      data.date || '',
+      data.sort_order || 0
+    );
+    return result.lastInsertRowid;
+  }
+
+  updateGradeColumn(id, data) {
+    this.db.prepare(
+      'UPDATE grade_columns SET name=?,subject=?,exam_type=?,semester=?,max_score=?,date=?,sort_order=? WHERE id=?'
+    ).run(
+      data.name,
+      data.subject || '',
+      data.exam_type || '중간',
+      data.semester || 1,
+      data.max_score || 100,
+      data.date || '',
+      data.sort_order || 0,
+      id
+    );
+    return true;
+  }
+
+  deleteGradeColumn(id) {
+    this.db.prepare('DELETE FROM grade_columns WHERE id=?').run(id);
+    return true;
+  }
+
+  getGradeScores(columnId) {
+    return this.db.prepare(
+      'SELECT gs.*, s.name, s.number FROM grade_scores gs JOIN students s ON gs.student_id=s.id WHERE gs.column_id=? ORDER BY s.number'
+    ).all(columnId);
+  }
+
+  setGradeScore(data) {
+    if (data.score === null || data.score === undefined || data.score === '') {
+      this.db.prepare('DELETE FROM grade_scores WHERE column_id=? AND student_id=?').run(data.column_id, data.student_id);
+    } else {
+      this.db.prepare(
+        'INSERT OR REPLACE INTO grade_scores(column_id,student_id,score,note) VALUES(?,?,?,?)'
+      ).run(data.column_id, data.student_id, data.score, data.note || '');
+    }
+    return true;
   }
 }
 

@@ -127,4 +127,12 @@ contextBridge.exposeInMainWorld('api', {
   importClassTimetableExcel: (payload) =>
     ipcRenderer.invoke('import-class-timetable-excel', payload),
   applyAppPatch: () => ipcRenderer.invoke('apply-app-patch'),
+
+  // Grade management (secret page)
+  getGradeColumns: () => ipcRenderer.invoke('get-grade-columns'),
+  addGradeColumn: (d) => ipcRenderer.invoke('add-grade-column', d),
+  updateGradeColumn: (id, d) => ipcRenderer.invoke('update-grade-column', id, d),
+  deleteGradeColumn: (id) => ipcRenderer.invoke('delete-grade-column', id),
+  getGradeScores: (columnId) => ipcRenderer.invoke('get-grade-scores', columnId),
+  setGradeScore: (d) => ipcRenderer.invoke('set-grade-score', d),
 });
