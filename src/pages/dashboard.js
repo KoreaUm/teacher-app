@@ -708,8 +708,8 @@ async function refreshTodos(){
   }
   container.innerHTML=html;
 }
-window.__dtTog=async(id)=>{await api.toggleTodo(id);refreshTodos();};
-window.__dtDel=async(id)=>{await api.deleteTodo(id);refreshTodos();};
+window.__dtTog=async(id)=>{await api.toggleTodo(id);await syncCloudIfPossible();refreshTodos();};
+window.__dtDel=async(id)=>{await api.deleteTodo(id);await syncCloudIfPossible();refreshTodos();};
 window.__dtAdd=(ds)=>showTodoModal(ds);
 window.__dtOpen=(id)=>showTodoEdit(id);
 
@@ -801,6 +801,7 @@ document.getElementById('todo-cleanup-btn')?.addEventListener('click', async ()=
     let count = 0;
     if(delExpired) for(const t of expired){ await api.deleteTodo(t.id); count++; }
     if(delDone)    for(const t of done){    await api.deleteTodo(t.id); count++; }
+    if(count) await syncCloudIfPossible();
     closeModal();
     refreshTodos();
     toast(`${count}개 삭제되었습니다.`, 'success');
@@ -882,6 +883,7 @@ function showTodoEdit(id){
       priority:document.getElementById('td-edit-pri').value,
       category:document.getElementById('td-edit-cat').value,
     });
+    await syncCloudIfPossible();
     closeModal();
     refreshTodos();
     toast('수정되었습니다.','success');
@@ -890,6 +892,7 @@ function showTodoEdit(id){
   document.getElementById('td-edit-del').onclick=async()=>{
     if(!confirm('이 할일을 삭제할까요?')) return;
     await api.deleteTodo(id);
+    await syncCloudIfPossible();
     closeModal();
     refreshTodos();
   };
@@ -918,6 +921,7 @@ function showTodoModal(ds=''){
     const priority=document.getElementById('td-pri').value;
     const category=document.getElementById('td-cat').value;
     const newId=await api.addTodo({title,deadline,priority,category});
+    await syncCloudIfPossible();
     closeModal();refreshTodos();
     // Google Calendar 자동 연동
     if(newId) gcalSyncTodo({id:newId,title,deadline,priority,category});

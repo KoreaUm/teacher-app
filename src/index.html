@@ -67,9 +67,11 @@
   var authProfile = null;
   var authOverlayEl = null;
   var authScreenMode = "login";
+  var authPendingMessage = "";
   var authBootResolved = false;
   var cloudSyncTimer = null;
   var sharedSyncTimer = null;
+  var cloudPullTimer = null;
   var cloudSubscriptions = [];
   var sessionUnsubscribe = null;
   var sessionHeartbeatTimer = null;
@@ -400,6 +402,10 @@
       } catch (_) {}
     });
     cloudSubscriptions = [];
+    if (cloudPullTimer) {
+      clearInterval(cloudPullTimer);
+      cloudPullTimer = null;
+    }
   }
 
   function clearSessionWatch() {
@@ -811,27 +817,36 @@
     return Promise.resolve(window.navigateTo(currentPage)).catch(function () {});
   }
 
-  window.syncCloudSharedNow = function () {
+  window.syncCloudSharedNow = function (kind) {
     ensureFirebase();
     if (!authUser || !authProfile || authProfile.active === false) {
       return Promise.resolve(false);
     }
-    return Promise.all([
-      api.getTodos(true).then(function (todos) {
+
+    var tasks = [];
+    if (!kind || kind === "todos") {
+      tasks.push(api.getTodos(true).then(function (todos) {
         return getSharedCollectionDoc("todos").set({
           items: (todos || []).map(sanitizeTodoForCloud),
           updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
           updatedBy: normalizeEmail(authUser.email)
         }, { merge: true });
-      }),
-      api.getTimetable().then(function (items) {
+      }));
+    }
+
+    if (!kind || kind === "timetable") {
+      tasks.push(api.getTimetable().then(function (items) {
         return getSharedCollectionDoc("timetable").set({
           items: (items || []).map(sanitizeTimetableForCloud),
           updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
           updatedBy: normalizeEmail(authUser.email)
         }, { merge: true });
-      })
-    ]).then(function () {
+      }));
+    }
+
+    if (!tasks.length) return Promise.resolve(false);
+
+    return Promise.all(tasks).then(function () {
       return true;
     });
   };
@@ -849,17 +864,19 @@
       var timetableSnap = snapshots[1];
       var tasks = [];
 
-      if (todoSnap.exists) {
-        var todoData = todoSnap.data() || {};
-        tasks.push(api.replaceTodos(Array.isArray(todoData.items) ? todoData.items : []));
-      }
+      return withRemoteApply(function () {
+        if (todoSnap.exists) {
+          var todoData = todoSnap.data() || {};
+          tasks.push(api.replaceTodos(Array.isArray(todoData.items) ? todoData.items : []));
+        }
 
-      if (timetableSnap.exists) {
-        var timetableData = timetableSnap.data() || {};
-        tasks.push(api.replaceTimetable(Array.isArray(timetableData.items) ? timetableData.items : []));
-      }
+        if (timetableSnap.exists) {
+          var timetableData = timetableSnap.data() || {};
+          tasks.push(api.replaceTimetable(Array.isArray(timetableData.items) ? timetableData.items : []));
+        }
 
-      return Promise.all(tasks).then(function () {
+        return Promise.all(tasks);
+      }).then(function () {
         return refreshSharedPages().then(function () {
           return tasks.length > 0;
         });
@@ -916,7 +933,7 @@
 
   function pushCloudSharedNow(kind) {
     if (!authUser || !authProfile || authProfile.active === false) return Promise.resolve(false);
-    return window.syncCloudSharedNow().catch(function (error) {
+    return window.syncCloudSharedNow(kind).catch(function (error) {
       console.error((kind || "shared") + " cloud push failed", error);
       return false;
     });
@@ -982,6 +999,13 @@
         console.error("cloud timetable snapshot failed", error);
       })
     );
+
+    cloudPullTimer = setInterval(function () {
+      if (!authUser || !authProfile || authProfile.active === false) return;
+      window.pullCloudNow().catch(function (error) {
+        console.error("periodic cloud pull failed", error);
+      });
+    }, 20000);
   }
 
   function queueCloudSync(key) {
@@ -1137,7 +1161,8 @@
       clearCloudSubscriptions();
       clearSessionWatch();
       authProfile = null;
-      renderAuthOverlay("form", "", "");
+      renderAuthOverlay("form", authPendingMessage, "");
+      authPendingMessage = "";
       return Promise.resolve(false);
     }
     return createOrUpdateUserProfile(user, "").then(function (profile) {
@@ -1152,7 +1177,10 @@
       }
       return claimLoginSession(user).catch(function (error) {
         console.error("login session claim failed", error);
-        return true;
+        authPendingMessage = "중복 로그인 확인에 실패했습니다. Firebase 규칙을 게시했는지 확인한 뒤 다시 로그인해 주세요.";
+        return firebaseAuth.signOut().then(function () {
+          return false;
+        });
       }).then(function (sessionOk) {
         if (!sessionOk) return false;
         return window.pullCloudSettingsNow().catch(function () {
