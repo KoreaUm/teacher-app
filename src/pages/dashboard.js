@@ -9,6 +9,8 @@ const GRID_SIZE = 8;
 const CARD_MIN_WIDTH = 120;
 const CARD_MIN_HEIGHT = 70;
 const CUSTOM_EVENT_KEY = 'custom_calendar_events';
+const TEACHER_TT_NUMBER_COLOR_ENABLED_KEY = 'teacher_timetable_number_colors_enabled';
+const TEACHER_TT_NUMBER_COLORS_KEY = 'teacher_timetable_number_colors';
 
 // 카드 ID → 표시 라벨 매핑
 const WIDGET_LABELS = {
@@ -164,7 +166,10 @@ async function render(c){
   <div class="card sb-card" id="w-personal-tt" data-widget="personal-tt">
     <div class="card-header">
       <span class="card-title">🗓️ 개인 시간표</span>
-      <button class="btn-icon-flat" onclick="navigateTo('timetable')" title="편집">✏️</button>
+      <div style="display:flex;align-items:center;gap:4px">
+        <button class="btn btn-secondary btn-xs" id="tt-number-color-toggle" title="같은 번호는 같은 색으로 표시">번호색</button>
+        <button class="btn-icon-flat" onclick="navigateTo('timetable')" title="편집">✏️</button>
+      </div>
     </div>
     <div id="tt-grid-wrap" style="padding:2px 8px 8px"></div>
   </div>
@@ -254,6 +259,7 @@ async function init(){
   document.getElementById('dday-add-btn').onclick = showDdayModal;
   document.getElementById('teacher-q').oninput = e => refreshTeachers(e.target.value);
   document.getElementById('student-q').oninput = e => refreshStudents(e.target.value);
+  document.getElementById('tt-number-color-toggle')?.addEventListener('click', toggleTeacherTimetableNumberColors);
   buildMealDateSel();
   document.getElementById('meal-date-sel').onchange = e => loadMeal(e.target.value);
   buildNeisSelects();
@@ -619,6 +625,12 @@ function sortDashboardTodos(todos, manualOrder){
   return [...active,...done];
 }
 
+function getDashboardVisibleTodos(todos, manualOrder){
+  const active=applyDashboardTodoOrder(baseDashboardTodoSort(todos.filter(todo=>!todo.is_done)), manualOrder);
+  const done=baseDashboardTodoSort(todos.filter(todo=>!!todo.is_done)).slice(0,5);
+  return [...active,...done];
+}
+
 function baseDashboardTodoSort(todos){
   return [...todos].sort((a,b)=>{
     const aDeadline=a.deadline||'9999-12-31';
@@ -669,7 +681,7 @@ async function refreshTodos(){
   const todoItems=await api.getTodos(true);
   window.__todoMap=Object.fromEntries(todoItems.map(todo=>[todo.id,todo]));
   const manualOrder=await loadDashboardTodoOrder();
-  const sorted=sortDashboardTodos(todoItems, manualOrder);
+  const sorted=getDashboardVisibleTodos(todoItems, manualOrder);
   if(!sorted.length){
     container.innerHTML='<div class="todo-empty-day">할 일이 없습니다.</div>';
     return;
@@ -1024,6 +1036,94 @@ function showDdayModal(){
 // ─────────────────────────────────────────────────────────
 // 개인 시간표
 // ─────────────────────────────────────────────────────────
+function extractTeacherTimetableNumber(cell){
+  if(!cell) return '';
+  const candidates=[cell.room, cell.subject, cell.teacher].map(value=>String(value||''));
+  for(const text of candidates){
+    const match=text.match(/(?:^|[^\d])(\d{2,4})(?=$|[^\d])/);
+    if(match) return match[1];
+  }
+  return '';
+}
+
+function buildTeacherNumberPalette(number, overrides){
+  const override=String((overrides||{})[number]||'').trim();
+  if(/^#[0-9a-fA-F]{6}$/.test(override)) return buildPastelColorSet(override);
+  const colors=['#60a5fa','#34d399','#f59e0b','#f472b6','#a78bfa','#22d3ee','#fb7185','#84cc16','#38bdf8','#f97316','#14b8a6','#818cf8'];
+  let hash=0;
+  String(number||'').split('').forEach(ch=>{ hash=(hash*31+ch.charCodeAt(0))&0xffff; });
+  return buildPastelColorSet(colors[hash%colors.length]);
+}
+
+async function loadTeacherTimetableNumberColorSettings(){
+  let enabledRaw='false';
+  let overrides={};
+  try{ enabledRaw=await api.getSetting(TEACHER_TT_NUMBER_COLOR_ENABLED_KEY,'false'); }catch(e){}
+  try{
+    const raw=await api.getSetting(TEACHER_TT_NUMBER_COLORS_KEY,'{}');
+    const parsed=JSON.parse(raw||'{}');
+    if(parsed&&typeof parsed==='object') overrides=parsed;
+  }catch(e){}
+  return { enabled: enabledRaw === 'true', overrides };
+}
+
+async function toggleTeacherTimetableNumberColors(){
+  const current=await api.getSetting(TEACHER_TT_NUMBER_COLOR_ENABLED_KEY,'false');
+  const next=current === 'true' ? 'false' : 'true';
+  await api.setSetting(TEACHER_TT_NUMBER_COLOR_ENABLED_KEY,next);
+  await refreshTimetable();
+}
+
+async function openTeacherNumberColorPrompt(number, currentColor){
+  const initialColor=/^#[0-9a-fA-F]{6}$/.test(String(currentColor||''))?currentColor:'#60a5fa';
+  showModal(`
+    <div class="modal-header">
+      <span class="modal-title">시간표 번호 색상</span>
+      <button class="modal-close" data-close>×</button>
+    </div>
+    <div class="modal-body" style="display:grid;gap:14px">
+      <div style="font-size:14px;font-weight:700;color:var(--text)">번호 ${escapeHtml(number)}</div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <input id="teacher-tt-number-color" type="color" value="${initialColor}" style="width:48px;height:36px;border:none;background:none;padding:0;cursor:pointer">
+        <div id="teacher-tt-number-preview" style="display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:12px;background:${buildPastelColorSet(initialColor)[0]};color:${buildPastelColorSet(initialColor)[1]};border-left:4px solid ${initialColor};font-weight:700">${escapeHtml(number)}</div>
+      </div>
+      <div style="font-size:12px;color:var(--text3)">같은 번호가 들어간 시간표 칸은 같은 색으로 표시됩니다.</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="teacher-tt-number-reset">기본색</button>
+      <button class="btn btn-primary" id="teacher-tt-number-save">저장</button>
+    </div>
+  `);
+
+  setTimeout(()=>{
+    const colorInput=document.getElementById('teacher-tt-number-color');
+    const preview=document.getElementById('teacher-tt-number-preview');
+    const paintPreview=()=>{
+      const palette=buildPastelColorSet(colorInput?.value||initialColor);
+      if(preview) preview.style.cssText=`display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:12px;background:${palette[0]};color:${palette[1]};border-left:4px solid ${palette[2]};font-weight:700`;
+    };
+    colorInput?.addEventListener('input', paintPreview);
+    document.getElementById('teacher-tt-number-reset')?.addEventListener('click', async ()=>{
+      const raw=await api.getSetting(TEACHER_TT_NUMBER_COLORS_KEY,'{}');
+      let parsed={};
+      try{ parsed=JSON.parse(raw||'{}')||{}; }catch(e){}
+      delete parsed[number];
+      await api.setSetting(TEACHER_TT_NUMBER_COLORS_KEY,JSON.stringify(parsed));
+      closeModal();
+      await refreshTimetable();
+    });
+    document.getElementById('teacher-tt-number-save')?.addEventListener('click', async ()=>{
+      const raw=await api.getSetting(TEACHER_TT_NUMBER_COLORS_KEY,'{}');
+      let parsed={};
+      try{ parsed=JSON.parse(raw||'{}')||{}; }catch(e){}
+      parsed[number]=colorInput?.value||initialColor;
+      await api.setSetting(TEACHER_TT_NUMBER_COLORS_KEY,JSON.stringify(parsed));
+      closeModal();
+      await refreshTimetable();
+    });
+  },0);
+}
+
 async function refreshTimetable(){
   const wrap=document.getElementById('tt-grid-wrap');
   if(!wrap)return;
@@ -1031,6 +1131,13 @@ async function refreshTimetable(){
   const DAYS=['월','화','수','목','금'];
   const todayIdx=dow>=1&&dow<=5?dow-1:-1;
   const tt=await api.getTimetable();
+  const numberSettings=await loadTeacherTimetableNumberColorSettings();
+  const toggle=document.getElementById('tt-number-color-toggle');
+  if(toggle){
+    toggle.textContent=numberSettings.enabled?'번호색 켜짐':'번호색 꺼짐';
+    toggle.classList.toggle('btn-primary',numberSettings.enabled);
+    toggle.classList.toggle('btn-secondary',!numberSettings.enabled);
+  }
   const map={};
   for(const e of tt) map[`${e.day_of_week}_${e.period}`]=e;
   let html='<div class="tt-grid"><div></div>';
@@ -1038,15 +1145,26 @@ async function refreshTimetable(){
   for(let p=1;p<=7;p++){
     html+=`<div class="tt-period">${p}</div>`;
     for(let d=0;d<5;d++){
-      const cell=map[`${d}_${p}`],subj=cell?cell.subject:'',room='';
+      const cell=map[`${d}_${p}`],subj=cell?cell.subject:'',room=cell?cell.room:'';
       const cls=!subj?'':'my';
       const display=subj||'';
       const title=[subj,room].filter(Boolean).join(' · ');
-      html+=`<div class="tt-cell ${cls}" title="${escapeHtml(subj||'')}">${escapeHtml(display)}</div>`;
+      const number=extractTeacherTimetableNumber(cell);
+      const palette=numberSettings.enabled&&number?buildTeacherNumberPalette(number,numberSettings.overrides):null;
+      const style=palette?`background:${palette[0]};color:${palette[1]};border-left:4px solid ${palette[2]};cursor:pointer;`:'';
+      const numberBadge=numberSettings.enabled&&number?`<span style="display:block;margin-top:3px;font-size:10px;font-weight:800;color:${palette[1]};opacity:.78">${escapeHtml(number)}</span>`:'';
+      html+=`<div class="tt-cell ${cls}" data-number="${escapeHtml(number)}" title="${escapeHtml(title||subj||'')}" style="${style}">${escapeHtml(display)}${numberBadge}</div>`;
     }
   }
   html+='</div>';
   wrap.innerHTML=html;
+  if(numberSettings.enabled){
+    wrap.querySelectorAll('.tt-cell[data-number]').forEach(cell=>{
+      const number=cell.dataset.number;
+      if(!number) return;
+      cell.onclick=()=>openTeacherNumberColorPrompt(number,numberSettings.overrides[number]||'');
+    });
+  }
 }
 
 // ─────────────────────────────────────────────────────────
@@ -1892,7 +2010,7 @@ renderTodoRow = function (todo) {
   const done = !!todo.is_done;
   const priorityColor = done ? 'var(--text3)' : todo.priority === '높음' ? 'var(--danger)' : todo.priority === '낮음' ? 'var(--text3)' : 'var(--text)';
   const deadlineLabel = formatTodoDeadline(todo.deadline);
-  const sourceBadge = todo.source_text ? '<span class="todo-source-badge">원문</span>' : '';
+  const sourceBadge = !done && todo.source_text ? '<span class="todo-source-badge">원문</span>' : '';
   return `<div class="todo-row${done ? ' done' : ''}" data-id="${todo.id}" onclick="window.__dtOpen(${todo.id})"><span class="todo-drag-handle" title="드래그해서 순서 변경" onclick="event.stopPropagation()">⋮⋮</span><input type="checkbox" class="todo-chk" ${done ? 'checked' : ''} onchange="event.stopPropagation();window.__dtTog(${todo.id})"><div class="todo-main"><span class="todo-txt" style="color:${priorityColor}">${escapeHtml(todo.title)}</span><div class="todo-meta">${deadlineLabel ? `<span class="todo-deadline">${deadlineLabel}</span>` : ''}${sourceBadge}</div></div><button class="todo-del-btn" onclick="event.stopPropagation();window.__dtDel(${todo.id})">×</button></div>`;
 };
 

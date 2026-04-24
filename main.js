@@ -12,6 +12,7 @@ let mainWindow;
 let isWidgetMode   = false;
 let widgetInterval = null;
 let savedBounds    = null;
+let isClosingAfterCloudSync = false;
 let updateState = {
   status: 'idle',
   version: app.getVersion(),
@@ -109,6 +110,56 @@ function createWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, 'src/index.html'));
+
+  mainWindow.on('close', async (event) => {
+    if (isClosingAfterCloudSync || !mainWindow || mainWindow.isDestroyed()) return;
+    event.preventDefault();
+    isClosingAfterCloudSync = true;
+    let syncResult = { ok: true };
+
+    try {
+      syncResult = await Promise.race([
+        mainWindow.webContents.executeJavaScript(
+          'window.appSyncBeforeClose ? window.appSyncBeforeClose() : Promise.resolve({ ok: true, skipped: true })',
+          true
+        ),
+        new Promise((resolve) => setTimeout(() => resolve({
+          ok: false,
+          reason: 'timeout',
+          message: '클라우드 저장 시간이 오래 걸리고 있습니다.',
+        }), 5000)),
+      ]);
+    } catch (error) {
+      console.error('cloud sync before close failed', error);
+      syncResult = {
+        ok: false,
+        reason: 'sync-failed',
+        message: error?.message || '클라우드 저장에 실패했습니다.',
+      };
+    }
+
+    if (!syncResult || syncResult.ok === false) {
+      const result = await dialog.showMessageBox(mainWindow, {
+        type: 'warning',
+        buttons: ['로컬에 저장하고 종료', '종료 취소'],
+        defaultId: 0,
+        cancelId: 1,
+        title: '클라우드 저장 실패',
+        message: '인터넷에 연결되어 있지 않거나 클라우드 저장이 완료되지 않았습니다.',
+        detail: '변경사항은 이 컴퓨터의 로컬 저장소에는 저장되어 있습니다.\n\n다른 컴퓨터와 동기화하려면 나중에 인터넷이 연결된 상태에서 앱을 다시 실행해 주세요.',
+      });
+
+      if (result.response === 1) {
+        isClosingAfterCloudSync = false;
+        return;
+      }
+    }
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.close();
+    }
+  });
+
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
     if (app.isPackaged) {

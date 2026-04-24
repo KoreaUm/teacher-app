@@ -40,5 +40,10 @@ service cloud.firestore {
     match /users/{userId}/session/{docId} {
       allow read, write: if isSelf(userId) || isAdmin();
     }
+
+    match /app/{docId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
   }
 }

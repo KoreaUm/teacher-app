@@ -29,6 +29,32 @@ async function render(container) {
         </div>
       </div>
 
+      <section class="card settings-card" style="margin-bottom:16px">
+        <div class="settings-head">
+          <div>
+            <div class="settings-title">공지사항 배포</div>
+            <div class="settings-note">사용자가 프로그램을 켰을 때 보여줄 공지사항을 배포합니다. 업데이트 내용, 사용 방법 변경 등을 적어 주세요.</div>
+          </div>
+        </div>
+        <div class="form-row">
+          <label>제목</label>
+          <input class="input" id="notice-title" placeholder="예: 업데이트 안내">
+        </div>
+        <div class="form-row">
+          <label>버전</label>
+          <input class="input" id="notice-version" placeholder="예: 2.0.16">
+        </div>
+        <div class="form-row">
+          <label>내용</label>
+          <textarea class="input" id="notice-body" style="min-height:130px;resize:vertical" placeholder="- 변경된 내용&#10;- 사용자가 알아야 할 내용"></textarea>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" id="notice-publish-btn">공지사항 배포</button>
+          <button class="btn btn-secondary btn-sm" id="notice-load-btn">현재 공지 불러오기</button>
+          <span id="notice-status" class="settings-note"></span>
+        </div>
+      </section>
+
       <section class="card settings-card">
         <div class="settings-head">
           <div>
@@ -68,6 +94,14 @@ async function init() {
     await loadUsers(true);
   });
 
+  document.getElementById('notice-load-btn')?.addEventListener('click', async () => {
+    await loadNotice(true);
+  });
+
+  document.getElementById('notice-publish-btn')?.addEventListener('click', async () => {
+    await publishNotice();
+  });
+
   document.getElementById('user-management-search')?.addEventListener('input', (event) => {
     searchKeyword = event.target.value || '';
     renderUserList();
@@ -82,6 +116,43 @@ async function init() {
   });
 
   await loadUsers(false);
+  await loadNotice(false);
+}
+
+async function loadNotice(showToast) {
+  const status = document.getElementById('notice-status');
+  try {
+    const notice = window.appNoticeGet ? await window.appNoticeGet() : null;
+    document.getElementById('notice-title').value = notice?.title || '';
+    document.getElementById('notice-version').value = notice?.version || '';
+    document.getElementById('notice-body').value = notice?.body || '';
+    if (status) status.textContent = notice ? '현재 배포된 공지를 불러왔습니다.' : '아직 배포된 공지가 없습니다.';
+    if (showToast) toast('공지사항을 불러왔습니다.', 'success');
+  } catch (error) {
+    if (status) status.textContent = '공지사항을 불러오지 못했습니다.';
+    if (showToast) toast(error?.message || '공지사항을 불러오지 못했습니다.', 'error');
+  }
+}
+
+async function publishNotice() {
+  const status = document.getElementById('notice-status');
+  const title = document.getElementById('notice-title')?.value.trim() || '';
+  const version = document.getElementById('notice-version')?.value.trim() || '';
+  const body = document.getElementById('notice-body')?.value.trim() || '';
+  if (!body) {
+    toast('공지 내용을 입력해 주세요.', 'error');
+    return;
+  }
+  if (!confirm('이 공지사항을 모든 사용자에게 배포할까요?')) return;
+  try {
+    if (status) status.textContent = '배포 중...';
+    await window.appNoticePublish({ title, version, body });
+    if (status) status.textContent = '공지사항을 배포했습니다.';
+    toast('공지사항을 배포했습니다.', 'success');
+  } catch (error) {
+    if (status) status.textContent = '배포 실패';
+    toast(error?.message || '공지사항 배포에 실패했습니다.', 'error');
+  }
 }
 
 async function loadUsers(showToast) {
