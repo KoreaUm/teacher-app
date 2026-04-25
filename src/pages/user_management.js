@@ -55,6 +55,23 @@ async function render(container) {
         </div>
       </section>
 
+      <section class="card settings-card" style="margin-bottom:16px">
+        <div class="settings-head">
+          <div>
+            <div class="settings-title">성적관리 비밀번호</div>
+            <div class="settings-note">성적관리 권한이 있는 교사도 이 비밀번호를 입력해야 페이지에 들어갈 수 있습니다. 기본값: cndwntkdrh1234</div>
+          </div>
+        </div>
+        <div class="form-row">
+          <label>새 비밀번호</label>
+          <input class="input" id="grades-password-new" type="text" placeholder="새 비밀번호 입력" style="max-width:260px">
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" id="grades-password-save-btn">비밀번호 변경</button>
+          <span id="grades-password-admin-status" class="settings-note"></span>
+        </div>
+      </section>
+
       <section class="card settings-card">
         <div class="settings-head">
           <div>
@@ -100,6 +117,10 @@ async function init() {
 
   document.getElementById('notice-publish-btn')?.addEventListener('click', async () => {
     await publishNotice();
+  });
+
+  document.getElementById('grades-password-save-btn')?.addEventListener('click', async () => {
+    await saveGradesPassword();
   });
 
   document.getElementById('user-management-search')?.addEventListener('input', (event) => {
@@ -155,6 +176,27 @@ async function publishNotice() {
   }
 }
 
+async function saveGradesPassword() {
+  const input = document.getElementById('grades-password-new');
+  const status = document.getElementById('grades-password-admin-status');
+  const password = input?.value.trim() || '';
+  if (password.length < 4) {
+    toast('성적관리 비밀번호는 4자 이상으로 입력해 주세요.', 'error');
+    return;
+  }
+  if (!confirm('성적관리 비밀번호를 변경할까요?')) return;
+  try {
+    if (status) status.textContent = '변경 중...';
+    await window.appGradesSetPassword(password);
+    if (input) input.value = '';
+    if (status) status.textContent = '비밀번호를 변경했습니다.';
+    toast('성적관리 비밀번호를 변경했습니다.', 'success');
+  } catch (error) {
+    if (status) status.textContent = '변경 실패';
+    toast(error?.message || '성적관리 비밀번호 변경에 실패했습니다.', 'error');
+  }
+}
+
 async function loadUsers(showToast) {
   const list = document.getElementById('user-management-list');
   if (list) {
@@ -202,10 +244,13 @@ function renderUserList() {
           <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
             <span class="chip ${user.role === 'admin' ? 'primary' : ''}">${user.role === 'admin' ? '관리자' : '사용자'}</span>
             <span class="chip ${user.deleted ? 'danger' : (user.active ? 'success' : 'danger')}">${user.deleted ? '삭제됨' : (user.active ? '사용 중' : '사용 중지')}</span>
+            ${user.gradeAccess ? '<span class="chip primary">성적관리 권한</span>' : ''}
           </div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
           ${user.uid === state?.uid ? '<span class="settings-note">내 계정</span>' : ''}
+          ${!user.deleted && user.gradeAccess ? `<button class="btn btn-secondary btn-sm user-grade-off-btn" data-uid="${escapeHtml(user.uid)}">성적권한 해제</button>` : ''}
+          ${!user.deleted && !user.gradeAccess ? `<button class="btn btn-primary btn-sm user-grade-on-btn" data-uid="${escapeHtml(user.uid)}">성적권한 부여</button>` : ''}
           ${user.uid !== state?.uid && !user.deleted && user.active ? `<button class="btn btn-secondary btn-sm user-disable-btn" data-uid="${escapeHtml(user.uid)}">사용 중지</button>` : ''}
           ${user.uid !== state?.uid && !user.deleted && !user.active ? `<button class="btn btn-primary btn-sm user-enable-btn" data-uid="${escapeHtml(user.uid)}">다시 허용</button>` : ''}
           ${user.uid !== state?.uid && !user.deleted ? `<button class="btn btn-danger btn-sm user-delete-btn" data-uid="${escapeHtml(user.uid)}" data-name="${escapeHtml(user.displayName || user.email)}">계정 삭제</button>` : ''}
@@ -218,6 +263,22 @@ function renderUserList() {
     button.addEventListener('click', async () => {
       await window.appAuthUpdateUser(button.dataset.uid, { active: false });
       toast('사용자를 중지했습니다.', 'success');
+      await loadUsers(false);
+    });
+  });
+
+  root.querySelectorAll('.user-grade-on-btn').forEach((button) => {
+    button.addEventListener('click', async () => {
+      await window.appAuthUpdateUser(button.dataset.uid, { gradeAccess: true });
+      toast('성적관리 권한을 부여했습니다.', 'success');
+      await loadUsers(false);
+    });
+  });
+
+  root.querySelectorAll('.user-grade-off-btn').forEach((button) => {
+    button.addEventListener('click', async () => {
+      await window.appAuthUpdateUser(button.dataset.uid, { gradeAccess: false });
+      toast('성적관리 권한을 해제했습니다.', 'success');
       await loadUsers(false);
     });
   });

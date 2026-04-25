@@ -8,6 +8,7 @@
 <script src="../node_modules/firebase/firebase-app-compat.js"></script>
 <script src="../node_modules/firebase/firebase-auth-compat.js"></script>
 <script src="../node_modules/firebase/firebase-firestore-compat.js"></script>
+<script src="../node_modules/firebase/firebase-functions-compat.js"></script>
 <script src="firebase/config.js"></script>
 </head>
 <body>
@@ -67,6 +68,7 @@
   var firebaseApp = null;
   var firebaseAuth = null;
   var firebaseDb = null;
+  var firebaseFunctions = null;
   var authUser = null;
   var authProfile = null;
   var authOverlayEl = null;
@@ -288,6 +290,16 @@
       });
     }
 
+    if (window.appGradesCanUse && window.appGradesCanUse()) {
+      actions.push({
+        key: "grades",
+        title: "성적관리",
+        desc: "권한이 있는 교사용 공동 성적관리",
+        text: "성적 성적관리 점수 시험 평가 공동 교사 비밀 페이지",
+        run: function () { navigateTo("grades"); }
+      });
+    }
+
     return pages.concat(actions);
   }
 
@@ -396,6 +408,7 @@
       : window.firebase.initializeApp(window.__firebaseConfig);
     firebaseAuth = window.firebase.auth();
     firebaseDb = window.firebase.firestore();
+    firebaseFunctions = window.firebase.functions ? window.firebase.functions() : null;
     firebaseDb.settings({
       experimentalForceLongPolling: true
     });
@@ -800,7 +813,8 @@
           approved: data.approved !== false,
           active: data.active !== false,
           deleted: data.deleted === true,
-          role: String(data.role || "user")
+          role: String(data.role || "user"),
+          gradeAccess: data.gradeAccess === true
         });
       });
       users.sort(function (a, b) {
@@ -810,6 +824,176 @@
         return a.email.localeCompare(b.email, "ko");
       });
       return users;
+    });
+  };
+
+  function canUseGrades() {
+    return !!authUser && authProfile && authProfile.active !== false &&
+      (isAdminProfile(authProfile) || authProfile.gradeAccess === true);
+  }
+
+  window.appGradesCanUse = canUseGrades;
+
+  window.appGradesGetPassword = function () {
+    return Promise.reject(new Error("보안상 비밀번호는 앱에서 읽을 수 없습니다."));
+  };
+
+  window.appGradesSetPassword = function (password) {
+    if (!isAdminProfile(authProfile)) return Promise.reject(new Error("관리자만 성적관리 비밀번호를 변경할 수 있습니다."));
+    var next = String(password || "").trim();
+    if (next.length < 4) return Promise.reject(new Error("비밀번호는 4자 이상이어야 합니다."));
+    if (!firebaseFunctions) return Promise.reject(new Error("Cloud Functions가 준비되지 않았습니다."));
+    return firebaseFunctions.httpsCallable("setGradesPassword")({ password: next });
+  };
+
+  function gradeSessionDoc() {
+    ensureFirebase();
+    if (!authUser) throw new Error("로그인이 필요합니다.");
+    return getGradesBookDoc().collection("sessions").doc(authUser.uid);
+  }
+
+  function isGradeSessionFresh(data) {
+    var until = data && data.expiresAt;
+    var millis = until && typeof until.toMillis === "function" ? until.toMillis() : Number(until || 0);
+    return millis > Date.now();
+  }
+
+  window.appGradesVerifyPassword = function (password) {
+    if (!canUseGrades()) return Promise.reject(new Error("성적관리 권한이 없습니다."));
+    var typed = String(password || "").trim();
+    if (!typed) return Promise.reject(new Error("비밀번호를 입력해 주세요."));
+    if (!firebaseFunctions) return Promise.reject(new Error("Cloud Functions가 준비되지 않았습니다."));
+    return firebaseFunctions.httpsCallable("verifyGradesPassword")({
+      password: typed,
+      deviceId: getLocalDeviceId()
+    }).then(function () { return true; });
+  };
+
+  function requireGradeSession() {
+    if (!canUseGrades()) return Promise.reject(new Error("성적관리 권한이 없습니다."));
+    return gradeSessionDoc().get().then(function (snap) {
+      var data = snap.exists ? (snap.data() || {}) : {};
+      if (!data.active || data.deviceId !== getLocalDeviceId() || !isGradeSessionFresh(data)) {
+        throw new Error("성적관리 비밀번호 확인이 필요합니다.");
+      }
+      return true;
+    });
+  }
+
+  function getGradesBookDoc() {
+    ensureFirebase();
+    return firebaseDb.collection("gradeBooks").doc("default");
+  }
+
+  window.appGradesGetColumns = function () {
+    if (!canUseGrades()) return Promise.reject(new Error("성적관리 권한이 없습니다."));
+    return requireGradeSession().then(function () {
+      return getGradesBookDoc().get();
+    }).then(function (snap) {
+      var data = snap.exists ? (snap.data() || {}) : {};
+      var columns = Array.isArray(data.columns) ? data.columns : [];
+      return columns.slice().sort(function (a, b) {
+        return (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0);
+      });
+    });
+  };
+
+  window.appGradesSaveColumns = function (columns) {
+    if (!canUseGrades()) return Promise.reject(new Error("성적관리 권한이 없습니다."));
+    return requireGradeSession().then(function () {
+      return getGradesBookDoc().set({
+      columns: Array.isArray(columns) ? columns : [],
+      updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+      updatedBy: normalizeEmail(authUser && authUser.email)
+      }, { merge: true });
+    });
+  };
+
+  window.appGradesGetScores = function () {
+    if (!canUseGrades()) return Promise.reject(new Error("성적관리 권한이 없습니다."));
+    return requireGradeSession().then(function () {
+      return getGradesBookDoc().collection("scores").get();
+    }).then(function (snap) {
+      var rows = [];
+      snap.forEach(function (doc) {
+        rows.push(Object.assign({ id: doc.id }, doc.data() || {}));
+      });
+      return rows;
+    });
+  };
+
+  window.appGradesSetScore = function (payload) {
+    if (!canUseGrades()) return Promise.reject(new Error("성적관리 권한이 없습니다."));
+    var columnId = String((payload && payload.column_id) || "");
+    var studentKey = String((payload && payload.student_key) || "");
+    if (!columnId || !studentKey) return Promise.reject(new Error("성적 정보가 올바르지 않습니다."));
+    var docId = encodeURIComponent(studentKey) + "_" + encodeURIComponent(columnId);
+    var docRef = getGradesBookDoc().collection("scores").doc(docId);
+    var rawScore = payload.score;
+    if (rawScore === null || rawScore === undefined || rawScore === "") {
+      return requireGradeSession().then(function () {
+        return docRef.delete();
+      });
+    }
+    var score = Number(rawScore);
+    if (!Number.isFinite(score) || score < 0) {
+      return Promise.reject(new Error("점수는 0 이상의 숫자여야 합니다."));
+    }
+    return requireGradeSession().then(function () {
+      return getGradesBookDoc().get();
+    }).then(function (snap) {
+      var data = snap.exists ? (snap.data() || {}) : {};
+      var columns = Array.isArray(data.columns) ? data.columns : [];
+      var column = columns.find(function (item) { return String(item.id) === columnId; });
+      var maxScore = column ? Number(column.max_score) || 100 : 100;
+      if (score > maxScore) throw new Error("점수는 만점을 넘을 수 없습니다.");
+      return docRef.set({
+        column_id: columnId,
+        student_key: studentKey,
+        student_number: Number(payload.student_number) || 0,
+        student_name: String(payload.student_name || ""),
+        score: score,
+        updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
+        updatedBy: normalizeEmail(authUser && authUser.email)
+      }, { merge: true });
+    });
+  };
+
+  window.appCareerListRecords = function () {
+    return requireGradeSession().then(function () {
+      return getGradesBookDoc().collection("careerStudents").get();
+    }).then(function (snap) {
+      var rows = [];
+      snap.forEach(function (doc) {
+        rows.push(Object.assign({ id: doc.id }, doc.data() || {}));
+      });
+      rows.sort(function (a, b) {
+        return (Number(b.graduationYear) || 0) - (Number(a.graduationYear) || 0) ||
+          String(a.name || "").localeCompare(String(b.name || ""), "ko");
+      });
+      return rows;
+    });
+  };
+
+  window.appCareerSaveRecord = function (record) {
+    return requireGradeSession().then(function () {
+      var data = Object.assign({}, record || {});
+      var id = String(data.id || "").trim() || getGradesBookDoc().collection("careerStudents").doc().id;
+      delete data.id;
+      data.graduationYear = Number(data.graduationYear) || new Date().getFullYear();
+      data.gradeAverage = Number(data.gradeAverage) || 0;
+      data.certificates = Array.isArray(data.certificates) ? data.certificates.map(String).filter(Boolean) : [];
+      data.updatedAt = window.firebase.firestore.FieldValue.serverTimestamp();
+      data.updatedBy = normalizeEmail(authUser && authUser.email);
+      return getGradesBookDoc().collection("careerStudents").doc(id).set(data, { merge: true }).then(function () {
+        return id;
+      });
+    });
+  };
+
+  window.appCareerDeleteRecord = function (id) {
+    return requireGradeSession().then(function () {
+      return getGradesBookDoc().collection("careerStudents").doc(String(id || "")).delete();
     });
   };
 
@@ -1682,7 +1866,7 @@
     syncActiveTabs();
 
     var item = findMenuPage(key);
-    text("page-title", key === "dashboard" ? "대시보드" : (key === "user_management" ? "회원 관리" : (item ? item.label : "")));
+    text("page-title", key === "dashboard" ? "대시보드" : (key === "user_management" ? "회원 관리" : (key === "grades" ? "성적관리" : (item ? item.label : ""))));
     setDashboardControls(key === "dashboard");
     showLoading();
 
