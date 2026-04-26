@@ -132,24 +132,31 @@ function showMainWindow() {
 function createTray() {
   if (tray) return tray;
 
-  const iconPath = path.join(__dirname, 'assets/icon.ico');
-  tray = new Tray(iconPath);
-  tray.setToolTip('교사 업무 관리');
-  tray.setContextMenu(Menu.buildFromTemplate([
-    {
-      label: '열기',
-      click: () => showMainWindow(),
-    },
-    {
-      label: '완전 종료',
-      click: () => {
-        isQuitting = true;
-        app.quit();
+  try {
+    const iconPath = fs.existsSync(path.join(__dirname, 'assets/icon.ico'))
+      ? path.join(__dirname, 'assets/icon.ico')
+      : path.join(__dirname, 'assets/app-icon.png');
+    tray = new Tray(iconPath);
+    tray.setToolTip('교사 업무 관리');
+    tray.setContextMenu(Menu.buildFromTemplate([
+      {
+        label: '열기',
+        click: () => showMainWindow(),
       },
-    },
-  ]));
-  tray.on('click', () => showMainWindow());
-  tray.on('double-click', () => showMainWindow());
+      {
+        label: '완전 종료',
+        click: () => {
+          isQuitting = true;
+          app.quit();
+        },
+      },
+    ]));
+    tray.on('click', () => showMainWindow());
+    tray.on('double-click', () => showMainWindow());
+  } catch (error) {
+    console.error('tray creation failed', error);
+    tray = null;
+  }
   return tray;
 }
 
