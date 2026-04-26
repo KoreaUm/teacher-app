@@ -16,6 +16,7 @@ let widgetInterval = null;
 let savedBounds    = null;
 let isClosingAfterCloudSync = false;
 let activeDbUserId = '';
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
 let updateState = {
   status: 'idle',
   version: app.getVersion(),
@@ -160,6 +161,19 @@ function createTray() {
   return tray;
 }
 
+function hideWindowToTray() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  if (!tray) {
+    mainWindow.minimize();
+    mainWindow.setSkipTaskbar(false);
+    return;
+  }
+
+  mainWindow.hide();
+  mainWindow.setSkipTaskbar(true);
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1360,
@@ -227,8 +241,7 @@ function createWindow() {
     }
 
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.hide();
-      mainWindow.setSkipTaskbar(true);
+      hideWindowToTray();
     }
     isClosingAfterCloudSync = false;
   });
@@ -257,15 +270,23 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(() => {
-  openDatabaseForUser('');
-  setupAutoUpdater();
-  createTray();
-  createWindow();
-  app.on('activate', () => {
+if (!gotSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
     showMainWindow();
   });
-});
+
+  app.whenReady().then(() => {
+    openDatabaseForUser('');
+    setupAutoUpdater();
+    createTray();
+    createWindow();
+    app.on('activate', () => {
+      showMainWindow();
+    });
+  });
+}
 
 app.on('before-quit', () => {
   isQuitting = true;
