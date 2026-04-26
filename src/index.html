@@ -429,7 +429,7 @@
     if (code === "auth/weak-password") return "비밀번호는 6자 이상으로 입력해 주세요.";
     if (code === "auth/network-request-failed") return "네트워크 연결을 확인해 주세요.";
     if (code === "permission-denied" || code === "firestore/permission-denied") {
-      return "Firestore 보안 규칙이 아직 적용되지 않았습니다. Firebase 콘솔에서 규칙을 붙여넣고 배포해 주세요.";
+      return "계정 정보를 확인할 권한이 없습니다. 앱을 완전히 종료한 뒤 다시 로그인해 주세요. 계속되면 관리자에게 계정 활성화 상태를 확인해 달라고 해 주세요.";
     }
     return error && error.message ? error.message : (fallback || "로그인 처리 중 문제가 발생했습니다.");
   }
@@ -647,7 +647,7 @@
     var message = error && error.message ? String(error.message) : "";
     var hint = "중복 로그인 확인에 실패했습니다.";
     if (code.indexOf("permission-denied") >= 0) {
-      hint += " Firebase Firestore 규칙에 session 권한이 게시되지 않았을 가능성이 큽니다.";
+      hint += " 계정 세션을 저장할 권한이 없습니다. 앱을 완전히 종료한 뒤 다시 로그인해 주세요. 계속되면 관리자에게 계정 활성화 상태를 확인해 달라고 해 주세요.";
     } else if (code.indexOf("unavailable") >= 0 || code.indexOf("network") >= 0) {
       hint += " 인터넷 연결 또는 Firebase 연결을 확인해 주세요.";
     } else {
@@ -1614,7 +1614,6 @@
         return docRef.set({
           email: normalizeEmail(user.email),
           displayName: displayName || baseData.displayName || "",
-          active: baseData.active !== false,
           lastLoginAt: window.firebase.firestore.FieldValue.serverTimestamp()
         }, { merge: true }).then(function () {
           return docRef.get();
@@ -1625,6 +1624,7 @@
         displayName: displayName || "",
         approved: true,
         active: true,
+        gradeAccess: false,
         role: "user",
         createdAt: window.firebase.firestore.FieldValue.serverTimestamp(),
         lastLoginAt: window.firebase.firestore.FieldValue.serverTimestamp()
