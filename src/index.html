@@ -1021,6 +1021,8 @@
       var data = Object.assign({}, record || {});
       var id = String(data.id || "").trim() || getGradesBookDoc().collection("careerStudents").doc().id;
       delete data.id;
+      data.recordType = data.recordType === "graduate" ? "graduate" : "current";
+      data.recordTypeLabel = data.recordType === "graduate" ? "졸업생" : "현학생";
       data.graduationYear = Number(data.graduationYear) || new Date().getFullYear();
       data.gradeAverage = Number(data.gradeAverage) || 0;
       data.certificates = Array.isArray(data.certificates) ? data.certificates.map(String).filter(Boolean) : [];

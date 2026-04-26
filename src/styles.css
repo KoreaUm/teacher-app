@@ -1391,6 +1391,201 @@ tbody tr:hover { background: var(--hover); }
 .page-header-title { font-size: 18px; font-weight: 700; color: var(--text); }
 .page-header-actions { display: flex; gap: 8px; }
 
+/* Secure futuristic styling for the secret grades page */
+.grades-secret-shell {
+  min-height: 100%;
+  color: #d7f7ff;
+  background:
+    radial-gradient(circle at 12% 8%, rgba(34, 211, 238, 0.22), transparent 28%),
+    radial-gradient(circle at 84% 18%, rgba(99, 102, 241, 0.24), transparent 30%),
+    linear-gradient(135deg, #06111f 0%, #0a1729 42%, #101827 100%);
+}
+.grades-secret-shell::before {
+  content: '';
+  position: fixed;
+  inset: 88px 0 0;
+  pointer-events: none;
+  opacity: .16;
+  background-image:
+    linear-gradient(rgba(125, 249, 255, .18) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(125, 249, 255, .18) 1px, transparent 1px);
+  background-size: 36px 36px;
+  mask-image: linear-gradient(to bottom, rgba(0,0,0,.9), transparent 78%);
+}
+.grades-hero {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+  padding: 22px;
+  border: 1px solid rgba(125, 249, 255, .22);
+  border-radius: 22px;
+  background: linear-gradient(135deg, rgba(8, 20, 38, .92), rgba(16, 24, 39, .72));
+  box-shadow: 0 24px 80px rgba(0, 0, 0, .34), inset 0 1px 0 rgba(255,255,255,.08);
+  overflow: hidden;
+}
+.grades-hero::after {
+  content: '';
+  position: absolute;
+  width: 220px;
+  height: 220px;
+  right: -70px;
+  top: -90px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(34,211,238,.28), transparent 65%);
+  filter: blur(2px);
+}
+.grades-kicker {
+  color: #67e8f9;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+.grades-title {
+  margin-top: 4px;
+  color: #f8fafc;
+  font-size: 28px;
+  font-weight: 950;
+  letter-spacing: -.04em;
+}
+.grades-subtitle {
+  margin-top: 6px;
+  color: rgba(215, 247, 255, .74);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.grades-hero-actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.grades-secret-shell .grades-panel {
+  position: relative;
+  border: 1px solid rgba(125, 249, 255, .16);
+  background: linear-gradient(180deg, rgba(15, 23, 42, .86), rgba(8, 13, 27, .76));
+  box-shadow: 0 18px 55px rgba(0, 0, 0, .28), inset 0 1px 0 rgba(255,255,255,.05);
+  backdrop-filter: blur(12px);
+}
+.grades-secret-shell .settings-title {
+  color: #e0fbff;
+  font-weight: 900;
+}
+.grades-secret-shell .settings-note {
+  color: rgba(215, 247, 255, .62);
+}
+.grades-secret-shell .menu-group-card {
+  border-color: rgba(125, 249, 255, .15);
+  background: linear-gradient(135deg, rgba(10, 23, 42, .92), rgba(17, 24, 39, .78));
+  color: #e0fbff;
+}
+.grades-secret-shell .input {
+  border-color: rgba(125, 249, 255, .20);
+  background: rgba(2, 6, 23, .62);
+  color: #e0fbff;
+}
+.grades-secret-shell .input:focus {
+  border-color: #22d3ee;
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, .18), 0 0 26px rgba(34, 211, 238, .16);
+}
+.grades-secret-shell .btn-primary {
+  background: linear-gradient(135deg, #06b6d4, #2563eb);
+  box-shadow: 0 10px 28px rgba(37, 99, 235, .28);
+}
+.grades-secret-shell .btn-secondary {
+  color: #c8f7ff;
+  border-color: rgba(125, 249, 255, .18);
+  background: rgba(15, 23, 42, .72);
+}
+.grades-secret-shell table {
+  background: rgba(2, 6, 23, .45);
+}
+.grades-secret-shell thead th {
+  background: rgba(15, 23, 42, .95);
+  color: #8eefff;
+  border-bottom-color: rgba(125, 249, 255, .18);
+}
+.grades-secret-shell tbody td {
+  color: #d7f7ff;
+  border-bottom-color: rgba(125, 249, 255, .10);
+}
+.grades-secret-shell tbody tr:hover {
+  background: rgba(34, 211, 238, .07);
+}
+.grades-ai-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.grades-ai-card,
+.grades-ai-section {
+  border: 1px solid rgba(125, 249, 255, .15);
+  border-radius: 16px;
+  background: rgba(2, 6, 23, .36);
+  padding: 14px;
+}
+.grades-ai-label,
+.grades-ai-section-title {
+  color: #67e8f9;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.grades-ai-big {
+  margin-top: 4px;
+  color: #f8fafc;
+  font-size: 30px;
+  font-weight: 950;
+}
+.grades-ai-copy {
+  margin-top: 6px;
+  color: rgba(215,247,255,.72);
+  line-height: 1.5;
+}
+.grades-ai-section {
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
+}
+.grades-ai-row {
+  display: grid;
+  gap: 3px;
+  padding: 10px 11px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, .56);
+  border: 1px solid rgba(125, 249, 255, .10);
+}
+.grades-ai-row b {
+  color: #f8fafc;
+}
+.grades-ai-row span {
+  color: rgba(215,247,255,.70);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.grades-ai-row.warning {
+  border-color: rgba(251, 191, 36, .35);
+}
+.grades-ai-row.warning b {
+  color: #fde68a;
+}
+.grades-ai-row.good {
+  border-color: rgba(45, 212, 191, .34);
+}
+.grades-ai-empty {
+  padding: 18px;
+  border: 1px dashed rgba(125, 249, 255, .25);
+  border-radius: 14px;
+  color: rgba(215,247,255,.76);
+  background: rgba(2, 6, 23, .32);
+}
+
 /* 학생 그리드 */
 .student-grid {
   display: grid;

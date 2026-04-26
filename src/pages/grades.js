@@ -5,14 +5,17 @@ let records = [];
 let quickLinks = [];
 let unlocked = false;
 let searchText = '';
+let typeFilter = 'all';
+let selectedStudentId = '';
 
 window.appGradesLock = function () {
   unlocked = false;
+  selectedStudentId = '';
   document.removeEventListener('keydown', handleGradesShortcutKeys);
 };
 
 const TEMPLATE_HEADERS = [
-  '졸업년도', '이름', '학번', '학년반', '평균내신', '출결요약',
+  '구분', '졸업년도', '이름', '학번', '학년반', '평균내신', '출결요약',
   '자격증', '희망회사', '희망직무', '취업회사', '취업직무', '지역', '비고'
 ];
 
@@ -54,13 +57,14 @@ async function render(container) {
   }
 
   container.innerHTML = `
-    <div class="page-wrap" style="max-width:none">
-      <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+    <div class="page-wrap grades-secret-shell" style="max-width:none">
+      <div class="grades-hero">
         <div>
-          <h1 class="page-header-title">취업 데이터 관리</h1>
-          <div class="settings-note" style="margin-top:4px">졸업생 성적, 자격증, 취업처를 모아 올해 학생의 취업 가능성을 조회합니다.</div>
+          <div class="grades-kicker">SECURE CAREER INTELLIGENCE</div>
+          <h1 class="grades-title">취업 데이터 관리</h1>
+          <div class="grades-subtitle">외부 API 없이, 이 프로그램 안의 현학생/졸업생 데이터만으로 취업 가능성과 준비 전략을 분석합니다.</div>
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <div class="grades-hero-actions">
           <button class="btn btn-secondary btn-sm" id="career-template-btn">CSV 양식 다운로드</button>
           <button class="btn btn-secondary btn-sm" id="career-import-btn">CSV 올리기</button>
           <button class="btn btn-secondary btn-sm" id="career-export-btn">CSV 내려받기</button>
@@ -69,20 +73,56 @@ async function render(container) {
         </div>
       </div>
 
-      <section class="card settings-card" style="margin-bottom:16px">
+      <section class="card settings-card grades-panel" style="margin-bottom:16px">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
           <div>
             <div class="settings-title">온라인 빠른 바로가기</div>
-            <div class="settings-note" style="margin-top:4px">성적관리 페이지 안에서만 열 수 있는 온라인 링크입니다.</div>
+            <div class="settings-note" style="margin-top:4px">성적관리 페이지 안에서만 쓰는 온라인 자료 링크입니다.</div>
           </div>
           <button class="btn btn-primary btn-sm" id="quick-link-add-btn">+ 링크 추가</button>
         </div>
         <div id="quick-link-list" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:12px"></div>
       </section>
 
-      <section class="card settings-card" style="margin-bottom:16px">
-        <div class="settings-title">학생 취업 가능성 조회</div>
-        <div class="settings-note" style="margin:4px 0 14px">현재 학생의 내신/자격증/희망회사를 입력하면, 졸업생 데이터 기반으로 필요한 자격증과 내신 목표를 계산합니다.</div>
+      <section style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;margin-bottom:16px">
+        <div class="card settings-card grades-panel grades-analysis-panel">
+          <div class="settings-title">학생 이름으로 분석</div>
+          <div class="settings-note" style="margin:4px 0 14px">현학생 이름을 검색하면 내신, 자격증, 희망회사를 불러오고 졸업생 데이터를 기준으로 가능성이 있는 회사를 보여줍니다.</div>
+          <div class="form-row">
+            <label>현학생 검색</label>
+            <input class="input" id="student-search-input" placeholder="예: 홍길동">
+          </div>
+          <div id="student-search-results" style="display:grid;gap:8px;margin:10px 0"></div>
+          <div id="student-analysis-result"></div>
+        </div>
+
+        <div class="card settings-card grades-panel grades-analysis-panel">
+          <div class="settings-title">회사 이름으로 분석</div>
+          <div class="settings-note" style="margin:4px 0 14px">회사명을 검색하면 그 회사에 합격한 졸업생들의 평균 내신, 자격증, 세부 데이터를 확인합니다.</div>
+          <div class="form-row">
+            <label>회사/직무 검색</label>
+            <input class="input" id="company-search-input" placeholder="예: 삼성, 전기, 자동화">
+          </div>
+          <button class="btn btn-primary btn-sm" id="company-search-btn">회사 데이터 조회</button>
+          <div id="company-analysis-result" style="margin-top:14px"></div>
+        </div>
+      </section>
+
+      <section class="card settings-card grades-panel grades-ai-panel" style="margin-bottom:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <div>
+            <div class="grades-kicker">LOCAL AI BRIEFING</div>
+            <div class="settings-title">로컬 AI 상담 요약</div>
+            <div class="settings-note" style="margin-top:4px">외부 서버로 데이터를 보내지 않고, 현재 저장된 졸업생/현학생 데이터만 읽어서 상담용 요약과 데이터 오류 후보를 만듭니다.</div>
+          </div>
+          <button class="btn btn-primary btn-sm" id="local-ai-run-btn">AI 요약 생성</button>
+        </div>
+        <div id="local-ai-result" style="margin-top:14px"></div>
+      </section>
+
+      <section class="card settings-card grades-panel" style="margin-bottom:16px">
+        <div class="settings-title">직접 조건으로 분석</div>
+        <div class="settings-note" style="margin:4px 0 14px">아직 현학생 데이터를 올리지 않았을 때 임시로 조건을 입력해서 조회할 수 있습니다.</div>
         <div class="form-row row-2">
           <div><label>학생 이름</label><input class="input" id="rec-name" placeholder="예: 홍길동"></div>
           <div><label>현재 평균 내신</label><input class="input" id="rec-grade" type="number" step="0.01" placeholder="예: 3.2"></div>
@@ -95,13 +135,20 @@ async function render(container) {
         <div id="recommendation-result" style="margin-top:14px"></div>
       </section>
 
-      <section class="card settings-card">
+      <section class="card settings-card grades-panel">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px">
           <div>
-            <div class="settings-title">졸업생/재학생 데이터</div>
-            <div class="settings-note">검색, 수정, 삭제가 가능합니다. 자격증은 쉼표로 구분합니다.</div>
+            <div class="settings-title">현학생 / 졸업생 데이터</div>
+            <div class="settings-note">CSV로 현학생과 졸업생을 함께 올릴 수 있습니다. 자격증은 쉼표로 구분합니다.</div>
           </div>
-          <input class="input" id="career-search" style="max-width:260px" placeholder="이름, 회사, 자격증 검색">
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <select class="input" id="career-type-filter" style="max-width:150px">
+              <option value="all">전체</option>
+              <option value="current">현학생</option>
+              <option value="graduate">졸업생</option>
+            </select>
+            <input class="input" id="career-search" style="max-width:260px" placeholder="이름, 회사, 자격증 검색">
+          </div>
         </div>
         <div id="career-table-wrap" style="overflow:auto;max-height:560px"></div>
       </section>
@@ -119,6 +166,7 @@ async function init() {
   bindActions();
   renderQuickLinks();
   renderTable();
+  renderStudentSearch('');
 }
 
 function bindPasswordGate() {
@@ -151,7 +199,7 @@ function formatPasswordError(error) {
   const code = String(error?.code || '');
   const message = String(error?.message || '');
   if (code.includes('not-found') || message.includes('not-found')) {
-    return '성적관리 보안 설정을 찾지 못했습니다. Firestore 규칙을 게시했는지 확인해 주세요.';
+    return '성적관리 보안 설정을 찾지 못했습니다. Functions 배포 상태를 확인해 주세요.';
   }
   if (code.includes('permission-denied')) return '비밀번호가 맞지 않거나 성적관리 권한이 없습니다.';
   if (code.includes('unauthenticated')) return (message || '로그인이 필요합니다. 앱을 완전히 종료한 뒤 다시 로그인해 주세요.') + ' / 코드: ' + code;
@@ -159,7 +207,7 @@ function formatPasswordError(error) {
 }
 
 async function loadRecords() {
-  records = await window.appCareerListRecords();
+  records = (await window.appCareerListRecords()).map(normalizeRecord);
 }
 
 async function loadQuickLinks() {
@@ -175,9 +223,21 @@ function bindActions() {
   document.getElementById('career-import-input')?.addEventListener('change', (event) => importCSV(event.target.files?.[0]));
   document.getElementById('career-add-btn')?.addEventListener('click', () => openRecordModal());
   document.getElementById('quick-link-add-btn')?.addEventListener('click', () => openQuickLinkModal());
-  document.getElementById('rec-run-btn')?.addEventListener('click', runRecommendation);
+  document.getElementById('rec-run-btn')?.addEventListener('click', runManualRecommendation);
+  document.getElementById('local-ai-run-btn')?.addEventListener('click', runLocalAiBriefing);
+  document.getElementById('company-search-btn')?.addEventListener('click', runCompanySearch);
+  document.getElementById('company-search-input')?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') runCompanySearch();
+  });
+  document.getElementById('student-search-input')?.addEventListener('input', (event) => {
+    renderStudentSearch(event.target.value || '');
+  });
   document.getElementById('career-search')?.addEventListener('input', (event) => {
     searchText = event.target.value || '';
+    renderTable();
+  });
+  document.getElementById('career-type-filter')?.addEventListener('change', (event) => {
+    typeFilter = event.target.value || 'all';
     renderTable();
   });
 }
@@ -186,7 +246,7 @@ function renderQuickLinks() {
   const root = document.getElementById('quick-link-list');
   if (!root) return;
   if (!quickLinks.length) {
-    root.innerHTML = '<div class="settings-note">등록된 온라인 바로가기가 없습니다. 자주 쓰는 온라인 성적/취업 자료 링크를 추가해 주세요.</div>';
+    root.innerHTML = '<div class="settings-note">등록된 온라인 바로가기가 없습니다. 자주 여는 취업/성적 자료 링크를 추가해 주세요.</div>';
     return;
   }
   root.innerHTML = quickLinks.map((link) => `
@@ -264,24 +324,293 @@ async function deleteQuickLink(id) {
   toast('온라인 바로가기를 삭제했습니다.', 'success');
 }
 
-function handleGradesShortcutKeys(event) {
-  if (!unlocked) return;
-  if (!event.altKey) return;
-  const tag = String(event.target?.tagName || '').toLowerCase();
-  if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
-  const key = String(event.key || '').toLowerCase();
-  if (key === 'r') {
-    event.preventDefault();
-    document.getElementById('rec-name')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    setTimeout(() => document.getElementById('rec-name')?.focus(), 250);
-  } else if (key === 'a') {
-    event.preventDefault();
-    openRecordModal();
-  } else if (key === 'l') {
-    event.preventDefault();
-    document.getElementById('career-table-wrap')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    setTimeout(() => document.getElementById('career-search')?.focus(), 250);
+function renderStudentSearch(query) {
+  const root = document.getElementById('student-search-results');
+  if (!root) return;
+  const q = normalize(query);
+  const currentStudents = getCurrentStudents();
+  const matches = (q ? currentStudents.filter((row) => normalize([row.name, row.schoolNumber, row.className, row.desiredCompany, row.certificates.join(',')].join(' ')).includes(q)) : currentStudents)
+    .slice(0, 8);
+
+  if (!matches.length) {
+    root.innerHTML = '<div class="settings-note">검색되는 현학생 데이터가 없습니다. CSV에서 구분을 "현학생"으로 올리거나 학생 데이터를 추가해 주세요.</div>';
+    selectedStudentId = '';
+    document.getElementById('student-analysis-result').innerHTML = '';
+    return;
   }
+
+  root.innerHTML = matches.map((row) => `
+    <button class="btn btn-secondary btn-sm student-pick-btn" data-id="${escapeHtml(row.id)}" style="justify-content:flex-start;text-align:left">
+      ${escapeHtml(row.name)} · ${escapeHtml(row.className || '-')} · 내신 ${escapeHtml(row.gradeAverage || '-')} · ${escapeHtml((row.certificates || []).slice(0, 3).join(', ') || '자격증 없음')}
+    </button>
+  `).join('');
+
+  root.querySelectorAll('.student-pick-btn').forEach((button) => {
+    button.addEventListener('click', () => {
+      selectedStudentId = button.dataset.id || '';
+      const student = records.find((row) => row.id === selectedStudentId);
+      if (student) renderStudentAnalysis(student);
+    });
+  });
+}
+
+function renderStudentAnalysis(student) {
+  const root = document.getElementById('student-analysis-result');
+  if (!root) return;
+  const result = analyzeStudent(student);
+  root.innerHTML = result;
+}
+
+function runCompanySearch() {
+  const query = document.getElementById('company-search-input')?.value.trim() || '';
+  const root = document.getElementById('company-analysis-result');
+  if (!root) return;
+  root.innerHTML = analyzeCompany(query);
+}
+
+function runManualRecommendation() {
+  const student = {
+    name: document.getElementById('rec-name')?.value.trim() || '현재 학생',
+    gradeAverage: Number(document.getElementById('rec-grade')?.value || 0),
+    certificates: splitList(document.getElementById('rec-certs')?.value || ''),
+    desiredCompany: document.getElementById('rec-company')?.value.trim() || '',
+    desiredRole: ''
+  };
+  document.getElementById('recommendation-result').innerHTML = analyzeStudent(student);
+}
+
+function runLocalAiBriefing() {
+  const root = document.getElementById('local-ai-result');
+  if (!root) return;
+  root.innerHTML = buildLocalAiBriefing();
+}
+
+function buildLocalAiBriefing() {
+  const currentStudents = getCurrentStudents();
+  const graduates = getGraduateRows();
+  const employed = graduates.filter((row) => row.employmentCompany);
+  const issues = detectDataIssues();
+  const companyStats = buildCompanyStats(employed).slice(0, 6);
+  const studentGaps = currentStudents
+    .map((student) => ({ student, summary: getStudentReadinessSummary(student, graduates) }))
+    .sort((a, b) => b.summary.priority - a.summary.priority)
+    .slice(0, 6);
+
+  if (!records.length) {
+    return '<div class="grades-ai-empty">분석할 데이터가 아직 없습니다. CSV로 현학생/졸업생 데이터를 먼저 올려 주세요.</div>';
+  }
+
+  return `
+    <div class="grades-ai-grid">
+      <div class="grades-ai-card">
+        <div class="grades-ai-label">데이터 상태</div>
+        <div class="grades-ai-big">${records.length}건</div>
+        <div class="grades-ai-copy">현학생 ${currentStudents.length}명 · 취업 졸업생 ${employed.length}명 · 회사 ${companyStats.length}개 이상</div>
+      </div>
+      <div class="grades-ai-card">
+        <div class="grades-ai-label">AI 판단</div>
+        <div class="grades-ai-copy">${escapeHtml(makeOverallAdvice(currentStudents, employed, issues))}</div>
+      </div>
+    </div>
+
+    <div class="grades-ai-section">
+      <div class="grades-ai-section-title">상담 우선순위 후보</div>
+      ${studentGaps.length ? studentGaps.map(({ student, summary }) => `
+        <div class="grades-ai-row">
+          <b>${escapeHtml(student.name || '이름 없음')}</b>
+          <span>${escapeHtml(summary.text)}</span>
+        </div>`).join('') : '<div class="settings-note">현학생 데이터가 없어 상담 우선순위를 만들 수 없습니다.</div>'}
+    </div>
+
+    <div class="grades-ai-section">
+      <div class="grades-ai-section-title">회사별 핵심 조건</div>
+      ${companyStats.length ? companyStats.map((item) => `
+        <div class="grades-ai-row">
+          <b>${escapeHtml(item.company)}</b>
+          <span>합격 ${item.count}명 · 평균 내신 ${item.avgGrade ? item.avgGrade.toFixed(2) : '-'} · 주요 자격증 ${escapeHtml(item.topCerts.join(', ') || '-')}</span>
+        </div>`).join('') : '<div class="settings-note">취업 회사가 입력된 졸업생 데이터가 없습니다.</div>'}
+    </div>
+
+    <div class="grades-ai-section">
+      <div class="grades-ai-section-title">데이터 정리 필요 후보</div>
+      ${issues.length ? issues.slice(0, 10).map((issue) => `
+        <div class="grades-ai-row warning">
+          <b>${escapeHtml(issue.title)}</b>
+          <span>${escapeHtml(issue.detail)}</span>
+        </div>`).join('') : '<div class="grades-ai-row good"><b>좋음</b><span>큰 데이터 오류 후보를 찾지 못했습니다.</span></div>'}
+    </div>`;
+}
+
+function makeOverallAdvice(currentStudents, employed, issues) {
+  if (!currentStudents.length && !employed.length) return '현학생과 졸업생 데이터를 모두 올리면 추천 정확도가 올라갑니다.';
+  if (!currentStudents.length) return '졸업생 데이터는 있으나 현학생 데이터가 부족합니다. 현학생 CSV를 올리면 학생별 상담 요약이 가능해집니다.';
+  if (!employed.length) return '현학생 데이터는 있으나 취업한 졸업생 데이터가 부족합니다. 합격 졸업생 데이터를 먼저 모아 주세요.';
+  if (issues.length >= 5) return '분석은 가능하지만 회사명/자격증명 표기가 흔들립니다. 데이터 정리를 먼저 하면 추천 결과가 더 정확해집니다.';
+  return '상담에 사용할 수 있는 기본 데이터가 준비되어 있습니다. 학생 이름 검색과 회사 검색을 함께 사용하면 좋습니다.';
+}
+
+function getStudentReadinessSummary(student, graduates) {
+  const desired = [student.desiredCompany, student.desiredRole].filter(Boolean).join(' ');
+  const pool = desired ? graduates.filter((row) => recordMatchesCompany(row, desired)) : graduates;
+  const usablePool = pool.length ? pool : graduates;
+  const avgGrade = average(usablePool.map((row) => Number(row.gradeAverage)).filter((value) => value > 0));
+  const topCerts = countCertificates(usablePool).slice(0, 4).map((item) => item.name);
+  const missing = topCerts.filter((cert) => !hasCertificate(student.certificates || [], cert));
+  const grade = Number(student.gradeAverage) || 0;
+  let priority = missing.length * 8;
+  if (grade && avgGrade && grade > avgGrade) priority += Math.min(30, (grade - avgGrade) * 12);
+  if (!desired) priority += 6;
+
+  const parts = [];
+  if (desired) parts.push(`희망 ${desired}`);
+  else parts.push('희망 회사 미입력');
+  if (grade && avgGrade) parts.push(grade > avgGrade ? `내신 ${Math.max(0, grade - avgGrade).toFixed(2)}등급 보완 필요` : '내신은 유리한 편');
+  if (missing.length) parts.push(`보완 자격증: ${missing.slice(0, 3).join(', ')}`);
+  else parts.push('주요 자격증 겹침');
+  return { priority, text: parts.join(' · ') };
+}
+
+function buildCompanyStats(rows) {
+  const grouped = {};
+  rows.forEach((row) => {
+    const key = String(row.employmentCompany || '').trim();
+    if (!key) return;
+    grouped[key] = grouped[key] || [];
+    grouped[key].push(row);
+  });
+  return Object.keys(grouped).map((company) => {
+    const companyRows = grouped[company];
+    return {
+      company,
+      count: companyRows.length,
+      avgGrade: average(companyRows.map((row) => Number(row.gradeAverage)).filter((value) => value > 0)),
+      topCerts: countCertificates(companyRows).slice(0, 3).map((item) => item.name)
+    };
+  }).sort((a, b) => b.count - a.count || String(a.company).localeCompare(String(b.company), 'ko'));
+}
+
+function detectDataIssues() {
+  const issues = [];
+  const companyNames = records.map((row) => row.employmentCompany).filter(Boolean);
+  const certNames = records.flatMap((row) => row.certificates || []).filter(Boolean);
+  findNearDuplicates(companyNames, '회사명').forEach((issue) => issues.push(issue));
+  findNearDuplicates(certNames, '자격증명').forEach((issue) => issues.push(issue));
+
+  records.forEach((row) => {
+    if (row.gradeAverage && (Number(row.gradeAverage) < 1 || Number(row.gradeAverage) > 9)) {
+      issues.push({ title: '내신 값 확인', detail: `${row.name || '이름 없음'} 학생의 내신 ${row.gradeAverage} 값이 일반 범위를 벗어난 것 같습니다.` });
+    }
+    if (row.recordType === 'graduate' && !row.employmentCompany) {
+      issues.push({ title: '졸업생 취업처 누락', detail: `${row.name || '이름 없음'} 데이터는 졸업생으로 되어 있지만 취업 회사가 비어 있습니다.` });
+    }
+    if (row.recordType === 'current' && row.employmentCompany) {
+      issues.push({ title: '현학생 취업처 확인', detail: `${row.name || '이름 없음'} 데이터는 현학생인데 취업 회사가 입력되어 있습니다. 구분을 확인해 주세요.` });
+    }
+  });
+  return issues;
+}
+
+function findNearDuplicates(values, label) {
+  const normalized = {};
+  values.forEach((value) => {
+    const key = normalize(value);
+    if (!key) return;
+    normalized[key] = normalized[key] || new Set();
+    normalized[key].add(String(value).trim());
+  });
+  return Object.values(normalized)
+    .filter((set) => set.size > 1)
+    .map((set) => ({
+      title: `${label} 표기 통일`,
+      detail: Array.from(set).join(' / ') + ' 처럼 같은 값이 다르게 입력된 것 같습니다.'
+    }));
+}
+
+function analyzeStudent(student) {
+  const graduates = getGraduateRows();
+  if (!graduates.length) return '<div class="settings-note">분석할 졸업생 취업 데이터가 아직 없습니다.</div>';
+
+  const desired = [student.desiredCompany, student.desiredRole].filter(Boolean).join(' ');
+  const targetRows = desired
+    ? graduates.filter((row) => recordMatchesCompany(row, desired))
+    : [];
+  const pool = targetRows.length ? targetRows : graduates;
+  const avgGrade = average(pool.map((row) => Number(row.gradeAverage)).filter((value) => value > 0));
+  const certStats = countCertificates(pool);
+  const missingCerts = certStats.slice(0, 6).map((item) => item.name).filter((cert) => !hasCertificate(student.certificates, cert));
+  const companies = graduates
+    .map((row) => ({ row, score: similarityScore(row, student, desired) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 8);
+
+  const grade = Number(student.gradeAverage) || 0;
+  const gradeAdvice = grade && avgGrade
+    ? (grade > avgGrade
+      ? `희망 조건 합격자 평균은 ${avgGrade.toFixed(2)}등급입니다. 현재 ${grade.toFixed(2)}등급이면 약 ${(grade - avgGrade).toFixed(2)}등급 정도 올리는 것을 목표로 잡을 수 있습니다.`
+      : `희망 조건 합격자 평균(${avgGrade.toFixed(2)}등급)보다 현재 내신이 유리합니다.`)
+    : '내신 데이터가 부족해서 내신 목표는 계산하지 못했습니다.';
+
+  return `
+    <div class="menu-group-card" style="padding:14px 16px">
+      <div style="font-weight:900;color:var(--text);margin-bottom:8px">${escapeHtml(student.name || '현재 학생')} 분석 결과</div>
+      <div style="display:grid;gap:6px;margin-bottom:10px">
+        <div><b>현재 내신</b>: ${escapeHtml(student.gradeAverage || '-')} / <b>자격증</b>: ${escapeHtml((student.certificates || []).join(', ') || '-')}</div>
+        <div><b>희망</b>: ${escapeHtml(desired || '희망 회사 미입력')}</div>
+      </div>
+      <div class="settings-note">${escapeHtml(gradeAdvice)}</div>
+      <div style="margin-top:10px"><b>우선 준비하면 좋은 자격증</b>: ${missingCerts.length ? escapeHtml(missingCerts.join(', ')) : '주요 합격자 자격증과 현재 보유 자격증이 많이 겹칩니다.'}</div>
+      <div style="margin-top:12px"><b>졸업생 데이터 기준 가능성이 있는 회사</b></div>
+      <div style="display:grid;gap:8px;margin-top:8px">
+        ${companies.map(({ row, score }) => renderGraduateMatch(row, score)).join('')}
+      </div>
+    </div>`;
+}
+
+function analyzeCompany(query) {
+  const q = normalize(query);
+  if (!q) return '<div class="settings-note">회사명이나 직무를 입력해 주세요.</div>';
+  const matches = getGraduateRows().filter((row) => recordMatchesCompany(row, query));
+  if (!matches.length) return '<div class="settings-note">해당 회사/직무로 취업한 졸업생 데이터가 없습니다.</div>';
+
+  const avgGrade = average(matches.map((row) => Number(row.gradeAverage)).filter((value) => value > 0));
+  const certStats = countCertificates(matches).slice(0, 8);
+  const companyNames = unique(matches.map((row) => row.employmentCompany).filter(Boolean)).slice(0, 8);
+
+  return `
+    <div class="menu-group-card" style="padding:14px 16px">
+      <div style="font-weight:900;color:var(--text);margin-bottom:8px">"${escapeHtml(query)}" 합격 졸업생 분석</div>
+      <div style="display:grid;gap:6px;margin-bottom:10px">
+        <div><b>검색된 졸업생</b>: ${matches.length}명</div>
+        <div><b>관련 회사</b>: ${escapeHtml(companyNames.join(', ') || '-')}</div>
+        <div><b>합격자 평균 내신</b>: ${avgGrade ? avgGrade.toFixed(2) + '등급' : '-'}</div>
+        <div><b>많이 보유한 자격증</b>: ${certStats.length ? escapeHtml(certStats.map((item) => `${item.name}(${item.count})`).join(', ')) : '-'}</div>
+      </div>
+      <div style="display:grid;gap:8px;margin-top:8px">
+        ${matches
+          .sort((a, b) => (Number(a.gradeAverage) || 99) - (Number(b.gradeAverage) || 99))
+          .slice(0, 20)
+          .map((row) => renderGraduateDetail(row))
+          .join('')}
+      </div>
+    </div>`;
+}
+
+function renderGraduateMatch(row, score) {
+  return `
+    <div style="padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--bg)">
+      <b>${escapeHtml(row.employmentCompany || '-')}</b>
+      <span class="settings-note"> ${escapeHtml(row.employmentRole || '')} · ${escapeHtml(row.graduationYear || '')}년 졸업 · 유사도 ${Math.round(score)}점</span>
+      <div class="settings-note" style="margin-top:4px">내신 ${escapeHtml(row.gradeAverage || '-')} / 자격증 ${escapeHtml((row.certificates || []).join(', ') || '-')} / ${escapeHtml(row.name || '졸업생')}</div>
+    </div>`;
+}
+
+function renderGraduateDetail(row) {
+  return `
+    <div style="padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--bg)">
+      <b>${escapeHtml(row.name || '졸업생')}</b>
+      <span class="settings-note"> ${escapeHtml(row.graduationYear || '')}년 · ${escapeHtml(row.employmentCompany || '-')} ${escapeHtml(row.employmentRole || '')}</span>
+      <div class="settings-note" style="margin-top:4px">내신 ${escapeHtml(row.gradeAverage || '-')} / 자격증 ${escapeHtml((row.certificates || []).join(', ') || '-')} / 출결 ${escapeHtml(row.attendance || '-')}</div>
+    </div>`;
 }
 
 function renderTable() {
@@ -289,10 +618,11 @@ function renderTable() {
   if (!wrap) return;
   const q = normalize(searchText);
   const filtered = records.filter((row) => {
+    if (typeFilter !== 'all' && row.recordType !== typeFilter) return false;
     if (!q) return true;
     return normalize([
-      row.graduationYear, row.name, row.schoolNumber, row.className, row.gradeAverage,
-      (row.certificates || []).join(','), row.desiredCompany, row.desiredRole,
+      row.recordTypeLabel, row.graduationYear, row.name, row.schoolNumber, row.className, row.gradeAverage,
+      row.certificates.join(','), row.desiredCompany, row.desiredRole,
       row.employmentCompany, row.employmentRole, row.region, row.note
     ].join(' ')).includes(q);
   });
@@ -306,18 +636,19 @@ function renderTable() {
     <table style="width:100%;border-collapse:collapse;font-size:13px">
       <thead>
         <tr style="position:sticky;top:0;background:var(--card);z-index:1">
-          ${['졸업년도','이름','학번','학년반','내신','자격증','희망','취업처','직무','지역','관리'].map((h) => `<th style="padding:9px;border-bottom:2px solid var(--border);text-align:left;white-space:nowrap">${h}</th>`).join('')}
+          ${['구분','졸업년도','이름','학번','학년반','내신','자격증','희망','취업처','직무','지역','관리'].map((h) => `<th style="padding:9px;border-bottom:2px solid var(--border);text-align:left;white-space:nowrap">${h}</th>`).join('')}
         </tr>
       </thead>
       <tbody>
         ${filtered.map((row) => `
           <tr style="border-bottom:1px solid var(--border)">
+            <td style="padding:8px;white-space:nowrap"><span style="font-weight:800;color:${row.recordType === 'current' ? 'var(--accent)' : 'var(--text2)'}">${escapeHtml(row.recordTypeLabel)}</span></td>
             <td style="padding:8px;white-space:nowrap">${escapeHtml(row.graduationYear)}</td>
             <td style="padding:8px;font-weight:700;white-space:nowrap">${escapeHtml(row.name)}</td>
             <td style="padding:8px;white-space:nowrap">${escapeHtml(row.schoolNumber)}</td>
             <td style="padding:8px;white-space:nowrap">${escapeHtml(row.className)}</td>
             <td style="padding:8px;white-space:nowrap">${escapeHtml(row.gradeAverage)}</td>
-            <td style="padding:8px;min-width:180px">${escapeHtml((row.certificates || []).join(', '))}</td>
+            <td style="padding:8px;min-width:180px">${escapeHtml(row.certificates.join(', '))}</td>
             <td style="padding:8px;min-width:140px">${escapeHtml([row.desiredCompany, row.desiredRole].filter(Boolean).join(' / '))}</td>
             <td style="padding:8px;font-weight:700;min-width:140px">${escapeHtml(row.employmentCompany)}</td>
             <td style="padding:8px;min-width:100px">${escapeHtml(row.employmentRole)}</td>
@@ -340,6 +671,7 @@ function renderTable() {
 
 function openRecordModal(record) {
   const isEdit = !!record;
+  const type = record?.recordType || 'current';
   showModal(`
     <div class="modal-header">
       <span class="modal-title">${isEdit ? '학생 데이터 수정' : '학생 데이터 추가'}</span>
@@ -347,8 +679,14 @@ function openRecordModal(record) {
     </div>
     <div class="modal-body" style="display:grid;gap:12px">
       <div class="form-row row-2">
+        <div>
+          <label>구분</label>
+          <select class="input" id="career-type">
+            <option value="current" ${type === 'current' ? 'selected' : ''}>현학생</option>
+            <option value="graduate" ${type === 'graduate' ? 'selected' : ''}>졸업생</option>
+          </select>
+        </div>
         <div><label>졸업년도</label><input class="input" id="career-year" type="number" value="${escapeHtml(record?.graduationYear || new Date().getFullYear())}"></div>
-        <div><label>평균 내신</label><input class="input" id="career-grade" type="number" step="0.01" value="${escapeHtml(record?.gradeAverage || '')}"></div>
       </div>
       <div class="form-row row-2">
         <div><label>이름</label><input class="input" id="career-name" value="${escapeHtml(record?.name || '')}"></div>
@@ -356,7 +694,11 @@ function openRecordModal(record) {
       </div>
       <div class="form-row row-2">
         <div><label>학년반</label><input class="input" id="career-class" value="${escapeHtml(record?.className || '')}" placeholder="예: 3-1"></div>
+        <div><label>평균 내신</label><input class="input" id="career-grade" type="number" step="0.01" value="${escapeHtml(record?.gradeAverage || '')}"></div>
+      </div>
+      <div class="form-row row-2">
         <div><label>출결요약</label><input class="input" id="career-attendance" value="${escapeHtml(record?.attendance || '')}"></div>
+        <div><label>지역</label><input class="input" id="career-region" value="${escapeHtml(record?.region || '')}"></div>
       </div>
       <div class="form-row"><label>자격증</label><input class="input" id="career-certs" value="${escapeHtml((record?.certificates || []).join(', '))}" placeholder="쉼표로 구분"></div>
       <div class="form-row row-2">
@@ -364,13 +706,10 @@ function openRecordModal(record) {
         <div><label>희망 직무</label><input class="input" id="career-desired-role" value="${escapeHtml(record?.desiredRole || '')}"></div>
       </div>
       <div class="form-row row-2">
-        <div><label>취업 회사</label><input class="input" id="career-company" value="${escapeHtml(record?.employmentCompany || '')}"></div>
-        <div><label>취업 직무</label><input class="input" id="career-role" value="${escapeHtml(record?.employmentRole || '')}"></div>
+        <div><label>취업 회사</label><input class="input" id="career-company" value="${escapeHtml(record?.employmentCompany || '')}" placeholder="졸업생일 때 입력"></div>
+        <div><label>취업 직무</label><input class="input" id="career-role" value="${escapeHtml(record?.employmentRole || '')}" placeholder="졸업생일 때 입력"></div>
       </div>
-      <div class="form-row row-2">
-        <div><label>지역</label><input class="input" id="career-region" value="${escapeHtml(record?.region || '')}"></div>
-        <div><label>비고</label><input class="input" id="career-note" value="${escapeHtml(record?.note || '')}"></div>
-      </div>
+      <div class="form-row"><label>비고</label><input class="input" id="career-note" value="${escapeHtml(record?.note || '')}"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" data-close>취소</button>
@@ -385,6 +724,7 @@ function openRecordModal(record) {
       await window.appCareerSaveRecord(next);
       closeModal();
       await loadRecords();
+      renderStudentSearch(document.getElementById('student-search-input')?.value || '');
       renderTable();
       toast('저장했습니다.', 'success');
     });
@@ -392,8 +732,9 @@ function openRecordModal(record) {
 }
 
 function collectModalRecord(id) {
-  return {
+  return normalizeRecord({
     id,
+    recordType: document.getElementById('career-type')?.value || 'current',
     graduationYear: Number(document.getElementById('career-year')?.value || new Date().getFullYear()),
     name: document.getElementById('career-name')?.value.trim() || '',
     schoolNumber: document.getElementById('career-number')?.value.trim() || '',
@@ -407,70 +748,49 @@ function collectModalRecord(id) {
     employmentRole: document.getElementById('career-role')?.value.trim() || '',
     region: document.getElementById('career-region')?.value.trim() || '',
     note: document.getElementById('career-note')?.value.trim() || ''
-  };
+  });
 }
 
 async function deleteRecord(id) {
   if (!confirm('이 학생 데이터를 삭제할까요?')) return;
   await window.appCareerDeleteRecord(id);
   await loadRecords();
+  renderStudentSearch(document.getElementById('student-search-input')?.value || '');
   renderTable();
   toast('삭제했습니다.', 'success');
 }
 
-function runRecommendation() {
-  const name = document.getElementById('rec-name')?.value.trim() || '현재 학생';
-  const grade = Number(document.getElementById('rec-grade')?.value || 0);
-  const certs = splitList(document.getElementById('rec-certs')?.value || '');
-  const target = document.getElementById('rec-company')?.value.trim() || '';
-  const result = analyzeCareer(name, grade, certs, target);
-  document.getElementById('recommendation-result').innerHTML = result;
+function handleGradesShortcutKeys(event) {
+  if (!unlocked) return;
+  if (!event.altKey) return;
+  const tag = String(event.target?.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+  const key = String(event.key || '').toLowerCase();
+  if (key === 'r') {
+    event.preventDefault();
+    document.getElementById('student-search-input')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => document.getElementById('student-search-input')?.focus(), 250);
+  } else if (key === 'a') {
+    event.preventDefault();
+    openRecordModal();
+  } else if (key === 'l') {
+    event.preventDefault();
+    document.getElementById('career-table-wrap')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setTimeout(() => document.getElementById('career-search')?.focus(), 250);
+  }
 }
 
-function analyzeCareer(name, grade, certs, target) {
-  const employed = records.filter((row) => row.employmentCompany);
-  const targetRows = target
-    ? employed.filter((row) => normalize([row.employmentCompany, row.employmentRole, row.desiredCompany, row.desiredRole, row.region].join(' ')).includes(normalize(target)))
-    : employed;
-  const pool = targetRows.length ? targetRows : employed;
-  if (!pool.length) return '<div class="settings-note">분석할 졸업생 취업 데이터가 아직 없습니다.</div>';
-
-  const avgGrade = average(pool.map((row) => Number(row.gradeAverage)).filter((value) => value > 0));
-  const certStats = countCertificates(pool);
-  const missingCerts = certStats.slice(0, 5).map((item) => item.name).filter((cert) => !certs.some((own) => normalize(own) === normalize(cert)));
-  const similar = employed.map((row) => ({
-    row,
-    score: similarityScore(row, grade, certs, target)
-  })).sort((a, b) => b.score - a.score).slice(0, 8);
-  const gradeAdvice = grade && avgGrade
-    ? (grade > avgGrade ? `희망 조건 합격자 평균은 ${avgGrade.toFixed(2)}등급입니다. 현재 ${grade.toFixed(2)}등급이면 약 ${(grade - avgGrade).toFixed(2)}등급 정도 올리는 것을 목표로 잡을 수 있습니다.` : `희망 조건 합격자 평균(${avgGrade.toFixed(2)}등급)보다 현재 내신이 유리합니다.`)
-    : '내신 데이터가 부족해 내신 목표는 계산하지 못했습니다.';
-
-  return `
-    <div class="menu-group-card" style="padding:14px 16px">
-      <div style="font-weight:800;color:var(--text);margin-bottom:8px">${escapeHtml(name)} 분석 결과</div>
-      <div class="settings-note">${escapeHtml(gradeAdvice)}</div>
-      <div style="margin-top:10px"><b>우선 준비하면 좋은 자격증</b>: ${missingCerts.length ? escapeHtml(missingCerts.join(', ')) : '현재 보유 자격증과 주요 합격자 자격증이 비슷합니다.'}</div>
-      <div style="margin-top:10px"><b>데이터상 가능성이 있는 취업처</b></div>
-      <div style="display:grid;gap:8px;margin-top:8px">
-        ${similar.map(({ row, score }) => `
-          <div style="padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--bg)">
-            <b>${escapeHtml(row.employmentCompany || '-')}</b>
-            <span class="settings-note"> ${escapeHtml(row.employmentRole || '')} · ${escapeHtml(row.graduationYear || '')}년 졸업 · 유사도 ${Math.round(score)}점</span>
-            <div class="settings-note" style="margin-top:4px">내신 ${escapeHtml(row.gradeAverage || '-')} / 자격증 ${escapeHtml((row.certificates || []).join(', ') || '-')} / ${escapeHtml(row.name || '졸업생')}</div>
-          </div>`).join('')}
-      </div>
-    </div>`;
-}
-
-function similarityScore(row, grade, certs, target) {
-  let score = 30;
+function similarityScore(row, student, target) {
+  let score = 25;
   const rowGrade = Number(row.gradeAverage);
+  const grade = Number(student.gradeAverage);
   if (grade && rowGrade) score += Math.max(0, 30 - Math.abs(rowGrade - grade) * 12);
   const rowCerts = row.certificates || [];
-  const overlap = rowCerts.filter((cert) => certs.some((own) => normalize(own) === normalize(cert))).length;
+  const ownCerts = student.certificates || [];
+  const overlap = rowCerts.filter((cert) => hasCertificate(ownCerts, cert)).length;
   score += overlap * 12;
-  if (target && normalize([row.employmentCompany, row.employmentRole, row.desiredCompany, row.desiredRole].join(' ')).includes(normalize(target))) score += 25;
+  if (target && recordMatchesCompany(row, target)) score += 25;
+  if (!target && row.employmentCompany) score += 5;
   return score;
 }
 
@@ -483,14 +803,50 @@ function countCertificates(rows) {
   return Object.keys(map).map((name) => ({ name, count: map[name] })).sort((a, b) => b.count - a.count);
 }
 
+function normalizeRecord(row) {
+  const next = Object.assign({}, row || {});
+  const type = normalize(next.recordType || next.type || next.kind);
+  const inferredGraduate = !!String(next.employmentCompany || '').trim();
+  next.recordType = type.includes('graduate') || type.includes('졸업') || type === 'g'
+    ? 'graduate'
+    : (type.includes('current') || type.includes('현학') || type === 'c' ? 'current' : (inferredGraduate ? 'graduate' : 'current'));
+  next.recordTypeLabel = next.recordType === 'graduate' ? '졸업생' : '현학생';
+  next.graduationYear = Number(next.graduationYear) || new Date().getFullYear();
+  next.gradeAverage = Number(next.gradeAverage) || 0;
+  next.certificates = Array.isArray(next.certificates) ? next.certificates.map(String).map((item) => item.trim()).filter(Boolean) : splitList(next.certificates || '');
+  return next;
+}
+
+function getCurrentStudents() {
+  return records.filter((row) => row.recordType === 'current');
+}
+
+function getGraduateRows() {
+  return records.filter((row) => row.recordType === 'graduate' || row.employmentCompany);
+}
+
+function recordMatchesCompany(row, query) {
+  const q = normalize(query);
+  return normalize([row.employmentCompany, row.employmentRole, row.desiredCompany, row.desiredRole, row.region, row.note].join(' ')).includes(q);
+}
+
+function hasCertificate(certs, cert) {
+  return (certs || []).some((own) => normalize(own) === normalize(cert));
+}
+
 function average(values) {
   return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+}
+
+function unique(values) {
+  return Array.from(new Set(values));
 }
 
 function downloadTemplate() {
   downloadCSV('취업데이터_양식.csv', [
     TEMPLATE_HEADERS,
-    ['2025', '홍길동', '30101', '3-1', '3.2', '결석0 지각1', '전기기능사, 승강기기능사', 'A회사', '전기설비', 'A회사', '전기설비', '청주', '예시 데이터']
+    ['현학생', '2026', '홍길동', '30101', '3-1', '3.2', '결석0 지각1', '전기기능사, 승강기기능사', 'A회사', '전기설비', '', '', '청주', '현재 지원 준비 중'],
+    ['졸업생', '2025', '김졸업', '30102', '3-1', '3.4', '결석0', '전기기능사, 생산자동화기능사', 'A회사', '전기설비', 'A회사', '전기설비', '청주', '최종 합격']
   ]);
 }
 
@@ -511,35 +867,39 @@ async function importCSV(file) {
     await window.appCareerSaveRecord(csvRowToRecord(row));
   }
   await loadRecords();
+  renderStudentSearch(document.getElementById('student-search-input')?.value || '');
   renderTable();
   toast(`${dataRows.length}건을 업로드했습니다.`, 'success');
 }
 
 function recordToCSVRow(row) {
   return [
-    row.graduationYear || '', row.name || '', row.schoolNumber || '', row.className || '',
-    row.gradeAverage || '', row.attendance || '', (row.certificates || []).join(', '),
+    row.recordTypeLabel || '', row.graduationYear || '', row.name || '', row.schoolNumber || '', row.className || '',
+    row.gradeAverage || '', row.attendance || '', row.certificates.join(', '),
     row.desiredCompany || '', row.desiredRole || '', row.employmentCompany || '',
     row.employmentRole || '', row.region || '', row.note || ''
   ];
 }
 
 function csvRowToRecord(row) {
-  return {
-    graduationYear: Number(row[0]) || new Date().getFullYear(),
-    name: String(row[1] || '').trim(),
-    schoolNumber: String(row[2] || '').trim(),
-    className: String(row[3] || '').trim(),
-    gradeAverage: Number(row[4]) || 0,
-    attendance: String(row[5] || '').trim(),
-    certificates: splitList(row[6] || ''),
-    desiredCompany: String(row[7] || '').trim(),
-    desiredRole: String(row[8] || '').trim(),
-    employmentCompany: String(row[9] || '').trim(),
-    employmentRole: String(row[10] || '').trim(),
-    region: String(row[11] || '').trim(),
-    note: String(row[12] || '').trim()
-  };
+  const hasTypeColumn = ['현학생', '졸업생', 'current', 'graduate', 'c', 'g'].includes(normalize(row[0]));
+  const offset = hasTypeColumn ? 1 : 0;
+  return normalizeRecord({
+    recordType: hasTypeColumn ? row[0] : '',
+    graduationYear: Number(row[offset + 0]) || new Date().getFullYear(),
+    name: String(row[offset + 1] || '').trim(),
+    schoolNumber: String(row[offset + 2] || '').trim(),
+    className: String(row[offset + 3] || '').trim(),
+    gradeAverage: Number(row[offset + 4]) || 0,
+    attendance: String(row[offset + 5] || '').trim(),
+    certificates: splitList(row[offset + 6] || ''),
+    desiredCompany: String(row[offset + 7] || '').trim(),
+    desiredRole: String(row[offset + 8] || '').trim(),
+    employmentCompany: String(row[offset + 9] || '').trim(),
+    employmentRole: String(row[offset + 10] || '').trim(),
+    region: String(row[offset + 11] || '').trim(),
+    note: String(row[offset + 12] || '').trim()
+  });
 }
 
 function downloadCSV(filename, rows) {
