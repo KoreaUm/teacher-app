@@ -1,4 +1,5 @@
 @echo off
+setlocal
 cd /d "%~dp0"
 
 echo ==========================================
@@ -11,7 +12,7 @@ echo - git add / commit / push
 echo - run npm.cmd run release:win
 echo.
 
-powershell -ExecutionPolicy Bypass -File "%~dp0\반자동_배포.ps1"
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -ExecutionPolicy Bypass -File "%~dp0release_auto.ps1"
 if errorlevel 1 (
   echo.
   echo Release failed. Check the error message above.

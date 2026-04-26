@@ -834,17 +834,69 @@
 
   window.appGradesCanUse = canUseGrades;
 
-  window.appGradesGetPassword = function () {
-    return Promise.reject(new Error("보안상 비밀번호는 앱에서 읽을 수 없습니다."));
+  function waitForFirebaseCurrentUser() {
+    ensureFirebase();
+    if (firebaseAuth && firebaseAuth.currentUser) return Promise.resolve(firebaseAuth.currentUser);
+    if (authUser) return Promise.resolve(authUser);
+    return new Promise(function (resolve) {
+      var done = false;
+      var unsubscribe = firebaseAuth.onAuthStateChanged(function (user) {
+        if (done) return;
+        done = true;
+        if (unsubscribe) unsubscribe();
+        resolve(user || null);
+      });
+      setTimeout(function () {
+        if (done) return;
+        done = true;
+        if (unsubscribe) unsubscribe();
+        resolve((firebaseAuth && firebaseAuth.currentUser) || authUser || null);
+      }, 3000);
+    });
+  }
+
+  var getCallableAuthPayload = function () {
+    ensureFirebase();
+    return waitForFirebaseCurrentUser().then(function (user) {
+      if (!user) throw new Error("로그인이 필요합니다. 로그아웃 후 다시 로그인해 주세요.");
+      return user.getIdToken(true).then(function (idToken) {
+        if (!idToken) throw new Error("로그인 토큰을 가져오지 못했습니다. 다시 로그인해 주세요.");
+        return {
+          idToken: idToken,
+          authUid: user.uid,
+          authEmail: user.email || ""
+        };
+      });
+    });
   };
 
-  window.appGradesSetPassword = function (password) {
-    if (!isAdminProfile(authProfile)) return Promise.reject(new Error("관리자만 성적관리 비밀번호를 변경할 수 있습니다."));
-    var next = String(password || "").trim();
-    if (next.length < 4) return Promise.reject(new Error("비밀번호는 4자 이상이어야 합니다."));
-    if (!firebaseFunctions) return Promise.reject(new Error("Cloud Functions가 준비되지 않았습니다."));
-    return firebaseFunctions.httpsCallable("setGradesPassword")({ password: next });
-  };
+  function callGradesHttpFunction(name, payload) {
+    return getCallableAuthPayload().then(function (authPayload) {
+      var projectId = window.__firebaseConfig && window.__firebaseConfig.projectId;
+      if (!projectId) throw new Error("Firebase 프로젝트 정보를 찾지 못했습니다.");
+      var url = "https://us-central1-" + projectId + ".cloudfunctions.net/" + name;
+      return fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + authPayload.idToken
+        },
+        body: JSON.stringify(Object.assign({}, payload || {}, {
+          authUid: authPayload.authUid,
+          authEmail: authPayload.authEmail
+        }))
+      }).then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (body) {
+          if (!res.ok || body.ok === false) {
+            var error = new Error(body.message || ("Cloud Functions 요청 실패: " + res.status));
+            error.code = body.code || String(res.status);
+            throw error;
+          }
+          return body;
+        });
+      });
+    });
+  }
 
   function gradeSessionDoc() {
     ensureFirebase();
@@ -857,17 +909,6 @@
     var millis = until && typeof until.toMillis === "function" ? until.toMillis() : Number(until || 0);
     return millis > Date.now();
   }
-
-  window.appGradesVerifyPassword = function (password) {
-    if (!canUseGrades()) return Promise.reject(new Error("성적관리 권한이 없습니다."));
-    var typed = String(password || "").trim();
-    if (!typed) return Promise.reject(new Error("비밀번호를 입력해 주세요."));
-    if (!firebaseFunctions) return Promise.reject(new Error("Cloud Functions가 준비되지 않았습니다."));
-    return firebaseFunctions.httpsCallable("verifyGradesPassword")({
-      password: typed,
-      deviceId: getLocalDeviceId()
-    }).then(function () { return true; });
-  };
 
   function requireGradeSession() {
     if (!canUseGrades()) return Promise.reject(new Error("성적관리 권한이 없습니다."));
@@ -995,6 +1036,70 @@
     return requireGradeSession().then(function () {
       return getGradesBookDoc().collection("careerStudents").doc(String(id || "")).delete();
     });
+  };
+
+  window.appCareerListLinks = function () {
+    return requireGradeSession().then(function () {
+      return getGradesBookDoc().collection("quickLinks").get();
+    }).then(function (snap) {
+      var rows = [];
+      snap.forEach(function (doc) {
+        rows.push(Object.assign({ id: doc.id }, doc.data() || {}));
+      });
+      rows.sort(function (a, b) {
+        return (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0) ||
+          String(a.title || "").localeCompare(String(b.title || ""), "ko");
+      });
+      return rows;
+    });
+  };
+
+  window.appCareerSaveLink = function (link) {
+    return requireGradeSession().then(function () {
+      var data = Object.assign({}, link || {});
+      var id = String(data.id || "").trim() || getGradesBookDoc().collection("quickLinks").doc().id;
+      delete data.id;
+      data.title = String(data.title || "").trim();
+      data.url = String(data.url || "").trim();
+      data.note = String(data.note || "").trim();
+      data.sortOrder = Number(data.sortOrder) || Date.now();
+      if (!data.title || !data.url) throw new Error("링크 이름과 주소를 입력해 주세요.");
+      if (!/^https?:\/\//i.test(data.url)) throw new Error("주소는 http:// 또는 https:// 로 시작해야 합니다.");
+      data.updatedAt = window.firebase.firestore.FieldValue.serverTimestamp();
+      data.updatedBy = normalizeEmail(authUser && authUser.email);
+      return getGradesBookDoc().collection("quickLinks").doc(id).set(data, { merge: true }).then(function () {
+        return id;
+      });
+    });
+  };
+
+  window.appCareerDeleteLink = function (id) {
+    return requireGradeSession().then(function () {
+      return getGradesBookDoc().collection("quickLinks").doc(String(id || "")).delete();
+    });
+  };
+
+  window.appGradesGetPassword = function () {
+    return Promise.reject(new Error("보안상 비밀번호는 앱에서 읽을 수 없습니다."));
+  };
+
+  window.appGradesSetPassword = function (password) {
+    if (!isAdminProfile(authProfile)) return Promise.reject(new Error("관리자만 성적관리 비밀번호를 변경할 수 있습니다."));
+    var next = String(password || "").trim();
+    if (next.length < 4) return Promise.reject(new Error("비밀번호는 4자 이상이어야 합니다."));
+    return callGradesHttpFunction("setGradesPasswordHttp", {
+      password: next
+    });
+  };
+
+  window.appGradesVerifyPassword = function (password) {
+    if (!canUseGrades()) return Promise.reject(new Error("성적관리 권한이 없습니다."));
+    var typed = String(password || "").trim();
+    if (!typed) return Promise.reject(new Error("비밀번호를 입력해 주세요."));
+    return callGradesHttpFunction("verifyGradesPasswordHttp", {
+      password: typed,
+      deviceId: getLocalDeviceId()
+    }).then(function () { return true; });
   };
 
   window.appAuthUpdateUser = function (uid, patch) {
@@ -1858,6 +1963,9 @@
   }
 
   function navigateTo(key) {
+    if (currentPage === "grades" && key !== "grades" && window.appGradesLock) {
+      window.appGradesLock();
+    }
     currentPage = key;
     var parentGroup = menuGroups.find(function (group) {
       return group.items.some(function (itemKey) { return itemKey === key; });

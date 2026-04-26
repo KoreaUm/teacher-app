@@ -2,8 +2,14 @@
 'use strict';
 
 let records = [];
+let quickLinks = [];
 let unlocked = false;
 let searchText = '';
+
+window.appGradesLock = function () {
+  unlocked = false;
+  document.removeEventListener('keydown', handleGradesShortcutKeys);
+};
 
 const TEMPLATE_HEADERS = [
   '졸업년도', '이름', '학번', '학년반', '평균내신', '출결요약',
@@ -64,6 +70,17 @@ async function render(container) {
       </div>
 
       <section class="card settings-card" style="margin-bottom:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <div>
+            <div class="settings-title">온라인 빠른 바로가기</div>
+            <div class="settings-note" style="margin-top:4px">성적관리 페이지 안에서만 열 수 있는 온라인 링크입니다.</div>
+          </div>
+          <button class="btn btn-primary btn-sm" id="quick-link-add-btn">+ 링크 추가</button>
+        </div>
+        <div id="quick-link-list" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:12px"></div>
+      </section>
+
+      <section class="card settings-card" style="margin-bottom:16px">
         <div class="settings-title">학생 취업 가능성 조회</div>
         <div class="settings-note" style="margin:4px 0 14px">현재 학생의 내신/자격증/희망회사를 입력하면, 졸업생 데이터 기반으로 필요한 자격증과 내신 목표를 계산합니다.</div>
         <div class="form-row row-2">
@@ -98,7 +115,9 @@ async function init() {
     return;
   }
   await loadRecords();
+  await loadQuickLinks();
   bindActions();
+  renderQuickLinks();
   renderTable();
 }
 
@@ -118,7 +137,7 @@ function bindPasswordGate() {
       await render(document.getElementById('page-content'));
       await init();
     } catch (error) {
-      if (status) status.textContent = error?.message || '비밀번호 확인에 실패했습니다.';
+      if (status) status.textContent = formatPasswordError(error);
     }
   };
   input?.focus();
@@ -128,21 +147,141 @@ function bindPasswordGate() {
   button?.addEventListener('click', submit);
 }
 
+function formatPasswordError(error) {
+  const code = String(error?.code || '');
+  const message = String(error?.message || '');
+  if (code.includes('not-found') || message.includes('not-found')) {
+    return '성적관리 보안 설정을 찾지 못했습니다. Firestore 규칙을 게시했는지 확인해 주세요.';
+  }
+  if (code.includes('permission-denied')) return '비밀번호가 맞지 않거나 성적관리 권한이 없습니다.';
+  if (code.includes('unauthenticated')) return (message || '로그인이 필요합니다. 앱을 완전히 종료한 뒤 다시 로그인해 주세요.') + ' / 코드: ' + code;
+  return message || '비밀번호 확인에 실패했습니다.';
+}
+
 async function loadRecords() {
   records = await window.appCareerListRecords();
 }
 
+async function loadQuickLinks() {
+  quickLinks = window.appCareerListLinks ? await window.appCareerListLinks() : [];
+}
+
 function bindActions() {
+  document.removeEventListener('keydown', handleGradesShortcutKeys);
+  document.addEventListener('keydown', handleGradesShortcutKeys);
   document.getElementById('career-template-btn')?.addEventListener('click', downloadTemplate);
   document.getElementById('career-export-btn')?.addEventListener('click', exportRecords);
   document.getElementById('career-import-btn')?.addEventListener('click', () => document.getElementById('career-import-input')?.click());
   document.getElementById('career-import-input')?.addEventListener('change', (event) => importCSV(event.target.files?.[0]));
   document.getElementById('career-add-btn')?.addEventListener('click', () => openRecordModal());
+  document.getElementById('quick-link-add-btn')?.addEventListener('click', () => openQuickLinkModal());
   document.getElementById('rec-run-btn')?.addEventListener('click', runRecommendation);
   document.getElementById('career-search')?.addEventListener('input', (event) => {
     searchText = event.target.value || '';
     renderTable();
   });
+}
+
+function renderQuickLinks() {
+  const root = document.getElementById('quick-link-list');
+  if (!root) return;
+  if (!quickLinks.length) {
+    root.innerHTML = '<div class="settings-note">등록된 온라인 바로가기가 없습니다. 자주 쓰는 온라인 성적/취업 자료 링크를 추가해 주세요.</div>';
+    return;
+  }
+  root.innerHTML = quickLinks.map((link) => `
+    <div class="menu-group-card" style="padding:12px 14px">
+      <div style="font-weight:800;color:var(--text);margin-bottom:4px">${escapeHtml(link.title)}</div>
+      ${link.note ? `<div class="settings-note" style="margin-bottom:8px">${escapeHtml(link.note)}</div>` : ''}
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm quick-link-open-btn" data-url="${escapeHtml(link.url)}">열기</button>
+        <button class="btn btn-secondary btn-sm quick-link-edit-btn" data-id="${escapeHtml(link.id)}">수정</button>
+        <button class="btn btn-danger btn-sm quick-link-delete-btn" data-id="${escapeHtml(link.id)}">삭제</button>
+      </div>
+    </div>
+  `).join('');
+
+  root.querySelectorAll('.quick-link-open-btn').forEach((button) => {
+    button.addEventListener('click', () => {
+      const url = button.dataset.url || '';
+      if (window.api?.openUrl) window.api.openUrl(url);
+      else window.open(url, '_blank');
+    });
+  });
+  root.querySelectorAll('.quick-link-edit-btn').forEach((button) => {
+    button.addEventListener('click', () => openQuickLinkModal(quickLinks.find((link) => link.id === button.dataset.id)));
+  });
+  root.querySelectorAll('.quick-link-delete-btn').forEach((button) => {
+    button.addEventListener('click', () => deleteQuickLink(button.dataset.id));
+  });
+}
+
+function openQuickLinkModal(link) {
+  const isEdit = !!link;
+  showModal(`
+    <div class="modal-header">
+      <span class="modal-title">${isEdit ? '온라인 바로가기 수정' : '온라인 바로가기 추가'}</span>
+      <button class="modal-close" data-close>×</button>
+    </div>
+    <div class="modal-body" style="display:grid;gap:12px">
+      <div class="form-row"><label>이름</label><input class="input" id="quick-link-title" value="${escapeHtml(link?.title || '')}" placeholder="예: 취업 포털"></div>
+      <div class="form-row"><label>주소</label><input class="input" id="quick-link-url" value="${escapeHtml(link?.url || '')}" placeholder="https://..."></div>
+      <div class="form-row"><label>메모</label><input class="input" id="quick-link-note" value="${escapeHtml(link?.note || '')}" placeholder="예: 졸업생 취업처 확인용"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-close>취소</button>
+      <button class="btn btn-primary" id="quick-link-save-btn">저장</button>
+    </div>`);
+
+  setTimeout(() => {
+    document.getElementById('quick-link-title')?.focus();
+    document.getElementById('quick-link-save-btn')?.addEventListener('click', async () => {
+      const data = {
+        id: link?.id,
+        title: document.getElementById('quick-link-title')?.value.trim() || '',
+        url: document.getElementById('quick-link-url')?.value.trim() || '',
+        note: document.getElementById('quick-link-note')?.value.trim() || '',
+        sortOrder: link?.sortOrder || Date.now()
+      };
+      try {
+        await window.appCareerSaveLink(data);
+        closeModal();
+        await loadQuickLinks();
+        renderQuickLinks();
+        toast('온라인 바로가기를 저장했습니다.', 'success');
+      } catch (error) {
+        toast(error?.message || '온라인 바로가기를 저장하지 못했습니다.', 'error');
+      }
+    });
+  }, 0);
+}
+
+async function deleteQuickLink(id) {
+  if (!confirm('이 온라인 바로가기를 삭제할까요?')) return;
+  await window.appCareerDeleteLink(id);
+  await loadQuickLinks();
+  renderQuickLinks();
+  toast('온라인 바로가기를 삭제했습니다.', 'success');
+}
+
+function handleGradesShortcutKeys(event) {
+  if (!unlocked) return;
+  if (!event.altKey) return;
+  const tag = String(event.target?.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+  const key = String(event.key || '').toLowerCase();
+  if (key === 'r') {
+    event.preventDefault();
+    document.getElementById('rec-name')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => document.getElementById('rec-name')?.focus(), 250);
+  } else if (key === 'a') {
+    event.preventDefault();
+    openRecordModal();
+  } else if (key === 'l') {
+    event.preventDefault();
+    document.getElementById('career-table-wrap')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setTimeout(() => document.getElementById('career-search')?.focus(), 250);
+  }
 }
 
 function renderTable() {
