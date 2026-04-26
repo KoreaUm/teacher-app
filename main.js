@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, screen, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, screen, dialog, Tray, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
@@ -9,6 +9,8 @@ const SQLiteDatabase = require('better-sqlite3');
 
 let db;
 let mainWindow;
+let tray = null;
+let isQuitting = false;
 let isWidgetMode   = false;
 let widgetInterval = null;
 let savedBounds    = null;
@@ -116,6 +118,41 @@ function openDatabaseForUser(userId = '', options = {}) {
   return db;
 }
 
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow();
+    return;
+  }
+  mainWindow.setSkipTaskbar(false);
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function createTray() {
+  if (tray) return tray;
+
+  const iconPath = path.join(__dirname, 'assets/icon.ico');
+  tray = new Tray(iconPath);
+  tray.setToolTip('교사 업무 관리');
+  tray.setContextMenu(Menu.buildFromTemplate([
+    {
+      label: '열기',
+      click: () => showMainWindow(),
+    },
+    {
+      label: '완전 종료',
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      },
+    },
+  ]));
+  tray.on('click', () => showMainWindow());
+  tray.on('double-click', () => showMainWindow());
+  return tray;
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1360,
@@ -135,7 +172,11 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, 'src/index.html'));
 
   mainWindow.on('close', async (event) => {
-    if (isClosingAfterCloudSync || !mainWindow || mainWindow.isDestroyed()) return;
+    if (isQuitting || !mainWindow || mainWindow.isDestroyed()) return;
+    if (isClosingAfterCloudSync) {
+      event.preventDefault();
+      return;
+    }
     event.preventDefault();
     isClosingAfterCloudSync = true;
     let syncResult = { ok: true };
@@ -179,8 +220,10 @@ function createWindow() {
     }
 
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.close();
+      mainWindow.hide();
+      mainWindow.setSkipTaskbar(true);
     }
+    isClosingAfterCloudSync = false;
   });
 
   mainWindow.once('ready-to-show', () => {
@@ -210,14 +253,20 @@ function createWindow() {
 app.whenReady().then(() => {
   openDatabaseForUser('');
   setupAutoUpdater();
+  createTray();
   createWindow();
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    showMainWindow();
   });
 });
 
+app.on('before-quit', () => {
+  isQuitting = true;
+});
+
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  if (process.platform === 'darwin' && !isQuitting) return;
+  if (isQuitting) app.quit();
 });
 
 ipcMain.on('window-minimize', () => mainWindow.minimize());
@@ -265,6 +314,7 @@ ipcMain.handle('download-update', async () => {
 ipcMain.handle('quit-and-install-update', () => {
   if (!app.isPackaged) return false;
   setImmediate(() => {
+    isQuitting = true;
     autoUpdater.quitAndInstall(false, true);
   });
   return true;
