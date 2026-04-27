@@ -2010,7 +2010,7 @@ renderTodoRow = function (todo) {
   const priorityColor = done ? 'var(--text3)' : todo.priority === '높음' ? 'var(--danger)' : todo.priority === '낮음' ? 'var(--text3)' : 'var(--text)';
   const deadlineLabel = formatTodoDeadline(todo.deadline);
   const sourceBadge = !done && todo.source_text ? '<span class="todo-source-badge">원문</span>' : '';
-  return `<div class="todo-row${done ? ' done' : ''}" data-id="${todo.id}" onclick="window.__dtOpen(${todo.id})"><span class="todo-drag-handle" title="드래그해서 순서 변경" onclick="event.stopPropagation()">⋮⋮</span><input type="checkbox" class="todo-chk" ${done ? 'checked' : ''} onchange="event.stopPropagation();window.__dtTog(${todo.id})"><div class="todo-main"><span class="todo-txt" style="color:${priorityColor}">${escapeHtml(todo.title)}</span><div class="todo-meta">${deadlineLabel ? `<span class="todo-deadline">${deadlineLabel}</span>` : ''}${sourceBadge}</div></div><button class="todo-del-btn" onclick="event.stopPropagation();window.__dtDel(${todo.id})">×</button></div>`;
+  return `<div class="todo-row${done ? ' done' : ''}" data-id="${todo.id}" onclick="window.__dtOpen(${todo.id})"><span class="todo-drag-handle" title="드래그해서 순서 변경" onclick="event.stopPropagation()">⋮⋮</span><input type="checkbox" class="todo-chk" ${done ? 'checked' : ''} onclick="event.stopPropagation()" onchange="window.__dtTog(${todo.id})"><div class="todo-main"><span class="todo-txt" style="color:${priorityColor}">${escapeHtml(todo.title)}</span><div class="todo-meta">${deadlineLabel ? `<span class="todo-deadline">${deadlineLabel}</span>` : ''}${sourceBadge}</div></div><button class="todo-del-btn" onclick="event.stopPropagation();window.__dtDel(${todo.id})">×</button></div>`;
 };
 
 loadDashboardCustomEvents = async function () {
