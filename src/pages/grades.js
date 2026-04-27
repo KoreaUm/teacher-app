@@ -250,9 +250,9 @@ function renderQuickLinks() {
     return;
   }
   root.innerHTML = quickLinks.map((link) => `
-    <div class="menu-group-card" style="padding:12px 14px">
-      <div style="font-weight:800;color:var(--text);margin-bottom:4px">${escapeHtml(link.title)}</div>
-      ${link.note ? `<div class="settings-note" style="margin-bottom:8px">${escapeHtml(link.note)}</div>` : ''}
+    <div class="menu-group-card" style="padding:14px 16px">
+      <div class="grades-quick-link-title">${escapeHtml(link.title)}</div>
+      ${link.note ? `<div class="grades-quick-link-note">${escapeHtml(link.note)}</div>` : ''}
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn btn-primary btn-sm quick-link-open-btn" data-url="${escapeHtml(link.url)}">열기</button>
         <button class="btn btn-secondary btn-sm quick-link-edit-btn" data-id="${escapeHtml(link.id)}">수정</button>
@@ -318,10 +318,14 @@ function openQuickLinkModal(link) {
 
 async function deleteQuickLink(id) {
   if (!confirm('이 온라인 바로가기를 삭제할까요?')) return;
-  await window.appCareerDeleteLink(id);
-  await loadQuickLinks();
-  renderQuickLinks();
-  toast('온라인 바로가기를 삭제했습니다.', 'success');
+  try {
+    await window.appCareerDeleteLink(id);
+    await loadQuickLinks();
+    renderQuickLinks();
+    toast('온라인 바로가기를 삭제했습니다.', 'success');
+  } catch (error) {
+    toast(error?.message || '바로가기 삭제에 실패했습니다.', 'error');
+  }
 }
 
 function renderStudentSearch(query) {
@@ -551,8 +555,8 @@ function analyzeStudent(student) {
     : '내신 데이터가 부족해서 내신 목표는 계산하지 못했습니다.';
 
   return `
-    <div class="menu-group-card" style="padding:14px 16px">
-      <div style="font-weight:900;color:var(--text);margin-bottom:8px">${escapeHtml(student.name || '현재 학생')} 분석 결과</div>
+    <div class="menu-group-card" style="padding:16px 18px">
+      <div class="grades-analysis-card-title">${escapeHtml(student.name || '현재 학생')} 분석 결과</div>
       <div style="display:grid;gap:6px;margin-bottom:10px">
         <div><b>현재 내신</b>: ${escapeHtml(student.gradeAverage || '-')} / <b>자격증</b>: ${escapeHtml((student.certificates || []).join(', ') || '-')}</div>
         <div><b>희망</b>: ${escapeHtml(desired || '희망 회사 미입력')}</div>
@@ -577,8 +581,8 @@ function analyzeCompany(query) {
   const companyNames = unique(matches.map((row) => row.employmentCompany).filter(Boolean)).slice(0, 8);
 
   return `
-    <div class="menu-group-card" style="padding:14px 16px">
-      <div style="font-weight:900;color:var(--text);margin-bottom:8px">"${escapeHtml(query)}" 합격 졸업생 분석</div>
+    <div class="menu-group-card" style="padding:16px 18px">
+      <div class="grades-analysis-card-title">"${escapeHtml(query)}" 합격 졸업생 분석</div>
       <div style="display:grid;gap:6px;margin-bottom:10px">
         <div><b>검색된 졸업생</b>: ${matches.length}명</div>
         <div><b>관련 회사</b>: ${escapeHtml(companyNames.join(', ') || '-')}</div>
@@ -597,19 +601,25 @@ function analyzeCompany(query) {
 
 function renderGraduateMatch(row, score) {
   return `
-    <div style="padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--bg)">
-      <b>${escapeHtml(row.employmentCompany || '-')}</b>
-      <span class="settings-note"> ${escapeHtml(row.employmentRole || '')} · ${escapeHtml(row.graduationYear || '')}년 졸업 · 유사도 ${Math.round(score)}점</span>
-      <div class="settings-note" style="margin-top:4px">내신 ${escapeHtml(row.gradeAverage || '-')} / 자격증 ${escapeHtml((row.certificates || []).join(', ') || '-')} / ${escapeHtml(row.name || '졸업생')}</div>
+    <div class="grades-result-card">
+      <div class="grades-result-header">
+        <b>${escapeHtml(row.employmentCompany || '-')}</b>
+        <span class="grades-score-badge">유사도 ${Math.round(score)}점</span>
+      </div>
+      <div class="grades-result-meta">${escapeHtml(row.employmentRole || '')} · ${escapeHtml(row.graduationYear || '')}년 졸업</div>
+      <div class="grades-result-detail">내신 ${escapeHtml(row.gradeAverage || '-')} · 자격증 ${escapeHtml((row.certificates || []).join(', ') || '-')} · ${escapeHtml(row.name || '졸업생')}</div>
     </div>`;
 }
 
 function renderGraduateDetail(row) {
   return `
-    <div style="padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--bg)">
-      <b>${escapeHtml(row.name || '졸업생')}</b>
-      <span class="settings-note"> ${escapeHtml(row.graduationYear || '')}년 · ${escapeHtml(row.employmentCompany || '-')} ${escapeHtml(row.employmentRole || '')}</span>
-      <div class="settings-note" style="margin-top:4px">내신 ${escapeHtml(row.gradeAverage || '-')} / 자격증 ${escapeHtml((row.certificates || []).join(', ') || '-')} / 출결 ${escapeHtml(row.attendance || '-')}</div>
+    <div class="grades-result-card">
+      <div class="grades-result-header">
+        <b>${escapeHtml(row.name || '졸업생')}</b>
+        <span class="grades-year-badge">${escapeHtml(row.graduationYear || '')}년</span>
+      </div>
+      <div class="grades-result-meta">${escapeHtml(row.employmentCompany || '-')} · ${escapeHtml(row.employmentRole || '')}</div>
+      <div class="grades-result-detail">내신 ${escapeHtml(row.gradeAverage || '-')} · 자격증 ${escapeHtml((row.certificates || []).join(', ') || '-')} · 출결 ${escapeHtml(row.attendance || '-')}</div>
     </div>`;
 }
 
@@ -635,14 +645,14 @@ function renderTable() {
   wrap.innerHTML = `
     <table style="width:100%;border-collapse:collapse;font-size:13px">
       <thead>
-        <tr style="position:sticky;top:0;background:var(--card);z-index:1">
-          ${['구분','졸업년도','이름','학번','학년반','내신','자격증','희망','취업처','직무','지역','관리'].map((h) => `<th style="padding:9px;border-bottom:2px solid var(--border);text-align:left;white-space:nowrap">${h}</th>`).join('')}
+        <tr style="position:sticky;top:0;z-index:1">
+          ${['구분','졸업년도','이름','학번','학년반','내신','자격증','희망','취업처','직무','지역','관리'].map((h) => `<th style="text-align:left">${h}</th>`).join('')}
         </tr>
       </thead>
       <tbody>
         ${filtered.map((row) => `
           <tr style="border-bottom:1px solid var(--border)">
-            <td style="padding:8px;white-space:nowrap"><span style="font-weight:800;color:${row.recordType === 'current' ? 'var(--accent)' : 'var(--text2)'}">${escapeHtml(row.recordTypeLabel)}</span></td>
+            <td style="padding:8px;white-space:nowrap"><span class="grades-type-badge ${row.recordType === 'current' ? 'current' : 'graduate'}">${escapeHtml(row.recordTypeLabel)}</span></td>
             <td style="padding:8px;white-space:nowrap">${escapeHtml(row.graduationYear)}</td>
             <td style="padding:8px;font-weight:700;white-space:nowrap">${escapeHtml(row.name)}</td>
             <td style="padding:8px;white-space:nowrap">${escapeHtml(row.schoolNumber)}</td>
@@ -753,11 +763,15 @@ function collectModalRecord(id) {
 
 async function deleteRecord(id) {
   if (!confirm('이 학생 데이터를 삭제할까요?')) return;
-  await window.appCareerDeleteRecord(id);
-  await loadRecords();
-  renderStudentSearch(document.getElementById('student-search-input')?.value || '');
-  renderTable();
-  toast('삭제했습니다.', 'success');
+  try {
+    await window.appCareerDeleteRecord(id);
+    await loadRecords();
+    renderStudentSearch(document.getElementById('student-search-input')?.value || '');
+    renderTable();
+    toast('삭제했습니다.', 'success');
+  } catch (error) {
+    toast(error?.message || '삭제에 실패했습니다.', 'error');
+  }
 }
 
 function handleGradesShortcutKeys(event) {
@@ -863,6 +877,8 @@ async function importCSV(file) {
   const dataRows = rows.slice(1).filter((row) => row.some((cell) => String(cell || '').trim()));
   if (!dataRows.length) return toast('가져올 데이터가 없습니다.', 'error');
   if (!confirm(`${dataRows.length}건을 클라우드에 업로드할까요?`)) return;
+  const importInput = document.getElementById('career-import-input');
+  if (importInput) importInput.value = '';
   for (const row of dataRows) {
     await window.appCareerSaveRecord(csvRowToRecord(row));
   }
