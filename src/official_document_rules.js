@@ -1,13 +1,11 @@
 (function () {
   "use strict";
 
-  var DOCUMENT_TYPES = ["협조요청", "통보", "회신", "보고", "알림", "기타"];
+  var DOCUMENT_TYPES = ["협조요청", "통보", "회신", "보고", "계획", "알림", "신청", "제출", "기타"];
   var ITEM_MARKERS = ["1.", "가.", "1)", "가)", "⑴", "㈎", "①", "㉮"];
   var REQUIRED_FIELDS = [
     ["documentType", "문서 유형"],
-    ["title", "제목 또는 핵심 사안"],
-    ["body", "본문 핵심 내용"],
-    ["effectiveDate", "시행일자"]
+    ["body", "본문 핵심 내용"]
   ];
 
   var REVIEW_PATTERNS = [
@@ -85,7 +83,104 @@
   }
 
   function normalizeBodyText(value) {
-    return normalizeAmount(normalizeTime(trim(value))).replace(/\n{3,}/g, "\n\n");
+    return normalizeAmount(normalizeTime(trim(value)))
+      .replace(/(\d{1,2})\s*월\s*(\d{1,2})\s*일/g, "$1월 $2일")
+      .replace(/\s*=\s*/g, ": ")
+      .replace(/\n{3,}/g, "\n\n");
+  }
+
+  function hasSentenceEnding(value) {
+    return /(다\.|요\.|함\.|임\.|[.!?])$/.test(trim(value));
+  }
+
+  function stripTrailingJosa(value) {
+    return trim(value).replace(/\s*(을|를|에 대하여|에 대한|관련|건)$/g, "");
+  }
+
+  function stripDocumentTypeSuffix(value, type) {
+    var topic = trim(value);
+    if (type === "보고") return topic.replace(/\s*보고$/g, "");
+    if (type === "계획") return topic.replace(/\s*계획$/g, "");
+    if (type === "협조요청") return topic.replace(/\s*협조\s*요청$/g, "");
+    if (type === "통보") return topic.replace(/\s*통보$/g, "");
+    if (type === "회신") return topic.replace(/\s*회신$/g, "");
+    if (type === "알림") return topic.replace(/\s*알림$/g, "");
+    if (type === "신청") return topic.replace(/\s*신청$/g, "");
+    if (type === "제출") return topic.replace(/\s*제출$/g, "");
+    return topic;
+  }
+
+  function topicWithObjectMarker(value) {
+    var topic = stripTrailingJosa(value);
+    if (!topic) return "";
+    var last = topic.charCodeAt(topic.length - 1);
+    if (last < 0xac00 || last > 0xd7a3) return topic + "을";
+    return topic + (((last - 0xac00) % 28) ? "을" : "를");
+  }
+
+  function topicWithSubjectMarker(value) {
+    var topic = stripTrailingJosa(value);
+    if (!topic) return "";
+    var last = topic.charCodeAt(topic.length - 1);
+    if (last < 0xac00 || last > 0xd7a3) return topic + "을";
+    return topic + (((last - 0xac00) % 28) ? "이" : "가");
+  }
+
+  // 짧은 핵심어만 입력한 경우 문서 유형에 맞는 첫 문장으로 확장합니다.
+  function planBodyLines(data) {
+    var rawLines = splitLines(data.body);
+    if (!rawLines.length) return [];
+
+    var type = trim(data.documentType);
+    var firstTopic = stripDocumentTypeSuffix(rawLines[0] || data.title || "", type);
+    if (rawLines.length > 1 && !hasSentenceEnding(rawLines[0]) && rawLines[0].length <= 60) {
+      var intro = buildIntroSentence(type, firstTopic, splitLines(data.attachments).length > 0);
+      return [intro].concat(rawLines.slice(1).map(normalizeBodyText));
+    }
+    if (rawLines.length > 1 || rawLines[0].length > 60 || hasSentenceEnding(rawLines[0])) {
+      return rawLines.map(normalizeBodyText);
+    }
+
+    var topic = firstTopic;
+    var objectTopic = topicWithObjectMarker(topic);
+    var subjectTopic = topicWithSubjectMarker(topic);
+    var attachments = splitLines(data.attachments);
+    var firstSentence = buildIntroSentence(type, topic, attachments.length > 0, objectTopic, subjectTopic);
+
+    if (attachments.length) return [normalizeBodyText(firstSentence), "세부 내용은 붙임 자료를 참고하여 주시기 바랍니다."];
+    return [normalizeBodyText(firstSentence)];
+  }
+
+  function buildIntroSentence(type, topic, hasAttachments, preparedObjectTopic, preparedSubjectTopic) {
+    var objectTopic = preparedObjectTopic || topicWithObjectMarker(topic);
+    var subjectTopic = preparedSubjectTopic || topicWithSubjectMarker(topic);
+    if (type === "보고") return objectTopic + " 아래와 같이 보고합니다.";
+    if (type === "계획") return objectTopic + " 아래와 같이 계획하여 추진하고자 합니다.";
+    if (type === "협조요청") return objectTopic + " 원활히 추진하고자 아래와 같이 협조를 요청하오니 적극 협조하여 주시기 바랍니다.";
+    if (type === "통보") return objectTopic + " 아래와 같이 통보하오니 업무에 참고하여 주시기 바랍니다.";
+    if (type === "회신") return objectTopic + " 아래와 같이 회신합니다.";
+    if (type === "알림") return subjectTopic + " 아래와 같이 운영됨을 알려드립니다.";
+    if (type === "신청") return objectTopic + " 아래와 같이 신청합니다.";
+    if (type === "제출") return hasAttachments ? objectTopic + " 붙임과 같이 제출합니다." : objectTopic + " 아래와 같이 제출합니다.";
+    return objectTopic + " 아래와 같이 안내합니다.";
+  }
+
+  // 제목이 비어 있으면 본문 핵심어와 문서 유형으로 제목을 제안합니다.
+  function suggestTitle(data) {
+    var explicitTitle = trim(data.title);
+    if (explicitTitle) return explicitTitle;
+
+    var type = trim(data.documentType);
+    var firstLine = splitLines(data.body)[0] || "";
+    var topic = stripDocumentTypeSuffix(firstLine, type)
+      .replace(/[.!?。]+$/g, "")
+      .replace(/\s*(아래와 같이|다음과 같이).*/g, "")
+      .replace(/\s*(보고합니다|신청합니다|제출합니다|알려드립니다|통보합니다|회신합니다).*$/g, "");
+    topic = stripTrailingJosa(topic);
+    if (!topic) return type || "공문";
+    if (type === "기타") return topic;
+    if (type === "협조요청") return topic + " 협조 요청";
+    return topic + " " + type;
   }
 
   function formatAttachments(lines) {
@@ -116,18 +211,31 @@
     if (!lines.length) return "";
     if (lines.length === 1) return "1. 관련: " + lines[0];
     var koreanMarkers = ["가", "나", "다", "라", "마", "바", "사", "아", "자", "차", "카", "타", "파", "하"];
-    return "1. 관련 근거\n" + lines.map(function (line, index) {
+    return "1. 관련\n" + lines.map(function (line, index) {
       return "  " + (koreanMarkers[index] || String(index + 1)) + ". " + line;
     }).join("\n");
+  }
+
+  function formatRelatedDocument(text, date) {
+    var doc = trim(text);
+    var normalizedDate = normalizeDate(date);
+    if (!doc) return "";
+    if (!normalizedDate) return doc;
+    if (doc.indexOf(normalizedDate) >= 0) return doc;
+    return doc + "(" + normalizedDate + ")";
   }
 
   function formatBody(lines, hasBasis) {
     if (!lines.length) return "";
     if (!hasBasis && lines.length === 1) return lines[0];
-    return lines.map(function (line, index) {
-      var number = hasBasis ? index + 2 : index + 1;
-      return number + ". " + line;
-    }).join("\n");
+    if (lines.length > 1) {
+      var firstNumber = hasBasis ? 2 : 1;
+      var subMarkers = ["가", "나", "다", "라", "마", "바", "사", "아", "자", "차", "카", "타", "파", "하"];
+      return firstNumber + ". " + lines[0] + "\n" + lines.slice(1).map(function (line, index) {
+        return "  " + (subMarkers[index] || String(index + 1)) + ". " + line;
+      }).join("\n");
+    }
+    return (hasBasis ? 2 : 1) + ". " + lines[0];
   }
 
   function validateDraftInput(input) {
@@ -141,26 +249,21 @@
   // 구조화된 입력값을 공문 초안으로 변환합니다.
   function buildDraft(input) {
     var data = input || {};
-    var recipients = splitLines(data.recipients);
-    var references = splitLines(data.references);
-    var basis = splitLines(data.basis);
-    var bodyLines = splitLines(data.body).map(normalizeBodyText);
+    var basis = splitLines(data.basis).map(function (line, index) {
+      if (index > 0) return line;
+      return formatRelatedDocument(line, data.basisDate);
+    });
+    var bodyLines = planBodyLines(data);
     var attachments = splitLines(data.attachments);
+    var title = suggestTitle(data);
     var header = [
-      trim(data.senderOrg),
-      formatRecipientHeader(recipients, trim(data.via)),
-      "제목  " + trim(data.title)
+      "제목  " + title
     ].filter(Boolean).join("\n");
     var main = [formatBasis(basis), formatBody(bodyLines, basis.length > 0)].filter(Boolean).join("\n\n");
     if (!attachments.length) main = main ? main + "  끝." : "끝.";
     var attachmentText = formatAttachments(attachments);
-    var recipientReference = formatRecipientReference(recipients, references);
     var closing = [
-      attachmentText,
-      trim(data.senderTitle),
-      recipientReference,
-      "시행  " + normalizeDate(data.effectiveDate),
-      (trim(data.senderDept) || trim(data.senderName)) ? "담당  " + [trim(data.senderDept), trim(data.senderName)].filter(Boolean).join(" ") : ""
+      attachmentText
     ].filter(Boolean).join("\n");
     return [header, main, closing].filter(Boolean).join("\n\n");
   }
@@ -198,6 +301,9 @@
     reviewDocument: reviewDocument,
     normalizeDate: normalizeDate,
     normalizeAmount: normalizeAmount,
+    formatRelatedDocument: formatRelatedDocument,
+    planBodyLines: planBodyLines,
+    suggestTitle: suggestTitle,
     splitLines: splitLines,
     escapeRegExp: escapeRegExp
   };

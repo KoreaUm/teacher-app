@@ -2126,6 +2126,12 @@ tbody tr:hover { background: var(--hover); }
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
+.official-doc-related-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px;
+  gap: 10px;
+  align-items: start;
+}
 .official-doc-main-btn {
   width: 100%;
   margin-top: 4px;
@@ -2192,7 +2198,8 @@ tbody tr:hover { background: var(--hover); }
 @media (max-width: 980px) {
   .official-doc-hero,
   .official-doc-grid,
-  .official-doc-two {
+  .official-doc-two,
+  .official-doc-related-row {
     grid-template-columns: 1fr;
   }
   .official-doc-hero {
