@@ -43,6 +43,7 @@
       '  <div class="official-doc-tabs">',
       '    <button class="official-doc-tab active" data-tab="draft">공문 생성</button>',
       '    <button class="official-doc-tab" data-tab="review">검토 모드</button>',
+      '    <button class="official-doc-tab" data-tab="sv">🚨 학교폭력 공문</button>',
       '  </div>',
       '',
       '  <section id="official-draft-panel" class="official-doc-panel active">',
@@ -104,6 +105,36 @@
       '      </div>',
       '    </div>',
       '  </section>',
+      '',
+      '  <section id="official-sv-panel" class="official-doc-panel">',
+      '    <div class="official-doc-grid">',
+      '      <div class="card official-doc-form">',
+      '        <div class="official-doc-form-head">',
+      '          <h3>학교폭력 공문 자동완성</h3>',
+      '          <span>공문 번호를 선택하면 해당 양식이 자동으로 채워집니다.</span>',
+      '        </div>',
+      '        <label>공문 선택',
+      '          <select id="sv-doc-select">',
+      '            <option value="">-- 공문을 선택하세요 --</option>',
+      '          </select>',
+      '        </label>',
+      '        <div id="sv-doc-desc" class="official-doc-sv-desc"></div>',
+      '        <div id="sv-doc-fields"></div>',
+      '        <div class="official-doc-btn-row" style="margin-top:12px">',
+      '          <button id="sv-generate-btn" class="btn btn-primary official-doc-main-btn">공문 생성</button>',
+      '          <button id="sv-clear-btn" class="btn btn-secondary official-doc-main-btn">초기화</button>',
+      '        </div>',
+      '      </div>',
+      '      <div class="card official-doc-output-card">',
+      '        <div class="official-doc-output-head">',
+      '          <h3>생성 결과</h3>',
+      '          <button id="sv-copy-btn" class="btn btn-secondary btn-sm">복사</button>',
+      '        </div>',
+      '        <pre id="sv-doc-output" class="official-doc-output">왼쪽에서 공문을 선택하고 항목을 입력한 뒤 [공문 생성]을 누르세요.\n\n충청북도교육청 2026. 학교폭력 사안처리 A to Z 서식 기반 자동완성입니다.\n공문 양식은 PDF 원본과 동일하게 유지됩니다.</pre>',
+      '      </div>',
+      '    </div>',
+      '  </section>',
+      '',
       '</div>'
     ].join("");
   }
@@ -150,8 +181,10 @@
     });
     var draft = document.getElementById("official-draft-panel");
     var review = document.getElementById("official-review-panel");
+    var sv = document.getElementById("official-sv-panel");
     if (draft) draft.classList.toggle("active", tab === "draft");
     if (review) review.classList.toggle("active", tab === "review");
+    if (sv) sv.classList.toggle("active", tab === "sv");
   }
 
   function renderReviewFindings(findings) {
@@ -250,6 +283,66 @@
     if (copyDraftBtn) copyDraftBtn.addEventListener("click", function () { copyTextFrom("od-draft-output"); });
     var copyReviewBtn = document.getElementById("od-copy-review-btn");
     if (copyReviewBtn) copyReviewBtn.addEventListener("click", function () { copyTextFrom("od-review-output"); });
+
+    // SV document tab
+    var svTemplates = window.SVDocumentTemplates || [];
+    var svSelect = document.getElementById("sv-doc-select");
+    if (svSelect && svTemplates.length) {
+      svTemplates.forEach(function (tpl) {
+        var opt = document.createElement("option");
+        opt.value = tpl.id;
+        opt.textContent = tpl.title;
+        svSelect.appendChild(opt);
+      });
+
+      svSelect.addEventListener("change", function () {
+        var id = parseInt(svSelect.value, 10);
+        var tpl = svTemplates.find(function (t) { return t.id === id; });
+        var descEl = document.getElementById("sv-doc-desc");
+        var fieldsEl = document.getElementById("sv-doc-fields");
+        if (!tpl || !descEl || !fieldsEl) return;
+        descEl.textContent = "[" + tpl.category + "] " + tpl.desc;
+        fieldsEl.innerHTML = tpl.fields.map(function (fld) {
+          var isTextarea = (fld.ph && fld.ph.indexOf("\n") !== -1) || fld.big;
+          var req = fld.req ? '<span class="sv-req">*</span>' : '<small>선택</small>';
+          if (isTextarea) {
+            return '<label>' + escapeHtml(fld.label) + ' ' + req +
+              '<textarea id="sv-f-' + fld.id + '" rows="3" placeholder="' + escapeHtml(fld.ph || "") + '"></textarea></label>';
+          }
+          return '<label>' + escapeHtml(fld.label) + ' ' + req +
+            '<input id="sv-f-' + fld.id + '" placeholder="' + escapeHtml(fld.ph || "") + '"></label>';
+        }).join("");
+      });
+    }
+
+    var svGenerateBtn = document.getElementById("sv-generate-btn");
+    if (svGenerateBtn) {
+      svGenerateBtn.addEventListener("click", function () {
+        var id = parseInt(svSelect ? svSelect.value : "0", 10);
+        var tpl = svTemplates.find(function (t) { return t.id === id; });
+        var outputEl = document.getElementById("sv-doc-output");
+        if (!tpl || !outputEl) return;
+        var vals = {};
+        tpl.fields.forEach(function (fld) {
+          var el = document.getElementById("sv-f-" + fld.id);
+          vals[fld.id] = el ? el.value : "";
+        });
+        outputEl.textContent = tpl.generate(vals);
+      });
+    }
+
+    var svClearBtn = document.getElementById("sv-clear-btn");
+    if (svClearBtn) {
+      svClearBtn.addEventListener("click", function () {
+        var fieldsEl = document.getElementById("sv-doc-fields");
+        if (fieldsEl) fieldsEl.querySelectorAll("input, textarea").forEach(function (el) { el.value = ""; });
+        var outputEl = document.getElementById("sv-doc-output");
+        if (outputEl) outputEl.textContent = "왼쪽에서 공문을 선택하고 항목을 입력한 뒤 [공문 생성]을 누르세요.";
+      });
+    }
+
+    var svCopyBtn = document.getElementById("sv-copy-btn");
+    if (svCopyBtn) svCopyBtn.addEventListener("click", function () { copyTextFrom("sv-doc-output"); });
   }
 
   window.registerPage("official_document", { render: render, init: init });
