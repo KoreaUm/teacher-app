@@ -267,14 +267,31 @@
     if (copyReviewBtn) copyReviewBtn.addEventListener("click", function () { copyTextFrom("od-review-output"); });
 
     // SV document tab
+    var SV_GROUPS = [
+      { label: "교육지원청 지원 요청", ids: [1] },
+      { label: "Ⅰ. 초기대응 및 접수", ids: [2, 3, 4] },
+      { label: "Ⅱ. 사안조사", ids: [5, 6, 7, 8] },
+      { label: "Ⅲ. 전담기구 심의", ids: [9, 10, 11, 12, 13] },
+      { label: "Ⅳ. 심의위원회 개최", ids: [14, 15] },
+      { label: "Ⅳ. 조치결과 이행", ids: [16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26] },
+      { label: "Ⅴ. 후속조치 (생활기록부 삭제)", ids: [27, 28, 29, 30, 31] },
+      { label: "관계회복 숙려제도", ids: [32] }
+    ];
     var svTemplates = window.SVDocumentTemplates || [];
     var svSelect = document.getElementById("sv-doc-select");
     if (svSelect && svTemplates.length) {
-      svTemplates.forEach(function (tpl) {
-        var opt = document.createElement("option");
-        opt.value = tpl.id;
-        opt.textContent = tpl.title;
-        svSelect.appendChild(opt);
+      SV_GROUPS.forEach(function (grp) {
+        var optgroup = document.createElement("optgroup");
+        optgroup.label = grp.label;
+        grp.ids.forEach(function (id) {
+          var tpl = svTemplates.find(function (t) { return t.id === id; });
+          if (!tpl) return;
+          var opt = document.createElement("option");
+          opt.value = tpl.id;
+          opt.textContent = tpl.title;
+          optgroup.appendChild(opt);
+        });
+        svSelect.appendChild(optgroup);
       });
 
       svSelect.addEventListener("change", function () {
