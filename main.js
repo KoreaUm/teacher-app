@@ -175,13 +175,22 @@ function hideWindowToTray() {
 }
 
 function createWindow() {
+  const { nativeImage } = require('electron');
+  const icoPath = path.join(__dirname, 'assets/icon.ico');
+  const pngPath = path.join(__dirname, 'assets/app-icon.png');
+  const winIcon = fs.existsSync(icoPath)
+    ? nativeImage.createFromPath(icoPath)
+    : fs.existsSync(pngPath)
+      ? nativeImage.createFromPath(pngPath)
+      : null;
+
   mainWindow = new BrowserWindow({
     width: 1360,
     height: 800,
     minWidth: 1100,
     minHeight: 680,
     frame: false,
-    icon: path.join(__dirname, 'assets/icon.ico'),
+    ...(winIcon && !winIcon.isEmpty() ? { icon: winIcon } : {}),
     backgroundColor: '#00000000',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -249,6 +258,7 @@ function createWindow() {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
+    if (winIcon && !winIcon.isEmpty()) mainWindow.setIcon(winIcon);
     if (app.isPackaged) {
       setTimeout(() => {
         autoUpdater.checkForUpdates().catch((error) => {
@@ -274,6 +284,8 @@ function createWindow() {
 if (!gotSingleInstanceLock) {
   app.quit();
 } else {
+  app.setAppUserModelId('com.teacher.app');
+
   app.on('second-instance', () => {
     showMainWindow();
   });
