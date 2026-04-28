@@ -72,7 +72,10 @@
       '        <label>붙임 파일 목록 <small>선택, 한 줄에 하나</small><textarea id="od-attachments" rows="3" placeholder="예: 운영 계획서&#10;예: 참가 신청서"></textarea></label>',
       '        <label>시행일자<input id="od-effective-date" placeholder="예: 2026. 4. 28."></label>',
       '        <div id="od-missing" class="official-doc-alert" style="display:none"></div>',
-      '        <button id="od-generate-btn" class="btn btn-primary official-doc-main-btn">공문 초안 생성</button>',
+      '        <div class="official-doc-btn-row">',
+      '          <button id="od-generate-btn" class="btn btn-secondary official-doc-main-btn">규칙 기반 생성</button>',
+      '          <button id="od-ai-generate-btn" class="btn btn-primary official-doc-main-btn">✨ AI로 생성</button>',
+      '        </div>',
       '      </div>',
       '      <div class="card official-doc-output-card">',
       '        <div class="official-doc-output-head">',
@@ -195,6 +198,51 @@
         var result = rules.reviewDocument(getValue("od-review-input"));
         renderReviewFindings(result.findings || []);
         setText("od-review-output", result.suggestion || "");
+      });
+    }
+
+    var aiBtn = document.getElementById("od-ai-generate-btn");
+    if (aiBtn) {
+      aiBtn.addEventListener("click", async function () {
+        var input = collectDraftInput();
+        var missing = rules.validateDraftInput(input);
+        showMissing(missing);
+        if (missing.length) {
+          setText("od-draft-output", "필수 항목을 먼저 채워 주세요. 공문 내용은 임의로 만들지 않습니다.");
+          return;
+        }
+        var apiKey = await api.getSetting("ai_api_key", "");
+        if (!apiKey) {
+          setText("od-draft-output", "설정에서 AI API 키를 입력하세요.");
+          return;
+        }
+        var model = await api.getSetting("ai_model", "claude-sonnet-4-6");
+        var provider = await api.getSetting("ai_provider", "claude");
+        aiBtn.disabled = true;
+        aiBtn.textContent = "AI 생성 중…";
+        setText("od-draft-output", "AI가 공문서 작성법 기준에 따라 공문을 작성 중입니다…");
+        var inputSummary = [
+          "문서 유형: " + input.documentType,
+          "수신자: " + (input.recipients || "없음"),
+          input.via ? "경유: " + input.via : "",
+          input.senderOrg ? "발신 기관: " + input.senderOrg : "",
+          input.senderTitle ? "발신명의: " + input.senderTitle : "",
+          "제목: " + input.title,
+          input.basis ? "관련 근거:\n" + input.basis : "",
+          "본문 핵심 내용:\n" + input.body,
+          input.attachments ? "붙임 파일:\n" + input.attachments : "",
+          "시행일자: " + input.effectiveDate,
+          input.senderDept ? "담당 부서: " + input.senderDept : "",
+          input.senderName ? "담당자: " + input.senderName : ""
+        ].filter(Boolean).join("\n");
+        var result = await api.aiGenerateOfficialDoc(apiKey, model, provider, inputSummary);
+        aiBtn.disabled = false;
+        aiBtn.textContent = "✨ AI로 생성";
+        if (result.error) {
+          setText("od-draft-output", "AI 오류: " + result.error);
+        } else {
+          setText("od-draft-output", result.result || "결과 없음");
+        }
       });
     }
 

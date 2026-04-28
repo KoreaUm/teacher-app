@@ -11,17 +11,46 @@
   ];
 
   var REVIEW_PATTERNS = [
-    { pattern: /2월달|[0-9]+월달/g, message: "'월달'은 중복 표현입니다. '2월'처럼 씁니다.", replace: function (v) { return v.replace("월달", "월"); } },
-    { pattern: /기간 동안/g, message: "'기간 동안'은 중복될 수 있습니다. 문맥에 따라 '기간' 또는 '동안'으로 줄입니다.", replace: "기간" },
+    // ── 중복 표현 ──
+    { pattern: /[0-9]+월달/g, message: "'○월달'은 중복 표현입니다. '○월'로 씁니다.", replace: function (v) { return v.replace("월달", "월"); } },
+    { pattern: /기간\s*동안/g, message: "'기간 동안'은 중복 표현입니다. '기간' 또는 '동안'으로 줄입니다.", replace: "기간" },
     { pattern: /매\s*([0-9]+)\s*년마다/g, message: "'매...마다'는 중복 표현입니다. '2년마다'처럼 씁니다.", replace: "$1년마다" },
-    { pattern: /월요일날|화요일날|수요일날|목요일날|금요일날|토요일날|일요일날/g, message: "'요일날'은 중복 표현입니다. '월요일'처럼 씁니다.", replace: function (v) { return v.replace("날", ""); } },
-    { pattern: /여러가지/g, message: "'여러가지'는 '여러 가지'로 띄어 씁니다.", replace: "여러 가지" },
-    { pattern: /쓰이는 용도/g, message: "'쓰이는 용도'는 중복 표현입니다. '용도'로 줄일 수 있습니다.", replace: "용도" },
+    { pattern: /[월화수목금토일]요일\s*날\b/g, message: "'요일 날'은 중복 표현입니다. '월요일'처럼 씁니다.", replace: function (v) { return v.replace(/\s*날$/, ""); } },
+    { pattern: /여러\s*가지\s*종류/g, message: "'여러 가지 종류'는 중복 표현입니다. '여러 가지' 또는 '여러 종류'로 씁니다.", replace: "여러 가지" },
+    { pattern: /쓰이는\s*용도/g, message: "'쓰이는 용도'는 중복 표현입니다. '용도' 또는 '쓰임새'로 줄입니다.", replace: "용도" },
     { pattern: /새로\s*신설/g, message: "'새로 신설'은 중복 표현입니다. '신설'로 줄입니다.", replace: "신설" },
-    { pattern: /반드시 필요/g, message: "'반드시 필요'는 강한 표현입니다. 공문 맥락에 따라 '필요'로 완화할 수 있습니다.", replace: "필요" },
-    { pattern: /속도를 줄이시오/g, message: "고압적 표현입니다. '속도를 줄여 주시기 바랍니다'처럼 안내형으로 바꿉니다.", replace: "속도를 줄여 주시기 바랍니다" },
-    { pattern: /절대|엄금|필히/g, message: "강압적으로 느껴질 수 있는 표현입니다. 필요한 경우 사유와 안내 중심으로 고칩니다.", replace: null },
-    { pattern: /불우\s*이웃/g, message: "낙인감을 줄 수 있는 표현입니다. '어려운 이웃' 등 중립 표현을 검토합니다.", replace: "어려운 이웃" }
+    { pattern: /반드시\s*필요/g, message: "'반드시 필요'는 중복 표현입니다. '필요'로 씁니다.", replace: "필요" },
+    { pattern: /미리\s*예측/g, message: "'미리 예측'은 중복 표현입니다. '예측'으로 씁니다.", replace: "예측" },
+    { pattern: /소급하여\s*올라가/g, message: "'소급하여 올라가다'는 중복 표현입니다. '소급하다'로 씁니다.", replace: "소급하다" },
+    { pattern: /수입해서\s*들여오/g, message: "'수입해서 들여오다'는 중복 표현입니다. '수입하다'로 씁니다.", replace: "수입하다" },
+    { pattern: /결론을\s*맺/g, message: "'결론을 맺다'는 어색한 표현입니다. '결론을 내리다'로 씁니다.", replace: "결론을 내리다" },
+    { pattern: /피해를\s*입/g, message: "'피해를 입다'는 중복 표현입니다. '해를 입다' 또는 '피해를 보다'로 씁니다.", replace: null },
+    { pattern: /가장\s*중요한\s*것\s*중의\s*하나/g, message: "비논리적 표현입니다. '중요한 것 중의 하나'로 씁니다.", replace: "중요한 것 중의 하나" },
+    { pattern: /과반수\s*이상/g, message: "'과반수 이상'은 중복 표현입니다. '과반수'로 씁니다.", replace: "과반수" },
+    // ── 다중(반대) 표현 ──
+    { pattern: /안전선\s*밖으로\s*물러/g, message: "안전선은 '밖으로'가 아닌 '안으로' 물러나야 합니다.", replace: null },
+    { pattern: /회비\s*수납/g, message: "'회비 수납'보다 '회비 납부'가 수요자 중심 표현입니다.", replace: "회비 납부" },
+    // ── 지시 대상 불명확 ──
+    { pattern: /담배를\s*태우/g, message: "'담배를 태우다'는 잘못된 표현입니다. '담배를 피우다'로 씁니다.", replace: "담배를 피우다" },
+    // ── 고압적 표현 ──
+    { pattern: /속도를\s*줄이시오/g, message: "고압적 표현입니다. '속도를 줄여 주시기 바랍니다'처럼 안내형으로 씁니다.", replace: "속도를 줄여 주시기 바랍니다" },
+    { pattern: /\b필히\b/g, message: "'필히'는 고압적 표현입니다. 안내형으로 바꿉니다.", replace: null },
+    { pattern: /엄금/g, message: "'엄금'은 고압적 표현입니다. '출입할 수 없습니다'처럼 안내형으로 씁니다.", replace: null },
+    { pattern: /절대\s*출입|절대\s*금지|절대로\s*하지/g, message: "'절대'를 수반한 금지 표현은 고압적입니다. 안내형으로 바꿉니다.", replace: null },
+    // ── 낙인·차별 표현 ──
+    { pattern: /불우\s*이웃/g, message: "'불우 이웃'은 낙인감을 줄 수 있습니다. '어려운 이웃'으로 씁니다.", replace: "어려운 이웃" },
+    { pattern: /소외\s*계층/g, message: "'소외 계층'은 낙인 표현입니다. '차상위 계층' 등 구체적 표현으로 씁니다.", replace: null },
+    // ── 외래어 단독 사용 ──
+    { pattern: /\bR&D\b(?!\()/g, message: "공문서에서 외국어는 한글 표기 후 괄호에 원어를 씁니다. '연구 개발(R&D)'처럼 씁니다.", replace: null },
+    { pattern: /\bMOU\b(?!\()/g, message: "공문서에서 'MOU'는 '업무 협약(MOU)'으로 씁니다.", replace: null },
+    { pattern: /\bIT\b(?!\()|\bICT\b(?!\()/g, message: "공문서에서 'IT'·'ICT'는 '정보 기술(IT)'처럼 한글과 함께 씁니다.", replace: null },
+    // ── 수요자 중심 표현 ──
+    { pattern: /민원을?\s*접수합니다|민원\s*접수\s*중/g, message: "'민원 접수'는 행정 주체 중심 표현입니다. '민원 신청'으로 씁니다.", replace: null },
+    { pattern: /여권을?\s*교부합니다/g, message: "'여권 교부'는 행정 주체 중심 표현입니다. '여권 수령'으로 씁니다.", replace: null },
+    { pattern: /고지서를?\s*발송시킬/g, message: "'발송시킬'은 사동 표현 오류입니다. '보낼'로 씁니다.", replace: null },
+    // ── 사동 표현 오류 ──
+    { pattern: /향상시키[자고]/g, message: "'향상시키다'는 불필요한 사동입니다. '향상하다' 또는 '기르다'로 씁니다.", replace: null },
+    { pattern: /전문가의?\s*자문을\s*받아\s*시행/g, message: "'자문을 받아 시행'은 어색합니다. '전문가에게 자문하여 시행'으로 씁니다.", replace: "전문가에게 자문하여 시행" }
   ];
 
   function trim(value) {
