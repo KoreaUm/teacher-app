@@ -120,6 +120,8 @@ contextBridge.exposeInMainWorld('api', {
   // AI
   aiExtractTodos: (key, model, provider, text) =>
     ipcRenderer.invoke('ai-extract-todos', key, model, provider, text),
+  aiGenerateOfficialDoc: (key, model, provider, inputJson) =>
+    ipcRenderer.invoke('ai-generate-official-doc', key, model, provider, inputJson),
   aiExtractTimetable: (key, model, provider, text) =>
     ipcRenderer.invoke('ai-extract-timetable', key, model, provider, text),
   aiExtractTimetableImage: (key, model, provider, image) =>

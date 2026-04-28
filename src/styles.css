@@ -2132,9 +2132,14 @@ tbody tr:hover { background: var(--hover); }
   gap: 10px;
   align-items: start;
 }
+.official-doc-btn-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 4px;
+}
 .official-doc-main-btn {
   width: 100%;
-  margin-top: 4px;
 }
 .official-doc-alert {
   margin: 8px 0 12px;

@@ -802,6 +802,62 @@ ipcMain.handle('ai-extract-timetable-image', async (e, apiKey, model, provider, 
   }
 });
 
+ipcMain.handle('ai-generate-official-doc', async (e, apiKey, model, provider, inputJson) => {
+  try {
+    const system = `당신은 대한민국 공공언어 전문가로, 한국공공언어진흥원 공문서 작성법 기준에 따라 학교 공문을 작성합니다.
+
+[핵심 규칙]
+## 구조
+- 두문: 수신 / (경유) / 제목
+- 본문: 관련근거(있으면 1.로) → 핵심내용(항목별)
+- 끝. 또는 붙임 뒤에 끝.
+
+## 제목
+- 내용 전체를 포괄하는 명사구
+- 모호한 표현('우리 기관' 등) 금지
+
+## 항목 기호 순서
+- 첫째: 1., 2., 3. / 둘째: 가., 나., 다. / 셋째: 1), 2) / 넷째: 가), 나)
+- 항목 문장은 '-다' 형 평서형 종결어미로 끝냄
+
+## 날짜·시간·금액
+- 날짜: 2026. 4. 28.(월) — 점 뒤 한 칸, 일 뒤 반드시 점
+- 기간: 2026. 4. 28.~5. 2.
+- 시간: 24시각제 쌍점 — 09:00, 13:30
+- 금액: 금13,500원(금일만삼천오백원)
+
+## 붙임
+- 각 파일 개별 기재, 묶지 않음
+- 붙임  1. 파일명 1부.
+        2. 파일명 1부.  끝.
+- 단일 파일: 붙임  파일명 1부.  끝.
+
+## 끝.
+- 본문이 끝나면 두 칸 띄우고 끝.
+- 붙임이 있으면 붙임 표시문 끝에 두 칸 띄우고 끝.
+
+## 표현 원칙
+1. 사실성: 육하원칙, 중복표현('2월달→2월', '기간 동안→기간', '새로 신설→신설') 금지
+2. 용이성: 외래어 한글화 후 괄호에 원어 — 연구 개발(R&D)
+3. 명확성: 호응 맞추기, 명사 나열 형태 지양
+4. 비고압성: '절대·필히·엄금' 지양, 명령형→안내형
+5. 비표지성: '불우 이웃→어려운 이웃', 순서 없으면 가나다순
+6. 수요자 중심: '민원 접수→민원 신청', '여권 교부→여권 수령'
+
+## 출력 형식
+- 제목 줄부터 끝. 까지만 출력 (수신·발신명의·기안자·시행번호 등 결문 서식 제외)
+- 설명·마크다운 없이 공문 텍스트만 출력
+- 빈 항목은 임의로 채우지 말고 [ ] 로 표시`;
+
+    const userPrompt = `다음 정보를 바탕으로 학교 공문 본문(제목~끝.)을 작성해 주세요:\n\n${inputJson}`;
+    const options = { system, userPrompt, maxTokens: 2048 };
+    if (provider === 'gemini') return await runGemini(apiKey, model, '', options);
+    return await runClaude(apiKey, model, '', options);
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
 ipcMain.handle('import-class-timetable-excel', async (e, payload) => {
   try {
     const buffer = Buffer.from(String(payload?.data || ''), 'base64');
@@ -834,7 +890,7 @@ async function runClaude(apiKey, model, text, options = {}) {
   }
   const body = JSON.stringify({
     model,
-    max_tokens: 1024,
+    max_tokens: options.maxTokens || 1024,
     system: options.system || '',
     messages: [{ role: 'user', content }],
   });
