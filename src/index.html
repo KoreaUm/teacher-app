@@ -10,6 +10,7 @@
 <script src="../node_modules/firebase/firebase-firestore-compat.js"></script>
 <script src="../node_modules/firebase/firebase-functions-compat.js"></script>
 <script src="firebase/config.js"></script>
+<script src="official_document_rules.js"></script>
 </head>
 <body>
 <div id="titlebar">
@@ -191,6 +192,7 @@
     { key: "meal", label: "급식 메뉴" },
     { key: "school_calendar", label: "학사 일정" },
     { key: "calculator", label: "계산기" },
+    { key: "official_document", label: "공문서 작성" },
     { key: "todos", label: "할일 목록" },
     { key: "settings", label: "설정" }
   ];
@@ -200,7 +202,7 @@
     { key: "class", label: "학급 관리", items: ["students", "attendance", "daily_memo", "timetable"] },
     { key: "records", label: "기록", items: ["counseling", "observations", "lessons"] },
     { key: "evaluation", label: "평가", items: ["assessments", "submissions", "statistics", "ai_analysis"] },
-    { key: "tools", label: "도구", items: ["meal", "school_calendar", "calculator", "settings"] }
+    { key: "tools", label: "도구", items: ["meal", "school_calendar", "calculator", "official_document", "settings"] }
   ];
 
   var menuGroups = cloneMenuGroups(DEFAULT_MENU_GROUPS);
@@ -259,6 +261,7 @@
         meal: "급식 식단 메뉴 밥",
         school_calendar: "캘린더 일정 행사 학사일정",
         calculator: "계산기 계산 점수",
+        official_document: "공문 공문서 행정문서 작성 협조요청 통보 회신 보고 알림 검토 붙임 끝",
         todos: "할일 할 일 todo 업무 체크 완료",
         settings: "설정 환경설정 학교 날씨 메뉴 바로가기",
         user_management: "회원 관리 사용자 계정 승인 차단 삭제 공지사항 공지 배포"

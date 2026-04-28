@@ -1,0 +1,208 @@
+(function () {
+  "use strict";
+
+  function escapeHtml(value) {
+    return String(value == null ? "" : value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function getValue(id) {
+    var el = document.getElementById(id);
+    return el ? el.value : "";
+  }
+
+  function setText(id, value) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = value || "";
+  }
+
+  async function render(container) {
+    var rules = window.OfficialDocumentRules;
+    var options = (rules ? rules.DOCUMENT_TYPES : ["협조요청", "통보", "회신", "보고", "알림", "기타"])
+      .map(function (type) { return '<option value="' + escapeHtml(type) + '">' + escapeHtml(type) + '</option>'; })
+      .join("");
+
+    container.innerHTML = [
+      '<div id="official-doc-page" class="official-doc-page">',
+      '  <section class="official-doc-hero">',
+      '    <div>',
+      '      <div class="official-doc-eyebrow">행정 공문 작성 보조</div>',
+      '      <h2>두문·본문·결문 흐름에 맞춘 공문 초안 생성</h2>',
+      '      <p>외부 API 없이 PDF 작성법 기준을 로컬에서 적용합니다. 빈 항목은 임의로 채우지 않고 바로 알려줍니다.</p>',
+      '    </div>',
+      '    <div class="official-doc-rule-card">',
+      '      <b>자동 적용</b>',
+      '      <span>수신자 참조, 붙임, 끝., 날짜·금액 표기, 표현 점검</span>',
+      '    </div>',
+      '  </section>',
+      '',
+      '  <div class="official-doc-tabs">',
+      '    <button class="official-doc-tab active" data-tab="draft">공문 생성</button>',
+      '    <button class="official-doc-tab" data-tab="review">검토 모드</button>',
+      '  </div>',
+      '',
+      '  <section id="official-draft-panel" class="official-doc-panel active">',
+      '    <div class="official-doc-grid">',
+      '      <div class="card official-doc-form">',
+      '        <div class="official-doc-form-head">',
+      '          <h3>입력 항목</h3>',
+      '          <span>필수 항목을 모두 채우면 초안이 생성됩니다.</span>',
+      '        </div>',
+      '        <label>문서 유형<select id="od-document-type">' + options + '</select></label>',
+      '        <label>수신자 <small>여러 명이면 한 줄에 한 명씩 입력</small><textarea id="od-recipients" rows="3" placeholder="예: 각급 학교장&#10;예: 청주시교육지원청교육장"></textarea></label>',
+      '        <div class="official-doc-two">',
+      '          <label>경유 <small>선택</small><input id="od-via" placeholder="예: 교감"></label>',
+      '          <label>참조 <small>선택, 한 줄에 하나</small><textarea id="od-references" rows="2" placeholder="예: 행정실장"></textarea></label>',
+      '        </div>',
+      '        <div class="official-doc-two">',
+      '          <label>발신 기관<input id="od-sender-org" placeholder="예: ○○고등학교"></label>',
+      '          <label>발신 부서<input id="od-sender-dept" placeholder="예: 교무기획부"></label>',
+      '        </div>',
+      '        <div class="official-doc-two">',
+      '          <label>담당자<input id="od-sender-name" placeholder="예: 홍길동"></label>',
+      '          <label>발신명의<input id="od-sender-title" placeholder="예: ○○고등학교장"></label>',
+      '        </div>',
+      '        <label>제목 또는 핵심 사안<input id="od-title" placeholder="예: 2026학년도 진로 체험 운영 협조 요청"></label>',
+      '        <label>근거 <small>선택, 여러 개면 날짜순으로 한 줄씩</small><textarea id="od-basis" rows="3" placeholder="예: ○○교육청 진로교육과-1234(2026. 4. 20.)"></textarea></label>',
+      '        <label>본문 핵심 내용<textarea id="od-body" rows="6" placeholder="공문에 들어갈 핵심 내용을 문장 또는 줄 단위로 적어 주세요."></textarea></label>',
+      '        <label>붙임 파일 목록 <small>선택, 한 줄에 하나</small><textarea id="od-attachments" rows="3" placeholder="예: 운영 계획서&#10;예: 참가 신청서"></textarea></label>',
+      '        <label>시행일자<input id="od-effective-date" placeholder="예: 2026. 4. 28."></label>',
+      '        <div id="od-missing" class="official-doc-alert" style="display:none"></div>',
+      '        <button id="od-generate-btn" class="btn btn-primary official-doc-main-btn">공문 초안 생성</button>',
+      '      </div>',
+      '      <div class="card official-doc-output-card">',
+      '        <div class="official-doc-output-head">',
+      '          <h3>생성 결과</h3>',
+      '          <button id="od-copy-draft-btn" class="btn btn-secondary btn-sm">복사</button>',
+      '        </div>',
+      '        <pre id="od-draft-output" class="official-doc-output">왼쪽 항목을 입력한 뒤 [공문 초안 생성]을 누르세요.</pre>',
+      '      </div>',
+      '    </div>',
+      '  </section>',
+      '',
+      '  <section id="official-review-panel" class="official-doc-panel">',
+      '    <div class="official-doc-grid">',
+      '      <div class="card official-doc-form">',
+      '        <h3>작성한 공문 검토</h3>',
+      '        <label>공문 내용<textarea id="od-review-input" rows="16" placeholder="이미 작성한 공문을 여기에 붙여넣으세요."></textarea></label>',
+      '        <button id="od-review-btn" class="btn btn-primary official-doc-main-btn">형식·표현 검토</button>',
+      '      </div>',
+      '      <div class="card official-doc-output-card">',
+      '        <div class="official-doc-output-head">',
+      '          <h3>검토 결과</h3>',
+      '          <button id="od-copy-review-btn" class="btn btn-secondary btn-sm">수정안 복사</button>',
+      '        </div>',
+      '        <div id="od-review-findings" class="official-doc-findings">검토할 공문을 입력해 주세요.</div>',
+      '        <pre id="od-review-output" class="official-doc-output official-doc-review-output"></pre>',
+      '      </div>',
+      '    </div>',
+      '  </section>',
+      '</div>'
+    ].join("");
+  }
+
+  function collectDraftInput() {
+    return {
+      documentType: getValue("od-document-type"),
+      recipients: getValue("od-recipients"),
+      via: getValue("od-via"),
+      references: getValue("od-references"),
+      senderOrg: getValue("od-sender-org"),
+      senderDept: getValue("od-sender-dept"),
+      senderName: getValue("od-sender-name"),
+      senderTitle: getValue("od-sender-title"),
+      title: getValue("od-title"),
+      basis: getValue("od-basis"),
+      body: getValue("od-body"),
+      attachments: getValue("od-attachments"),
+      effectiveDate: getValue("od-effective-date")
+    };
+  }
+
+  function showMissing(missing) {
+    var box = document.getElementById("od-missing");
+    if (!box) return;
+    if (!missing.length) {
+      box.style.display = "none";
+      box.textContent = "";
+      return;
+    }
+    box.style.display = "block";
+    box.textContent = "아직 필요한 항목: " + missing.join(", ");
+  }
+
+  function copyTextFrom(id) {
+    var text = document.getElementById(id) ? document.getElementById(id).textContent : "";
+    if (!text) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text);
+  }
+
+  function switchTab(tab) {
+    document.querySelectorAll(".official-doc-tab").forEach(function (btn) {
+      btn.classList.toggle("active", btn.dataset.tab === tab);
+    });
+    var draft = document.getElementById("official-draft-panel");
+    var review = document.getElementById("official-review-panel");
+    if (draft) draft.classList.toggle("active", tab === "draft");
+    if (review) review.classList.toggle("active", tab === "review");
+  }
+
+  function renderReviewFindings(findings) {
+    var wrap = document.getElementById("od-review-findings");
+    if (!wrap) return;
+    if (!findings.length) {
+      wrap.innerHTML = '<div class="official-doc-good">큰 형식 오류를 찾지 못했습니다. 그래도 최종 결재 전 기관 내부 기준은 한 번 더 확인해 주세요.</div>';
+      return;
+    }
+    wrap.innerHTML = findings.map(function (item) {
+      var examples = item.examples && item.examples.length ? " 발견 예: " + item.examples.join(", ") : "";
+      return '<div class="official-doc-finding"><b>' + escapeHtml(item.type) + '</b><span>' + escapeHtml(item.message + examples) + '</span></div>';
+    }).join("");
+  }
+
+  function init() {
+    var rules = window.OfficialDocumentRules;
+    if (!rules) {
+      setText("od-draft-output", "공문 작성 규칙 모듈을 불러오지 못했습니다.");
+      return;
+    }
+
+    document.querySelectorAll(".official-doc-tab").forEach(function (btn) {
+      btn.addEventListener("click", function () { switchTab(btn.dataset.tab); });
+    });
+
+    var generateBtn = document.getElementById("od-generate-btn");
+    if (generateBtn) {
+      generateBtn.addEventListener("click", function () {
+        var input = collectDraftInput();
+        var missing = rules.validateDraftInput(input);
+        showMissing(missing);
+        if (missing.length) {
+          setText("od-draft-output", "필수 항목을 먼저 채워 주세요. 공문 내용은 임의로 만들지 않습니다.");
+          return;
+        }
+        setText("od-draft-output", rules.buildDraft(input));
+      });
+    }
+
+    var reviewBtn = document.getElementById("od-review-btn");
+    if (reviewBtn) {
+      reviewBtn.addEventListener("click", function () {
+        var result = rules.reviewDocument(getValue("od-review-input"));
+        renderReviewFindings(result.findings || []);
+        setText("od-review-output", result.suggestion || "");
+      });
+    }
+
+    var copyDraftBtn = document.getElementById("od-copy-draft-btn");
+    if (copyDraftBtn) copyDraftBtn.addEventListener("click", function () { copyTextFrom("od-draft-output"); });
+    var copyReviewBtn = document.getElementById("od-copy-review-btn");
+    if (copyReviewBtn) copyReviewBtn.addEventListener("click", function () { copyTextFrom("od-review-output"); });
+  }
+
+  window.registerPage("official_document", { render: render, init: init });
+})();
