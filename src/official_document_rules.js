@@ -5,11 +5,6 @@
   var ITEM_MARKERS = ["1.", "가.", "1)", "가)", "⑴", "㈎", "①", "㉮"];
   var REQUIRED_FIELDS = [
     ["documentType", "문서 유형"],
-    ["recipients", "수신자"],
-    ["senderOrg", "발신 기관"],
-    ["senderDept", "발신 부서"],
-    ["senderName", "담당자"],
-    ["senderTitle", "발신명의"],
     ["title", "제목 또는 핵심 사안"],
     ["body", "본문 핵심 내용"],
     ["effectiveDate", "시행일자"]
@@ -165,7 +160,7 @@
       trim(data.senderTitle),
       recipientReference,
       "시행  " + normalizeDate(data.effectiveDate),
-      "담당  " + trim(data.senderDept) + " " + trim(data.senderName)
+      (trim(data.senderDept) || trim(data.senderName)) ? "담당  " + [trim(data.senderDept), trim(data.senderName)].filter(Boolean).join(" ") : ""
     ].filter(Boolean).join("\n");
     return [header, main, closing].filter(Boolean).join("\n\n");
   }
