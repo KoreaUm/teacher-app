@@ -32,6 +32,7 @@
       "main.js",
       "preload.js",
       "package.json",
+      "assets/**/*",
       "src/**/*",
       "node_modules/**/*",
       "!node_modules/.cache/**/*",
