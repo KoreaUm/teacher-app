@@ -174,23 +174,23 @@ async function render(c){
     <div id="tt-grid-wrap" style="padding:2px 8px 8px"></div>
   </div>
 
-  <div class="card sb-card" id="w-teacher-contact" data-widget="teacher-contact" style="overflow:hidden">
+  <div class="card sb-card" id="w-teacher-contact" data-widget="teacher-contact" style="overflow:hidden;display:flex;flex-direction:column">
     <div class="card-header" style="padding:8px 10px 0">
       <span class="card-title" style="font-size:11px">📞 교사 연락처</span>
     </div>
-    <div style="padding:4px 8px 8px">
+    <div style="padding:4px 8px 8px;display:flex;flex-direction:column;flex:1;min-height:0">
       <input class="sb-mini-input" id="teacher-q" placeholder="🔍 검색...">
-      <div id="teacher-list" style="margin-top:3px;max-height:54px;overflow-y:auto"></div>
+      <div id="teacher-list" style="margin-top:3px;flex:1;overflow-y:auto;min-height:0"></div>
     </div>
   </div>
 
-  <div class="card sb-card" id="w-student-contact" data-widget="student-contact" style="overflow:hidden">
+  <div class="card sb-card" id="w-student-contact" data-widget="student-contact" style="overflow:hidden;display:flex;flex-direction:column">
     <div class="card-header" style="padding:8px 10px 0">
       <span class="card-title" style="font-size:11px">👤 학생 연락처</span>
     </div>
-    <div style="padding:4px 8px 8px">
+    <div style="padding:4px 8px 8px;display:flex;flex-direction:column;flex:1;min-height:0">
       <input class="sb-mini-input" id="student-q" placeholder="🔍 검색...">
-      <div id="student-list" style="margin-top:3px;max-height:54px;overflow-y:auto"></div>
+      <div id="student-list" style="margin-top:3px;flex:1;overflow-y:auto;min-height:0"></div>
     </div>
   </div>
 
@@ -1520,7 +1520,13 @@ async function showHiddenPanel(){
     restoreBtn.style.cssText='font-size:11px;padding:3px 8px;border:1px solid var(--border,#ddd);background:var(--bg2,#f5f5f5);border-radius:4px;cursor:pointer;white-space:nowrap;';
     restoreBtn.onclick=async()=>{
       const card=document.getElementById(id);
-      if(card) card.style.display='';
+      if(card){
+        // flex 레이아웃 보존: flex-direction이 설정된 카드는 flex로 복원
+        card.style.display = card.style.flexDirection ? 'flex' : '';
+        // 다른 카드 앞으로 - dashboard 마지막 자식으로 이동
+        const dash=document.getElementById('dashboard');
+        if(dash && card.parentNode===dash) dash.appendChild(card);
+      }
       // hidden_widgets 목록에서 제거
       try{
         const raw2=await api.getSetting('hidden_widgets','[]');
