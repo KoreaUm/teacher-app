@@ -147,8 +147,10 @@
       '          <label>관련 계획명 <small>선택</small><input id="poom-plan"></label>',
       '          <label>계획 날짜 <small>선택</small><input id="poom-plan-date" type="date"></label>',
       '        </div>',
-      '        <label id="poom-purpose-wrap">목적 설명<input id="poom-purpose"></label>',
-      '        <div id="poom-extra-fields"></div>',
+      '        <div>',
+      '          <div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:5px">개요 항목 <small style="font-weight:400;color:var(--fg-3)">체크로 포함/제외 · 드래그로 순서 변경</small></div>',
+      '          <div id="poom-gaeyo-list"></div>',
+      '        </div>',
       '        <div style="margin-top:4px">',
       '          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">',
       '            <div style="font-size:12px;font-weight:600;color:var(--fg-2)">품목 내역</div>',
@@ -169,6 +171,22 @@
       '        <div class="official-doc-btn-row" style="margin-top:12px">',
       '          <button id="poom-gen-btn" class="btn btn-primary official-doc-main-btn" type="button">개요 생성</button>',
       '          <button id="poom-clear-btn" class="btn btn-secondary official-doc-main-btn" type="button">초기화</button>',
+      '        </div>',
+      '        <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px">',
+      '          <div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:6px">🤖 에듀파인 자동입력 매크로</div>',
+      '          <div style="font-size:11px;color:var(--fg-3);margin-bottom:10px">에듀파인 품의서 페이지를 브라우저에 열어둔 상태로 아래 순서대로 진행하세요.</div>',
+      '          <div style="display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center;margin-bottom:10px">',
+      '            <button id="macro-rec-add" class="btn btn-secondary btn-sm" type="button">① 행추가 버튼 위치 기록</button>',
+      '            <span id="macro-add-pos" style="font-size:11px;color:var(--fg-3)">미설정</span>',
+      '            <button id="macro-rec-cell" class="btn btn-secondary btn-sm" type="button">② 내용 셀 위치 기록</button>',
+      '            <span id="macro-cell-pos" style="font-size:11px;color:var(--fg-3)">미설정</span>',
+      '          </div>',
+      '          <div id="macro-status" style="font-size:12px;color:var(--accent);min-height:18px;margin-bottom:8px"></div>',
+      '          <div style="display:flex;gap:8px;align-items:center">',
+      '            <button id="macro-start-btn" class="btn btn-primary" type="button">▶ 시작</button>',
+      '            <button id="macro-stop-btn" class="btn btn-secondary" type="button" style="display:none">⏹ 중지</button>',
+      '            <span style="font-size:11px;color:var(--fg-3)">시작 후 에듀파인 창으로 전환하세요</span>',
+      '          </div>',
       '        </div>',
       '      </div>',
       '      <div class="card official-doc-output-card" style="display:flex;flex-direction:column;gap:10px">',
@@ -458,6 +476,7 @@
       var total = getPoomItems().reduce(function (s, i) { return s + i.amount; }, 0);
       var disp = document.getElementById("poom-total-display");
       if (disp) disp.textContent = numComma(total);
+      updateGaeyoAutoFields();
       return total;
     }
 
@@ -500,96 +519,211 @@
       container.appendChild(row);
     }
 
-    function renderPoomExtraFields(type) {
-      var wrap = document.getElementById("poom-extra-fields");
-      var purpWrap = document.getElementById("poom-purpose-wrap");
-      if (!wrap) return;
-      if (type === "물품") {
-        if (purpWrap) purpWrap.style.display = "";
-        wrap.innerHTML = "";
-      } else if (type === "수당") {
-        if (purpWrap) purpWrap.style.display = "none";
-        wrap.innerHTML = [
-          '<label>지급 대상<input id="poom-target"></label>',
-          '<label>지급 기준<input id="poom-criteria"></label>'
-        ].join("");
-      } else if (type === "업무추진비") {
-        if (purpWrap) purpWrap.style.display = "none";
-        wrap.innerHTML = [
-          '<label>사용 목적<input id="poom-usage-purpose"></label>',
-          '<label>사용 일시<input id="poom-usage-date"></label>'
-        ].join("");
+    // 개요 항목 정의 (type별)
+    var GAEYO_DEFS = {
+      "물품":     [{ id:"목적",   label:"목적",   type:"text" }, { id:"내용",   label:"내용",   type:"text" }, { id:"품목",   label:"물품",   type:"auto-items" }, { id:"금액",   label:"금액",   type:"auto-amount" }],
+      "수당":     [{ id:"목적",   label:"목적",   type:"text" }, { id:"내용",   label:"내용",   type:"text" }, { id:"금액",   label:"금액",   type:"auto-amount" }],
+      "업무추진비": [{ id:"목적", label:"목적",   type:"text" }, { id:"내용",   label:"내용",   type:"text" }, { id:"금액",   label:"금액",   type:"auto-amount" }]
+    };
+
+    function buildGaeyoList(type) {
+      var container = document.getElementById("poom-gaeyo-list");
+      if (!container) return;
+      container.innerHTML = "";
+      var defs = GAEYO_DEFS[type] || GAEYO_DEFS["물품"];
+      defs.forEach(function (def) { appendGaeyoRow(container, def.id, def.label, def.type, true); });
+      setupGaeyoDrag(container);
+      // 기타 추가 버튼
+      var addBtn = document.createElement("button");
+      addBtn.type = "button";
+      addBtn.className = "btn btn-secondary btn-sm";
+      addBtn.textContent = "+ 기타 항목 추가";
+      addBtn.style.cssText = "margin-top:4px;font-size:11px";
+      addBtn.onclick = function () {
+        appendGaeyoRow(container, "기타_" + Date.now(), "", "custom", true);
+        container.insertBefore(addBtn, null); // keep at end
+        setupGaeyoDrag(container);
+      };
+      container.appendChild(addBtn);
+      updateGaeyoAutoFields();
+    }
+
+    function appendGaeyoRow(container, id, label, type, checked) {
+      var row = document.createElement("div");
+      row.className = "poom-gaeyo-row";
+      row.draggable = true;
+      row.dataset.itemId = id;
+      row.dataset.itemType = type;
+      row.style.cssText = "display:flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;margin-bottom:3px;background:var(--bg-1);user-select:none";
+
+      var handle = document.createElement("span");
+      handle.textContent = "⠿";
+      handle.style.cssText = "cursor:grab;color:var(--fg-3);font-size:15px;flex-shrink:0";
+
+      var chk = document.createElement("input");
+      chk.type = "checkbox";
+      chk.className = "poom-gaeyo-check";
+      chk.checked = checked;
+      chk.style.cssText = "width:15px;height:15px;cursor:pointer;flex-shrink:0";
+
+      var labelEl;
+      if (type === "custom") {
+        labelEl = document.createElement("input");
+        labelEl.className = "input poom-gaeyo-label-input";
+        labelEl.placeholder = "항목 이름";
+        labelEl.value = label;
+        labelEl.style.cssText = "width:70px;height:26px;font-size:12px;font-weight:600;flex-shrink:0";
+      } else {
+        labelEl = document.createElement("span");
+        labelEl.textContent = label;
+        labelEl.style.cssText = "font-size:12px;font-weight:600;min-width:52px;color:var(--fg-2);flex-shrink:0";
       }
+
+      var inputEl;
+      if (type === "auto-items") {
+        inputEl = document.createElement("span");
+        inputEl.className = "poom-gaeyo-auto-items";
+        inputEl.style.cssText = "flex:1;font-size:12px;color:var(--fg-3)";
+        inputEl.textContent = "품목 목록에서 자동 생성";
+      } else if (type === "auto-amount") {
+        inputEl = document.createElement("span");
+        inputEl.className = "poom-gaeyo-auto-amount";
+        inputEl.style.cssText = "flex:1;font-size:12px;color:var(--fg-3)";
+        inputEl.textContent = "품목 합계에서 자동 계산";
+      } else {
+        inputEl = document.createElement("input");
+        inputEl.className = "input poom-gaeyo-input";
+        inputEl.style.cssText = "flex:1;height:26px;font-size:12px";
+      }
+
+      var delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.textContent = "×";
+      delBtn.style.cssText = "background:none;border:none;cursor:pointer;color:var(--fg-3);font-size:16px;padding:0 2px;flex-shrink:0";
+      delBtn.onclick = function () { row.remove(); };
+
+      row.appendChild(handle);
+      row.appendChild(chk);
+      row.appendChild(labelEl);
+      row.appendChild(inputEl);
+      row.appendChild(delBtn);
+
+      // addBtn이 있으면 그 앞에 삽입
+      var addBtn = container.querySelector("button.btn");
+      if (addBtn) container.insertBefore(row, addBtn);
+      else container.appendChild(row);
+    }
+
+    function setupGaeyoDrag(container) {
+      var dragSrc = null;
+      container.querySelectorAll(".poom-gaeyo-row").forEach(function (row) {
+        row.ondragstart = function (e) {
+          dragSrc = row;
+          e.dataTransfer.effectAllowed = "move";
+          setTimeout(function () { row.style.opacity = "0.4"; }, 0);
+        };
+        row.ondragend = function () {
+          row.style.opacity = "";
+          container.querySelectorAll(".poom-gaeyo-row").forEach(function (r) { r.style.borderColor = "var(--border)"; });
+        };
+        row.ondragover = function (e) {
+          e.preventDefault();
+          row.style.borderColor = "var(--accent)";
+        };
+        row.ondragleave = function () { row.style.borderColor = "var(--border)"; };
+        row.ondrop = function (e) {
+          e.preventDefault();
+          row.style.borderColor = "var(--border)";
+          if (dragSrc && dragSrc !== row) container.insertBefore(dragSrc, row);
+        };
+      });
+    }
+
+    function updateGaeyoAutoFields() {
+      var items = getPoomItems();
+      var total = items.reduce(function (s, i) { return s + i.amount; }, 0);
+
+      document.querySelectorAll(".poom-gaeyo-auto-items").forEach(function (el) {
+        if (items.length > 0) {
+          var str = items[0].name + (items.length > 1 ? " 외 " + (items.length - 1) + "종" : "");
+          el.textContent = str;
+          el.style.color = "var(--fg-1)";
+        } else {
+          el.textContent = "품목 목록에서 자동 생성";
+          el.style.color = "var(--fg-3)";
+        }
+      });
+
+      document.querySelectorAll(".poom-gaeyo-auto-amount").forEach(function (el) {
+        if (total > 0) {
+          el.textContent = "금" + numComma(total) + "원(금" + numberToKorean(total) + "원정)";
+          el.style.color = "var(--fg-1)";
+          el.style.fontWeight = "600";
+        } else {
+          el.textContent = "품목 합계에서 자동 계산";
+          el.style.color = "var(--fg-3)";
+          el.style.fontWeight = "400";
+        }
+      });
     }
 
     function generatePoom() {
-      var type    = getValue("poom-type");
-      var year    = getValue("poom-year") || "2026";
-      var title   = getValue("poom-title").trim();
-      var plan    = getValue("poom-plan").trim();
+      var type     = getValue("poom-type");
+      var year     = getValue("poom-year") || "2026";
+      var title    = getValue("poom-title").trim();
+      var plan     = getValue("poom-plan").trim();
       var planDate = getValue("poom-plan-date");
-      var purpose = getValue("poom-purpose").trim();
-      var items   = getPoomItems();
-      var total   = items.reduce(function (s, i) { return s + i.amount; }, 0);
-      var totalKr = total > 0 ? numberToKorean(total) : "";
+      var items    = getPoomItems();
+      var total    = items.reduce(function (s, i) { return s + i.amount; }, 0);
+      var totalKr  = total > 0 ? numberToKorean(total) : "";
 
       var gaeyoLines = [];
-
-      // 1. 관련
-      if (plan) {
-        gaeyoLines.push("1. 관련: " + plan + (planDate ? "(" + fmtDate(planDate) + ")" : ""));
-      }
+      if (plan) gaeyoLines.push("1. 관련: " + plan + (planDate ? "(" + fmtDate(planDate) + ")" : ""));
 
       var numPrefix = plan ? "2. " : "1. ";
-
+      var verbMap = { "물품": "구입", "수당": "지급", "업무추진비": "지출" };
+      var verb = verbMap[type] || "집행";
       if (type === "물품") {
-        var mainItem  = items.length > 0 ? items[0].name : "";
-        var otherCnt  = items.length - 1;
-        var itemStr   = mainItem + (otherCnt > 0 ? " 외 " + otherCnt + "종" : (items.length === 0 ? "" : ""));
-        gaeyoLines.push(numPrefix + year + "학년도 " + (title || purpose) + "을(를) 다음과 같이 구입하고자 합니다.");
-        if (purpose) gaeyoLines.push("   가. 목적: " + purpose);
-        if (itemStr)  gaeyoLines.push("   " + (purpose ? "나" : "가") + ". 물품: " + itemStr);
-        if (total > 0) {
-          var lastAlpha = purpose && itemStr ? "다" : (purpose || itemStr ? "나" : "가");
-          gaeyoLines.push("   " + lastAlpha + ". 금액: 금" + numComma(total) + "원(금" + totalKr + "원정).  끝.");
-        }
-      } else if (type === "수당") {
-        var targetEl   = document.getElementById("poom-target");
-        var criteriaEl = document.getElementById("poom-criteria");
-        var target   = targetEl   ? targetEl.value.trim()   : "";
-        var criteria = criteriaEl ? criteriaEl.value.trim() : "";
-        gaeyoLines.push(numPrefix + "위와 관련하여 다음과 같이 수당을 지급하고자 합니다.");
-        if (target)   gaeyoLines.push("   가. 지급 대상: " + target);
-        if (criteria) gaeyoLines.push("   나. 지급 기준: " + criteria);
-        if (total > 0) gaeyoLines.push("   다. 금액: 금" + numComma(total) + "원(금" + totalKr + "원정).  끝.");
-      } else if (type === "업무추진비") {
-        var upEl  = document.getElementById("poom-usage-purpose");
-        var udEl  = document.getElementById("poom-usage-date");
-        var upurp = upEl ? upEl.value.trim() : "";
-        var udate = udEl ? udEl.value.trim() : "";
-        gaeyoLines.push(numPrefix + "위와 관련하여 다음과 같이 업무추진비를 지출하고자 합니다.");
-        if (upurp) gaeyoLines.push("   가. 사용 목적: " + upurp);
-        if (udate) gaeyoLines.push("   나. 사용 일시: " + udate);
-        if (total > 0) gaeyoLines.push("   다. 금액: 금" + numComma(total) + "원(금" + totalKr + "원정).  끝.");
+        gaeyoLines.push(numPrefix + year + "학년도 " + title + "을(를) 다음과 같이 구입하고자 합니다.");
+      } else {
+        gaeyoLines.push(numPrefix + "위와 관련하여 다음과 같이 " + (type === "수당" ? "수당을 지급" : "업무추진비를 지출") + "하고자 합니다.");
       }
 
-      // 품목 내역 텍스트
+      var alpha = ["가", "나", "다", "라", "마", "바", "사", "아", "자", "차"];
+      var aIdx = 0;
+      document.querySelectorAll("#poom-gaeyo-list .poom-gaeyo-row").forEach(function (row) {
+        var chk = row.querySelector(".poom-gaeyo-check");
+        if (!chk || !chk.checked) return;
+        var itype = row.dataset.itemType;
+        var a = alpha[aIdx++] || "차";
+
+        var labelEl = row.querySelector(".poom-gaeyo-label-input");
+        var lbl = labelEl ? labelEl.value.trim() : (row.querySelector("span:nth-child(3)") ? row.querySelector("span:nth-child(3)").textContent.trim() : "");
+
+        if (itype === "auto-items") {
+          if (items.length > 0) {
+            var str = items[0].name + (items.length > 1 ? " 외 " + (items.length - 1) + "종" : "");
+            gaeyoLines.push("   " + a + ". " + lbl + ": " + str);
+          }
+        } else if (itype === "auto-amount") {
+          if (total > 0) gaeyoLines.push("   " + a + ". " + lbl + ": 금" + numComma(total) + "원(금" + totalKr + "원정).  끝.");
+        } else {
+          var inp = row.querySelector(".poom-gaeyo-input");
+          var val = inp ? inp.value.trim() : "";
+          if (val) gaeyoLines.push("   " + a + ". " + lbl + ": " + val);
+        }
+      });
+
+      var colW = [16, 8, 4, 10, 10];
+      function pad(s, w) { s = String(s); return s.length >= w ? s : s + " ".repeat(w - s.length); }
       var itemsLines = [];
       if (items.length > 0) {
-        var colW = [16, 8, 4, 10, 10];
-        function pad(s, w) { s = String(s); return s.length >= w ? s : s + " ".repeat(w - s.length); }
         itemsLines.push(pad("품목명", colW[0]) + pad("규격", colW[1]) + pad("수량", colW[2]) + pad("단가", colW[3]) + "금액");
-        itemsLines.push("─".repeat(colW[0] + colW[1] + colW[2] + colW[3] + 8));
+        itemsLines.push("─".repeat(48));
         items.forEach(function (item, idx) {
-          itemsLines.push(
-            pad((idx + 1) + ". " + item.name, colW[0]) +
-            pad(item.spec || "-", colW[1]) +
-            pad(String(item.qty), colW[2]) +
-            pad(numComma(item.price), colW[3]) +
-            numComma(item.amount)
-          );
+          itemsLines.push(pad((idx + 1) + ". " + item.name, colW[0]) + pad(item.spec || "-", colW[1]) + pad(String(item.qty), colW[2]) + pad(numComma(item.price), colW[3]) + numComma(item.amount));
         });
-        itemsLines.push("─".repeat(colW[0] + colW[1] + colW[2] + colW[3] + 8));
+        itemsLines.push("─".repeat(48));
         itemsLines.push(pad("합계", colW[0] + colW[1] + colW[2] + colW[3]) + numComma(total) + "원");
       }
 
@@ -708,10 +842,9 @@
       var container = document.getElementById("poom-rows");
       if (!container) return;
       container.innerHTML = "";
-      items.forEach(function (item) {
-        addPoomRow(item);
-      });
+      items.forEach(function (item) { addPoomRow(item); });
       updatePoomTotal();
+      updateGaeyoAutoFields();
     }
 
     // 초기 행 2개
@@ -753,9 +886,12 @@
       });
     }
 
+    // 초기 개요 리스트 구성
+    buildGaeyoList(getValue("poom-type") || "물품");
+
     var poomTypeEl = document.getElementById("poom-type");
     if (poomTypeEl) {
-      poomTypeEl.addEventListener("change", function () { renderPoomExtraFields(poomTypeEl.value); });
+      poomTypeEl.addEventListener("change", function () { buildGaeyoList(poomTypeEl.value); });
     }
 
     var poomAddBtn = document.getElementById("poom-add-row");
@@ -774,6 +910,7 @@
         var rows = document.getElementById("poom-rows");
         if (rows) rows.innerHTML = "";
         addPoomRow(); addPoomRow();
+        buildGaeyoList(getValue("poom-type") || "물품");
         updatePoomTotal();
         var tEl = document.getElementById("poom-out-title");
         var gEl = document.getElementById("poom-out-gaeyo");
@@ -797,6 +934,100 @@
     if (pcTitle) pcTitle.addEventListener("click", function () { copyEl("poom-out-title"); });
     if (pcGaeyo) pcGaeyo.addEventListener("click", function () { copyEl("poom-out-gaeyo"); });
     if (pcItems) pcItems.addEventListener("click", function () { copyEl("poom-out-items"); });
+
+    // ── 에듀파인 매크로 ──────────────────────────────────────────
+    var macroAddPos = null;   // { x, y }
+    var macroCellPos = null;  // { x, y }
+    var macroRunning = false;
+
+    function setMacroStatus(msg, color) {
+      var el = document.getElementById("macro-status");
+      if (el) { el.textContent = msg; el.style.color = color || "var(--accent)"; }
+    }
+
+    function recordPos(labelId, callback) {
+      var el = document.getElementById(labelId);
+      var count = 3;
+      setMacroStatus(count + "초 후 현재 마우스 위치를 기록합니다...", "var(--fg-2)");
+      var iv = setInterval(async function () {
+        count--;
+        if (count > 0) {
+          setMacroStatus(count + "초 후 현재 마우스 위치를 기록합니다...", "var(--fg-2)");
+        } else {
+          clearInterval(iv);
+          var pos = await api.macroGetMousePos();
+          if (pos && pos.x != null) {
+            callback(pos);
+            if (el) el.textContent = "X:" + pos.x + " Y:" + pos.y;
+            setMacroStatus("위치 기록 완료", "#22c55e");
+          } else {
+            setMacroStatus("위치 기록 실패: " + (pos.error || "알 수 없는 오류"), "#ef4444");
+          }
+        }
+      }, 1000);
+    }
+
+    var recAddBtn = document.getElementById("macro-rec-add");
+    if (recAddBtn) recAddBtn.addEventListener("click", function () {
+      if (macroRunning) return;
+      recordPos("macro-add-pos", function (pos) { macroAddPos = pos; });
+    });
+
+    var recCellBtn = document.getElementById("macro-rec-cell");
+    if (recCellBtn) recCellBtn.addEventListener("click", function () {
+      if (macroRunning) return;
+      recordPos("macro-cell-pos", function (pos) { macroCellPos = pos; });
+    });
+
+    var macroStartBtn = document.getElementById("macro-start-btn");
+    var macroStopBtn  = document.getElementById("macro-stop-btn");
+
+    if (macroStopBtn) macroStopBtn.addEventListener("click", async function () {
+      await api.macroStop();
+      setMacroStatus("중지 요청 전송됨...", "#f59e0b");
+    });
+
+    if (macroStartBtn) macroStartBtn.addEventListener("click", async function () {
+      if (macroRunning) return;
+      if (!macroAddPos) { setMacroStatus("① 행추가 버튼 위치를 먼저 기록하세요.", "#ef4444"); return; }
+      if (!macroCellPos) { setMacroStatus("② 내용 셀 위치를 먼저 기록하세요.", "#ef4444"); return; }
+      var items = getPoomItems();
+      if (!items.length) { setMacroStatus("품목 내역을 먼저 입력하세요.", "#ef4444"); return; }
+
+      // 3초 카운트다운
+      var count = 3;
+      macroRunning = true;
+      macroStartBtn.disabled = true;
+      macroStopBtn.style.display = "";
+      setMacroStatus(count + "초 후 시작 — 에듀파인 창으로 이동하세요!", "#f59e0b");
+      var iv = setInterval(async function () {
+        count--;
+        if (count > 0) {
+          setMacroStatus(count + "초 후 시작 — 에듀파인 창으로 이동하세요!", "#f59e0b");
+        } else {
+          clearInterval(iv);
+          setMacroStatus("실행 중... (" + items.length + "개 품목)", "var(--accent)");
+          var result = await api.macroRunEdufine({
+            addBtnX: macroAddPos.x,
+            addBtnY: macroAddPos.y,
+            cellX: macroCellPos.x,
+            cellY: macroCellPos.y,
+            items: items,
+            delay: 800,
+          });
+          macroRunning = false;
+          macroStartBtn.disabled = false;
+          macroStopBtn.style.display = "none";
+          if (result.stopped) {
+            setMacroStatus("중지됨 (" + result.count + "개 완료)", "#f59e0b");
+          } else if (result.error) {
+            setMacroStatus("오류: " + result.error, "#ef4444");
+          } else {
+            setMacroStatus("완료! " + result.count + "개 품목 입력 완료", "#22c55e");
+          }
+        }
+      }, 1000);
+    });
   }
 
   window.registerPage("official_document", { render: render, init: init });

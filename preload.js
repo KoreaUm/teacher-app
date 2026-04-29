@@ -133,4 +133,9 @@ contextBridge.exposeInMainWorld('api', {
   importClassTimetableExcel: (payload) =>
     ipcRenderer.invoke('import-class-timetable-excel', payload),
   applyAppPatch: () => ipcRenderer.invoke('apply-app-patch'),
+
+  // 에듀파인 매크로
+  macroGetMousePos: () => ipcRenderer.invoke('macro-get-mouse-pos'),
+  macroStop: () => ipcRenderer.invoke('macro-stop'),
+  macroRunEdufine: (config) => ipcRenderer.invoke('macro-run-edufine', config),
 });

@@ -1,7 +1,8 @@
 const { app, BrowserWindow, ipcMain, shell, screen, dialog, Tray, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
+const os = require('os');
 const { autoUpdater } = require('electron-updater');
 
 const AppDatabase = require('./src/database.js');
@@ -1382,6 +1383,120 @@ ipcMain.handle('ai-extract-timetable-image', async (e, apiKey, model, provider, 
       return await runGemini(apiKey, model, '', options);
     }
     return await runClaude(apiKey, model, '', options);
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+// ── 에듀파인 매크로 ──────────────────────────────────────────────────────────
+
+let macroStopped = false;
+
+function runPS(script) {
+  const tmpFile = path.join(os.tmpdir(), `ps_macro_${Date.now()}.ps1`);
+  fs.writeFileSync(tmpFile, '﻿' + script, { encoding: 'utf8' });
+  try {
+    return execSync(`powershell -ExecutionPolicy Bypass -NonInteractive -File "${tmpFile}"`, {
+      encoding: 'utf8',
+      timeout: 15000,
+      windowsHide: true,
+    });
+  } finally {
+    try { fs.unlinkSync(tmpFile); } catch (_) {}
+  }
+}
+
+const PS_MOUSE_TYPE_DEF = `
+Add-Type -TypeDefinition @'
+using System.Runtime.InteropServices;
+public class MacroMouse {
+    [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
+    [DllImport("user32.dll")] public static extern void mouse_event(uint f, int dx, int dy, uint d, int e);
+    [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT p);
+}
+public struct POINT { public int X; public int Y; }
+'@ -Language CSharp 2>$null
+`;
+
+ipcMain.removeHandler('macro-get-mouse-pos');
+ipcMain.handle('macro-get-mouse-pos', () => {
+  try {
+    const out = runPS(`
+${PS_MOUSE_TYPE_DEF}
+$p = New-Object POINT
+[MacroMouse]::GetCursorPos([ref]$p) | Out-Null
+Write-Output "$($p.X),$($p.Y)"
+`);
+    const [x, y] = out.trim().split(',').map(Number);
+    return { x, y };
+  } catch (e) { return { error: e.message }; }
+});
+
+ipcMain.removeHandler('macro-stop');
+ipcMain.handle('macro-stop', () => { macroStopped = true; return { ok: true }; });
+
+ipcMain.removeHandler('macro-run-edufine');
+ipcMain.handle('macro-run-edufine', async (e, config) => {
+  macroStopped = false;
+  const { clipboard } = require('electron');
+  const { addBtnX, addBtnY, cellX, cellY, items, delay = 800 } = config;
+
+  function clickAt(x, y) {
+    runPS(`
+${PS_MOUSE_TYPE_DEF}
+[MacroMouse]::SetCursorPos(${x}, ${y})
+Start-Sleep -Milliseconds 100
+[MacroMouse]::mouse_event(2, 0, 0, 0, 0)
+Start-Sleep -Milliseconds 60
+[MacroMouse]::mouse_event(4, 0, 0, 0, 0)
+`);
+  }
+
+  function sendKeys(keys) {
+    runPS(`Add-Type -AssemblyName System.Windows.Forms\n[System.Windows.Forms.SendKeys]::SendWait("${keys}")`);
+  }
+
+  function pasteText(text) {
+    clipboard.writeText(String(text));
+    runPS(`Add-Type -AssemblyName System.Windows.Forms\n[System.Windows.Forms.SendKeys]::SendWait("^v")`);
+  }
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  try {
+    for (let i = 0; i < items.length; i++) {
+      if (macroStopped) return { stopped: true, count: i };
+      const item = items[i];
+
+      clickAt(addBtnX, addBtnY);
+      await sleep(delay);
+      if (macroStopped) return { stopped: true, count: i };
+
+      clickAt(cellX, cellY);
+      await sleep(300);
+
+      if (item.name) pasteText(item.name);
+      await sleep(150);
+
+      sendKeys('{TAB}');
+      await sleep(150);
+      if (item.spec) pasteText(item.spec);
+      await sleep(150);
+
+      sendKeys('{TAB}');
+      await sleep(150);
+      if (item.qty != null) pasteText(String(item.qty));
+      await sleep(150);
+
+      sendKeys('{TAB}{TAB}');
+      await sleep(150);
+      if (item.price != null) pasteText(String(item.price));
+      await sleep(200);
+
+      sendKeys('{ENTER}');
+      await sleep(100);
+    }
+    return { done: true, count: items.length };
   } catch (err) {
     return { error: err.message };
   }
