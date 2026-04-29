@@ -1,6 +1,6 @@
 {
   "name": "teacher-app",
-  "version": "2.0.38",
+  "version": "2.0.39",
   "description": "교사 업무 관리 Electron 앱",
   "author": "충상",
   "main": "main.js",
@@ -16,6 +16,7 @@
     "better-sqlite3": "^9.4.3",
     "electron-updater": "^6.8.3",
     "firebase": "^12.12.1",
+    "xlsx": "^0.18.5",
     "yauzl": "*"
   },
   "devDependencies": {

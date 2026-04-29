@@ -126,6 +126,10 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('ai-extract-timetable', key, model, provider, text),
   aiExtractTimetableImage: (key, model, provider, image) =>
     ipcRenderer.invoke('ai-extract-timetable-image', key, model, provider, image),
+  aiExtractEstimateImage: (key, model, provider, image) =>
+    ipcRenderer.invoke('ai-extract-estimate-image', key, model, provider, image),
+  parseExcelEstimate: (bufferData) =>
+    ipcRenderer.invoke('parse-excel-estimate', bufferData),
   importClassTimetableExcel: (payload) =>
     ipcRenderer.invoke('import-class-timetable-excel', payload),
   applyAppPatch: () => ipcRenderer.invoke('apply-app-patch'),

@@ -802,6 +802,35 @@ ipcMain.handle('ai-extract-timetable-image', async (e, apiKey, model, provider, 
   }
 });
 
+ipcMain.handle('ai-extract-estimate-image', async (e, apiKey, model, provider, file) => {
+  try {
+    if (!file || !file.data) return { error: '파일 정보가 올바르지 않습니다.' };
+    const system = '견적서에서 품목 정보를 추출하여 JSON 배열만 출력하세요. 각 요소는 {"name":"품목명","spec":"규격","qty":수량,"price":단가} 형식이며 숫자는 쉼표 없이 순수 숫자입니다. 코드블록이나 설명 없이 JSON 배열만 출력하세요.';
+    const userPrompt = '이 견적서에서 품목 목록을 추출해서 JSON 배열로 출력하세요.';
+    const isPdf = file.mimeType === 'application/pdf';
+    const options = isPdf
+      ? { system, userPrompt, document: { data: file.data } }
+      : { system, userPrompt, image: file };
+    if (provider === 'gemini') return await runGemini(apiKey, model, '', options);
+    return await runClaude(apiKey, model, '', options);
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('parse-excel-estimate', async (e, bufferData) => {
+  try {
+    const xlsx = require('xlsx');
+    const buf = Buffer.from(bufferData);
+    const wb = xlsx.read(buf, { type: 'buffer' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = xlsx.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    return { rows };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
 ipcMain.handle('ai-generate-official-doc', async (e, apiKey, model, provider, inputJson) => {
   try {
     const system = `당신은 대한민국 공공언어 전문가로, 한국공공언어진흥원 공문서 작성법 기준에 따라 학교 공문을 작성합니다.
@@ -885,6 +914,16 @@ async function runClaude(apiKey, model, text, options = {}) {
         type: 'base64',
         media_type: options.image.mimeType,
         data: options.image.data,
+      },
+    });
+  }
+  if (options.document?.data) {
+    content.push({
+      type: 'document',
+      source: {
+        type: 'base64',
+        media_type: 'application/pdf',
+        data: options.document.data,
       },
     });
   }
