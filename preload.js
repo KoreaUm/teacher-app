@@ -134,8 +134,9 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('import-class-timetable-excel', payload),
   applyAppPatch: () => ipcRenderer.invoke('apply-app-patch'),
 
-  // 에듀파인 매크로
-  macroGetMousePos: () => ipcRenderer.invoke('macro-get-mouse-pos'),
+  // 에듀파인 CDP 매크로
+  macroCdpCheck: () => ipcRenderer.invoke('macro-cdp-check'),
+  macroLaunchDebugBrowser: () => ipcRenderer.invoke('macro-launch-debug-browser'),
   macroStop: () => ipcRenderer.invoke('macro-stop'),
-  macroRunEdufine: (config) => ipcRenderer.invoke('macro-run-edufine', config),
+  macroFillEdufineCdp: (cfg) => ipcRenderer.invoke('macro-fill-edufine-cdp', cfg),
 });

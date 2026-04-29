@@ -173,19 +173,13 @@
       '          <button id="poom-clear-btn" class="btn btn-secondary official-doc-main-btn" type="button">초기화</button>',
       '        </div>',
       '        <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px">',
-      '          <div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:6px">🤖 에듀파인 자동입력 매크로</div>',
-      '          <div style="font-size:11px;color:var(--fg-3);margin-bottom:10px">에듀파인 품의서 페이지를 브라우저에 열어둔 상태로 아래 순서대로 진행하세요.</div>',
-      '          <div style="display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center;margin-bottom:10px">',
-      '            <button id="macro-rec-add" class="btn btn-secondary btn-sm" type="button">① 행추가 버튼 위치 기록</button>',
-      '            <span id="macro-add-pos" style="font-size:11px;color:var(--fg-3)">미설정</span>',
-      '            <button id="macro-rec-cell" class="btn btn-secondary btn-sm" type="button">② 내용 셀 위치 기록</button>',
-      '            <span id="macro-cell-pos" style="font-size:11px;color:var(--fg-3)">미설정</span>',
-      '          </div>',
-      '          <div id="macro-status" style="font-size:12px;color:var(--accent);min-height:18px;margin-bottom:8px"></div>',
-      '          <div style="display:flex;gap:8px;align-items:center">',
-      '            <button id="macro-start-btn" class="btn btn-primary" type="button">▶ 시작</button>',
-      '            <button id="macro-stop-btn" class="btn btn-secondary" type="button" style="display:none">⏹ 중지</button>',
-      '            <span style="font-size:11px;color:var(--fg-3)">시작 후 에듀파인 창으로 전환하세요</span>',
+      '          <div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:4px">🤖 에듀파인 자동입력</div>',
+      '          <div id="macro-cdp-status" style="font-size:11px;color:var(--fg-3);margin-bottom:8px;min-height:16px">브라우저 연결 상태를 확인하세요.</div>',
+      '          <div style="display:flex;gap:6px;flex-wrap:wrap">',
+      '            <button id="macro-check-btn"  class="btn btn-secondary btn-sm" type="button">🔍 상태 확인</button>',
+      '            <button id="macro-launch-btn" class="btn btn-secondary btn-sm" type="button">🌐 브라우저 열기</button>',
+      '            <button id="macro-start-btn"  class="btn btn-primary btn-sm"   type="button" disabled>▶ 자동입력 시작</button>',
+      '            <button id="macro-stop-btn"   class="btn btn-secondary btn-sm" type="button" style="display:none">⏹ 중지</button>',
       '          </div>',
       '        </div>',
       '      </div>',
@@ -935,98 +929,92 @@
     if (pcGaeyo) pcGaeyo.addEventListener("click", function () { copyEl("poom-out-gaeyo"); });
     if (pcItems) pcItems.addEventListener("click", function () { copyEl("poom-out-items"); });
 
-    // ── 에듀파인 매크로 ──────────────────────────────────────────
-    var macroAddPos = null;   // { x, y }
-    var macroCellPos = null;  // { x, y }
+    // ── 에듀파인 CDP 자동입력 ─────────────────────────────────────
     var macroRunning = false;
+    var macroEduTab  = null;
 
     function setMacroStatus(msg, color) {
-      var el = document.getElementById("macro-status");
-      if (el) { el.textContent = msg; el.style.color = color || "var(--accent)"; }
+      var el = document.getElementById("macro-cdp-status");
+      if (el) { el.innerHTML = msg; el.style.color = color || "var(--fg-3)"; }
     }
-
-    function recordPos(labelId, callback) {
-      var el = document.getElementById(labelId);
-      var count = 3;
-      setMacroStatus(count + "초 후 현재 마우스 위치를 기록합니다...", "var(--fg-2)");
-      var iv = setInterval(async function () {
-        count--;
-        if (count > 0) {
-          setMacroStatus(count + "초 후 현재 마우스 위치를 기록합니다...", "var(--fg-2)");
-        } else {
-          clearInterval(iv);
-          var pos = await api.macroGetMousePos();
-          if (pos && pos.x != null) {
-            callback(pos);
-            if (el) el.textContent = "X:" + pos.x + " Y:" + pos.y;
-            setMacroStatus("위치 기록 완료", "#22c55e");
-          } else {
-            setMacroStatus("위치 기록 실패: " + (pos.error || "알 수 없는 오류"), "#ef4444");
-          }
-        }
-      }, 1000);
-    }
-
-    var recAddBtn = document.getElementById("macro-rec-add");
-    if (recAddBtn) recAddBtn.addEventListener("click", function () {
-      if (macroRunning) return;
-      recordPos("macro-add-pos", function (pos) { macroAddPos = pos; });
-    });
-
-    var recCellBtn = document.getElementById("macro-rec-cell");
-    if (recCellBtn) recCellBtn.addEventListener("click", function () {
-      if (macroRunning) return;
-      recordPos("macro-cell-pos", function (pos) { macroCellPos = pos; });
-    });
 
     var macroStartBtn = document.getElementById("macro-start-btn");
     var macroStopBtn  = document.getElementById("macro-stop-btn");
 
+    async function checkCdp() {
+      setMacroStatus("연결 확인 중...", "var(--fg-2)");
+      var res = await api.macroCdpCheck();
+      if (!res.connected) {
+        setMacroStatus(
+          "❌ 디버그 브라우저 없음 — <b>[브라우저 열기]</b>를 눌러 에듀파인 전용 창을 여세요.",
+          "#ef4444"
+        );
+        macroEduTab = null;
+        if (macroStartBtn) macroStartBtn.disabled = true;
+      } else if (!res.eduTab) {
+        setMacroStatus(
+          "⚠️ 브라우저 연결됨 (탭 " + res.tabCount + "개) — 에듀파인 품의서 페이지를 열어두세요.",
+          "#f59e0b"
+        );
+        macroEduTab = null;
+        if (macroStartBtn) macroStartBtn.disabled = true;
+      } else {
+        macroEduTab = res.eduTab;
+        var title = (res.eduTab.title || res.eduTab.url || "").slice(0, 45);
+        setMacroStatus("✅ 에듀파인 감지: " + title, "#22c55e");
+        if (macroStartBtn) macroStartBtn.disabled = false;
+      }
+    }
+
+    var checkBtn = document.getElementById("macro-check-btn");
+    if (checkBtn) checkBtn.addEventListener("click", checkCdp);
+
+    var launchBtn = document.getElementById("macro-launch-btn");
+    if (launchBtn) launchBtn.addEventListener("click", async function () {
+      setMacroStatus("브라우저 실행 중...", "var(--fg-2)");
+      var res = await api.macroLaunchDebugBrowser();
+      if (res.error) {
+        setMacroStatus("❌ " + res.error, "#ef4444");
+      } else {
+        setMacroStatus(
+          (res.browser || "브라우저") + " 실행됨 — 에듀파인 로그인 후 품의서 내역 페이지를 열고 [상태 확인]을 누르세요.",
+          "#22c55e"
+        );
+      }
+    });
+
     if (macroStopBtn) macroStopBtn.addEventListener("click", async function () {
       await api.macroStop();
-      setMacroStatus("중지 요청 전송됨...", "#f59e0b");
+      setMacroStatus("⏹ 중지 요청 전송됨 — 현재 행 완료 후 멈춥니다.", "#f59e0b");
     });
 
     if (macroStartBtn) macroStartBtn.addEventListener("click", async function () {
       if (macroRunning) return;
-      if (!macroAddPos) { setMacroStatus("① 행추가 버튼 위치를 먼저 기록하세요.", "#ef4444"); return; }
-      if (!macroCellPos) { setMacroStatus("② 내용 셀 위치를 먼저 기록하세요.", "#ef4444"); return; }
+      if (!macroEduTab) { await checkCdp(); if (!macroEduTab) return; }
       var items = getPoomItems();
-      if (!items.length) { setMacroStatus("품목 내역을 먼저 입력하세요.", "#ef4444"); return; }
+      if (!items.length) { setMacroStatus("❌ 품목 내역을 먼저 입력하세요.", "#ef4444"); return; }
 
-      // 3초 카운트다운
-      var count = 3;
       macroRunning = true;
       macroStartBtn.disabled = true;
       macroStopBtn.style.display = "";
-      setMacroStatus(count + "초 후 시작 — 에듀파인 창으로 이동하세요!", "#f59e0b");
-      var iv = setInterval(async function () {
-        count--;
-        if (count > 0) {
-          setMacroStatus(count + "초 후 시작 — 에듀파인 창으로 이동하세요!", "#f59e0b");
-        } else {
-          clearInterval(iv);
-          setMacroStatus("실행 중... (" + items.length + "개 품목)", "var(--accent)");
-          var result = await api.macroRunEdufine({
-            addBtnX: macroAddPos.x,
-            addBtnY: macroAddPos.y,
-            cellX: macroCellPos.x,
-            cellY: macroCellPos.y,
-            items: items,
-            delay: 800,
-          });
-          macroRunning = false;
-          macroStartBtn.disabled = false;
-          macroStopBtn.style.display = "none";
-          if (result.stopped) {
-            setMacroStatus("중지됨 (" + result.count + "개 완료)", "#f59e0b");
-          } else if (result.error) {
-            setMacroStatus("오류: " + result.error, "#ef4444");
-          } else {
-            setMacroStatus("완료! " + result.count + "개 품목 입력 완료", "#22c55e");
-          }
-        }
-      }, 1000);
+      setMacroStatus("🚀 " + items.length + "개 품목 자동입력 중…", "var(--accent)");
+
+      var result = await api.macroFillEdufineCdp({
+        wsUrl: macroEduTab.webSocketDebuggerUrl,
+        items: items,
+      });
+
+      macroRunning = false;
+      macroStartBtn.disabled = false;
+      macroStopBtn.style.display = "none";
+
+      if (result.done) {
+        setMacroStatus("✅ 완료! " + result.count + "개 품목 입력 완료", "#22c55e");
+      } else if (result.stopped) {
+        setMacroStatus("⏹ 중지됨 (" + result.count + "개 완료)", "#f59e0b");
+      } else {
+        setMacroStatus("❌ 오류: " + (result.error || "알 수 없는 오류"), "#ef4444");
+      }
     });
   }
 

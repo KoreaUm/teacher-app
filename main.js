@@ -3,6 +3,9 @@ const path = require('path');
 const fs = require('fs');
 const { spawn, execSync } = require('child_process');
 const os = require('os');
+const http = require('http');
+const net = require('net');
+const crypto = require('crypto');
 const { autoUpdater } = require('electron-updater');
 
 const AppDatabase = require('./src/database.js');
@@ -1388,116 +1391,225 @@ ipcMain.handle('ai-extract-timetable-image', async (e, apiKey, model, provider, 
   }
 });
 
-// ── 에듀파인 매크로 ──────────────────────────────────────────────────────────
+// ── 에듀파인 CDP 매크로 ───────────────────────────────────────────────────────
+// Chrome / Edge 모두 지원 (Chromium 기반 공통 DevTools Protocol)
 
-let macroStopped = false;
+let _macroStopWsUrl = null;
 
-function runPS(script) {
-  const tmpFile = path.join(os.tmpdir(), `ps_macro_${Date.now()}.ps1`);
-  fs.writeFileSync(tmpFile, '﻿' + script, { encoding: 'utf8' });
-  try {
-    return execSync(`powershell -ExecutionPolicy Bypass -NonInteractive -File "${tmpFile}"`, {
-      encoding: 'utf8',
-      timeout: 15000,
-      windowsHide: true,
+// HTTP GET → JSON
+function cdpHttpGet(url) {
+  return new Promise((resolve, reject) => {
+    const req = http.get(url, (res) => {
+      let data = '';
+      res.on('data', (d) => { data += d; });
+      res.on('end', () => { try { resolve(JSON.parse(data)); } catch (e) { reject(e); } });
     });
-  } finally {
-    try { fs.unlinkSync(tmpFile); } catch (_) {}
+    req.on('error', reject);
+    req.setTimeout(2500, () => { req.destroy(); reject(new Error('timeout')); });
+  });
+}
+
+// WebSocket 클라이언트 프레임 인코딩 (마스킹 포함)
+function wsEncode(text) {
+  const payload = Buffer.from(text, 'utf8');
+  const mask = crypto.randomBytes(4);
+  const len = payload.length;
+  const hdr = len <= 125
+    ? [0x81, 0x80 | len, mask[0], mask[1], mask[2], mask[3]]
+    : [0x81, 0xFE, (len >> 8) & 0xFF, len & 0xFF, mask[0], mask[1], mask[2], mask[3]];
+  const header = Buffer.from(hdr);
+  const masked = Buffer.alloc(len);
+  for (let i = 0; i < len; i++) masked[i] = payload[i] ^ mask[i % 4];
+  return Buffer.concat([header, masked]);
+}
+
+// WebSocket 서버 프레임 디코딩 (비마스킹)
+function wsDecode(buf) {
+  if (buf.length < 2) return null;
+  let len = buf[1] & 0x7F;
+  let off = 2;
+  if (len === 126) {
+    if (buf.length < 4) return null;
+    len = buf.readUInt16BE(2); off = 4;
+  } else if (len === 127) {
+    if (buf.length < 10) return null;
+    len = Number(buf.readBigUInt64BE(2)); off = 10;
   }
+  if (buf.length < off + len) return null;
+  return { text: buf.slice(off, off + len).toString('utf8'), rest: buf.slice(off + len) };
 }
 
-const PS_MOUSE_TYPE_DEF = `
-Add-Type -TypeDefinition @'
-using System.Runtime.InteropServices;
-public class MacroMouse {
-    [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
-    [DllImport("user32.dll")] public static extern void mouse_event(uint f, int dx, int dy, uint d, int e);
-    [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT p);
-}
-public struct POINT { public int X; public int Y; }
-'@ -Language CSharp 2>$null
-`;
+// CDP Runtime.evaluate 실행
+function cdpEval(wsUrl, expression, timeoutMs = 90000) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(wsUrl);
+    const key = crypto.randomBytes(16).toString('base64');
+    const sock = net.createConnection(parseInt(u.port) || 9222, u.hostname);
+    let buf = Buffer.alloc(0);
+    let upgraded = false;
+    const timer = setTimeout(() => { sock.destroy(); reject(new Error('CDP 응답 시간 초과')); }, timeoutMs);
 
-ipcMain.removeHandler('macro-get-mouse-pos');
-ipcMain.handle('macro-get-mouse-pos', () => {
+    sock.on('connect', () => {
+      sock.write(
+        `GET ${u.pathname} HTTP/1.1\r\nHost: ${u.host}\r\n` +
+        `Upgrade: websocket\r\nConnection: Upgrade\r\n` +
+        `Sec-WebSocket-Key: ${key}\r\nSec-WebSocket-Version: 13\r\n\r\n`
+      );
+    });
+
+    sock.on('data', (chunk) => {
+      buf = Buffer.concat([buf, chunk]);
+      if (!upgraded) {
+        const idx = buf.indexOf('\r\n\r\n');
+        if (idx < 0) return;
+        upgraded = true;
+        buf = buf.slice(idx + 4);
+        sock.write(wsEncode(JSON.stringify({
+          id: 1, method: 'Runtime.evaluate',
+          params: { expression, awaitPromise: true, returnByValue: true },
+        })));
+      }
+      let parsed;
+      while ((parsed = wsDecode(buf)) !== null) {
+        buf = parsed.rest;
+        try {
+          const msg = JSON.parse(parsed.text);
+          if (msg.id === 1) { clearTimeout(timer); sock.destroy(); resolve(msg.result || msg); return; }
+        } catch (_) {}
+      }
+    });
+
+    sock.on('error', (e) => { clearTimeout(timer); reject(e); });
+  });
+}
+
+// Chrome/Edge 실행 경로 탐색
+function findBrowserPath() {
+  const candidates = [
+    process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Google\\Chrome\\Application\\chrome.exe'),
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    process.env.PROGRAMFILES && path.join(process.env.PROGRAMFILES, 'Microsoft\\Edge\\Application\\msedge.exe'),
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Microsoft\\Edge\\Application\\msedge.exe'),
+  ].filter(Boolean);
+  return candidates.find((p) => { try { return fs.existsSync(p); } catch { return false; } }) || null;
+}
+
+// ── IPC 핸들러 ────────────────────────────────────────────────────────────────
+
+// 에듀파인 탭 감지
+ipcMain.removeHandler('macro-cdp-check');
+ipcMain.handle('macro-cdp-check', async () => {
   try {
-    const out = runPS(`
-${PS_MOUSE_TYPE_DEF}
-$p = New-Object POINT
-[MacroMouse]::GetCursorPos([ref]$p) | Out-Null
-Write-Output "$($p.X),$($p.Y)"
-`);
-    const [x, y] = out.trim().split(',').map(Number);
-    return { x, y };
-  } catch (e) { return { error: e.message }; }
+    const tabs = await cdpHttpGet('http://localhost:9222/json/list');
+    const eduTab = Array.isArray(tabs) ? tabs.find((t) =>
+      (t.url || '').includes('klef.cbe.go.kr') ||
+      (t.url || '').includes('keris_ui') ||
+      (t.url || '').includes('edufine') ||
+      (t.title || '').includes('에듀파인') ||
+      (t.title || '').includes('케리스') ||
+      (t.title || '').includes('품의')
+    ) : null;
+    return { connected: true, tabCount: tabs.length, eduTab: eduTab || null };
+  } catch {
+    return { connected: false };
+  }
 });
 
+// 브라우저를 디버그 모드로 실행
+ipcMain.removeHandler('macro-launch-debug-browser');
+ipcMain.handle('macro-launch-debug-browser', () => {
+  const browserPath = findBrowserPath();
+  if (!browserPath) return { error: 'Chrome 또는 Edge를 찾을 수 없습니다.' };
+  const profileDir = path.join(os.tmpdir(), 'edu_debug_profile');
+  const child = spawn(browserPath, [
+    '--remote-debugging-port=9222',
+    `--user-data-dir=${profileDir}`,
+    '--no-first-run',
+    '--disable-background-mode',
+    'https://klef.cbe.go.kr/keris_ui/main.do',
+  ], { detached: true, stdio: 'ignore' });
+  child.unref();
+  const name = browserPath.includes('msedge') ? 'Edge' : 'Chrome';
+  return { ok: true, browser: name };
+});
+
+// 중지 신호 전달
 ipcMain.removeHandler('macro-stop');
-ipcMain.handle('macro-stop', () => { macroStopped = true; return { ok: true }; });
+ipcMain.handle('macro-stop', async () => {
+  if (_macroStopWsUrl) {
+    try { await cdpEval(_macroStopWsUrl, 'window.__macroStop=true;', 3000); } catch (_) {}
+  }
+  return { ok: true };
+});
 
-ipcMain.removeHandler('macro-run-edufine');
-ipcMain.handle('macro-run-edufine', async (e, config) => {
-  macroStopped = false;
-  const { clipboard } = require('electron');
-  const { addBtnX, addBtnY, cellX, cellY, items, delay = 800 } = config;
+// CDP로 에듀파인 자동 입력
+ipcMain.removeHandler('macro-fill-edufine-cdp');
+ipcMain.handle('macro-fill-edufine-cdp', async (e, { wsUrl, items }) => {
+  _macroStopWsUrl = wsUrl;
 
-  function clickAt(x, y) {
-    runPS(`
-${PS_MOUSE_TYPE_DEF}
-[MacroMouse]::SetCursorPos(${x}, ${y})
-Start-Sleep -Milliseconds 100
-[MacroMouse]::mouse_event(2, 0, 0, 0, 0)
-Start-Sleep -Milliseconds 60
-[MacroMouse]::mouse_event(4, 0, 0, 0, 0)
-`);
+  // 브라우저 안에서 실행될 자동화 스크립트
+  const expression = `(async function() {
+  window.__macroStop = false;
+  const _items = ${JSON.stringify(items)};
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  function visibleInputs() {
+    return [...document.querySelectorAll(
+      'input[type="text"]:not([readonly]):not([disabled]),' +
+      'input:not([type]):not([readonly]):not([disabled])'
+    )].filter(el => { const r = el.getBoundingClientRect(); return r.width > 5 && r.height > 5; });
   }
 
-  function sendKeys(keys) {
-    runPS(`Add-Type -AssemblyName System.Windows.Forms\n[System.Windows.Forms.SendKeys]::SendWait("${keys}")`);
+  function setVal(el, val) {
+    if (!el) return;
+    el.focus();
+    try {
+      const s = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+      if (s && s.set) s.set.call(el, String(val)); else el.value = String(val);
+    } catch { el.value = String(val); }
+    ['input','change','blur'].forEach(t => el.dispatchEvent(new Event(t, { bubbles: true })));
   }
 
-  function pasteText(text) {
-    clipboard.writeText(String(text));
-    runPS(`Add-Type -AssemblyName System.Windows.Forms\n[System.Windows.Forms.SendKeys]::SendWait("^v")`);
+  function findAddBtn() {
+    return [...document.querySelectorAll('button,input[type=button],a')].find(el =>
+      (el.textContent || el.value || '').replace(/\\s/g,'').includes('행추가')
+    );
   }
 
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const addBtn = findAddBtn();
+  if (!addBtn) return JSON.stringify({ error: '행추가 버튼을 찾을 수 없습니다. 품의서 내역 탭이 선택되어 있는지 확인하세요.' });
+
+  for (let i = 0; i < _items.length; i++) {
+    if (window.__macroStop) return JSON.stringify({ stopped: true, count: i });
+    const item = _items[i];
+
+    const before = new Set(visibleInputs());
+    addBtn.click();
+    await sleep(900);
+
+    const newInputs = visibleInputs().filter(el => !before.has(el));
+    if (!newInputs.length) return JSON.stringify({ error: '행 ' + (i+1) + ': 새 행이 추가되지 않았습니다.' });
+
+    // 컬럼 순서: 내용(0) 규격(1) 수량(2) [단위(3)] 예상단가(4 또는 3)
+    if (item.name  != null && newInputs[0]) { setVal(newInputs[0], item.name);  await sleep(100); }
+    if (item.spec  != null && newInputs[1]) { setVal(newInputs[1], item.spec);  await sleep(100); }
+    if (item.qty   != null && newInputs[2]) { setVal(newInputs[2], item.qty);   await sleep(100); }
+    const pi = newInputs.length >= 5 ? 4 : 3;
+    if (item.price != null && newInputs[pi]) { setVal(newInputs[pi], item.price); await sleep(100); }
+  }
+  return JSON.stringify({ done: true, count: _items.length });
+})()`;
 
   try {
-    for (let i = 0; i < items.length; i++) {
-      if (macroStopped) return { stopped: true, count: i };
-      const item = items[i];
-
-      clickAt(addBtnX, addBtnY);
-      await sleep(delay);
-      if (macroStopped) return { stopped: true, count: i };
-
-      clickAt(cellX, cellY);
-      await sleep(300);
-
-      if (item.name) pasteText(item.name);
-      await sleep(150);
-
-      sendKeys('{TAB}');
-      await sleep(150);
-      if (item.spec) pasteText(item.spec);
-      await sleep(150);
-
-      sendKeys('{TAB}');
-      await sleep(150);
-      if (item.qty != null) pasteText(String(item.qty));
-      await sleep(150);
-
-      sendKeys('{TAB}{TAB}');
-      await sleep(150);
-      if (item.price != null) pasteText(String(item.price));
-      await sleep(200);
-
-      sendKeys('{ENTER}');
-      await sleep(100);
-    }
-    return { done: true, count: items.length };
+    const result = await cdpEval(wsUrl, expression, 120000);
+    const val = result && result.value;
+    if (!val) return { error: '응답 없음: ' + JSON.stringify(result) };
+    return JSON.parse(val);
   } catch (err) {
     return { error: err.message };
+  } finally {
+    _macroStopWsUrl = null;
   }
 });
