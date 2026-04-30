@@ -79,25 +79,34 @@ function Upload-ReleaseAsset($release, $filePath, $contentType) {
 
 function Get-Release($version) {
     $tag = "v$version"
-    # 최대 10초 재시도 (업로드 직후 API 반영 지연 대응)
-    for ($i = 0; $i -lt 6; $i++) {
+    Write-Host "  [Get-Release] tag=$tag 탐색 시작" -ForegroundColor Gray
+    for ($i = 0; $i -lt 15; $i++) {
         if ($i -gt 0) {
-            Write-Host "  릴리즈 감지 대기 중... ($i/5)" -ForegroundColor Yellow
-            Start-Sleep -Seconds 5
+            Write-Host "  릴리즈 감지 대기 중... ($i/14) — 10초 대기" -ForegroundColor Yellow
+            Start-Sleep -Seconds 10
         }
+        # 1) published 릴리즈 (태그 API)
         try {
-            # 태그 API 먼저 시도 (published 릴리즈)
             $r = Invoke-GitHubApi "GET" "https://api.github.com/repos/KoreaUm/teacher-app/releases/tags/$tag"
-            if ($r.id) { return $r }
-        } catch {}
+            if ($r -and $r.id) {
+                Write-Host "  [Get-Release] 태그 API로 감지 (id=$($r.id))" -ForegroundColor Green
+                return $r
+            }
+        } catch { Write-Host "  [Get-Release] 태그 API 오류: $_" -ForegroundColor Gray }
+
+        # 2) Draft 포함 목록 (최신 100개)
         try {
-            # Draft는 목록에서 검색
-            $releases = Invoke-GitHubApi "GET" "https://api.github.com/repos/KoreaUm/teacher-app/releases?per_page=20"
+            $releases = Invoke-GitHubApi "GET" "https://api.github.com/repos/KoreaUm/teacher-app/releases?per_page=100"
+            $tagList = ($releases | ForEach-Object { $_.tag_name }) -join ", "
+            Write-Host "  [Get-Release] 목록 태그: $tagList" -ForegroundColor Gray
             $r = $releases | Where-Object { $_.tag_name -eq $tag } | Select-Object -First 1
-            if ($r) { return $r }
-        } catch {}
+            if ($r) {
+                Write-Host "  [Get-Release] 목록에서 감지 (id=$($r.id) draft=$($r.draft))" -ForegroundColor Green
+                return $r
+            }
+        } catch { Write-Host "  [Get-Release] 목록 API 오류: $_" -ForegroundColor Gray }
     }
-    Fail "GitHub에서 v$version 릴리즈를 찾을 수 없습니다. (30초 대기 후에도 미확인)"
+    Fail "GitHub에서 $tag 릴리즈를 찾을 수 없습니다. (최대 2분 30초 대기)"
 }
 
 function Publish-Release($release) {
@@ -115,10 +124,37 @@ function Publish-Release($release) {
     Write-Host "릴리즈 공개 완료!" -ForegroundColor Green
 }
 
+function Publish-Release-Direct($version) {
+    # gh CLI 사용 (가장 확실)
+    $ghCmd = Get-Command gh -ErrorAction SilentlyContinue
+    if ($ghCmd) {
+        Write-Host "gh CLI로 publish 중..." -ForegroundColor Yellow
+        $env:GH_TOKEN = $env:GH_TOKEN
+        gh release edit "v$version" --draft=false --repo KoreaUm/teacher-app 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "gh CLI publish 완료!" -ForegroundColor Green
+            return $true
+        }
+    }
+
+    # REST API 직접 호출
+    Write-Host "REST API로 publish 중..." -ForegroundColor Yellow
+    try {
+        $release = Get-Release $version
+        if ($release.draft) {
+            Publish-Release $release
+        } else {
+            Write-Host "이미 공개된 릴리즈입니다." -ForegroundColor Green
+        }
+        return $true
+    } catch {
+        Write-Host "publish 실패: $_" -ForegroundColor Red
+        return $false
+    }
+}
+
 function Ensure-ReleaseAssets($version) {
     $distDir = Join-Path $scriptDir "dist"
-    $setupPath = Join-Path $distDir "teacher-app-setup-$version.exe"
-    $blockmapPath = Join-Path $distDir "teacher-app-setup-$version.exe.blockmap"
     $latestPath = Join-Path $distDir "latest.yml"
 
     Write-Step "GitHub Draft 릴리즈 찾기 및 자산 확인"
