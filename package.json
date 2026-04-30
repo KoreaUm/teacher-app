@@ -1,6 +1,6 @@
 {
   "name": "teacher-app",
-  "version": "2.0.44",
+  "version": "2.0.45",
   "description": "교사 업무 관리 Electron 앱",
   "author": "충상",
   "main": "main.js",
@@ -60,7 +60,7 @@
       "provider": "github",
       "owner": "KoreaUm",
       "repo": "teacher-app",
-      "releaseType": "release"
+      "releaseType": "draft"
     }
   }
 }
