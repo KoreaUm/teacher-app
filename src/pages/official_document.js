@@ -132,7 +132,7 @@
       '          <h3>품의서 작성</h3>',
       '          <span>항목을 입력하면 제목·개요·품목내역을 에듀파인에 붙여넣을 형식으로 작성합니다.</span>',
       '        </div>',
-      '        <label>품의 유형<select id="poom-type"><option value="물품">물품 구입</option><option value="수당">수당 지급</option><option value="업무추진비">업무추진비</option></select></label>',
+      '        <label>품의 유형<select id="poom-type"><option value="물품">물품 구입</option><option value="지출">지출</option><option value="수당">수당 지급</option><option value="업무추진비">업무추진비</option></select></label>',
       '        <div style="display:grid;grid-template-columns:100px 1fr;gap:8px">',
       '          <label>회계연도<input id="poom-year" type="number" value="2026" min="2020" max="2040"></label>',
       '          <label>제목<input id="poom-title"></label>',
@@ -522,9 +522,10 @@
 
     // 개요 항목 정의 (type별)
     var GAEYO_DEFS = {
-      "물품":     [{ id:"목적",   label:"목적",   type:"text" }, { id:"내용",   label:"내용",   type:"text" }, { id:"품목",   label:"물품",   type:"auto-items" }, { id:"금액",   label:"금액",   type:"auto-amount" }],
-      "수당":     [{ id:"목적",   label:"목적",   type:"text" }, { id:"내용",   label:"내용",   type:"text" }, { id:"금액",   label:"금액",   type:"auto-amount" }],
-      "업무추진비": [{ id:"목적", label:"목적",   type:"text" }, { id:"내용",   label:"내용",   type:"text" }, { id:"금액",   label:"금액",   type:"auto-amount" }]
+      "물품":     [{ id:"목적", label:"목적", type:"text" }, { id:"내용", label:"내용", type:"text" }, { id:"품목", label:"물품", type:"auto-items" }, { id:"금액", label:"금액", type:"auto-amount" }],
+      "지출":     [{ id:"목적", label:"목적", type:"text" }, { id:"내용", label:"내용", type:"text" }, { id:"금액", label:"금액", type:"auto-amount" }],
+      "수당":     [{ id:"목적", label:"목적", type:"text" }, { id:"내용", label:"내용", type:"text" }, { id:"금액", label:"금액", type:"auto-amount" }],
+      "업무추진비": [{ id:"목적", label:"목적", type:"text" }, { id:"내용", label:"내용", type:"text" }, { id:"금액", label:"금액", type:"auto-amount" }]
     };
 
     function buildGaeyoList(type) {
@@ -688,6 +689,7 @@
       var cleanTitle = (title || (year + "학년도")).replace(/[\s]*(지출|구입|구매|구매비|지급|집행|예산|비용|경비)\s*$/, "").trim();
       var verbSentence = {
         "물품":     cleanTitle + " 관련 물품을 다음과 같이 구입하고자 합니다.",
+        "지출":     cleanTitle + " 관련 경비를 다음과 같이 지출하고자 합니다.",
         "수당":     cleanTitle + " 관련 수당을 다음과 같이 지급하고자 합니다.",
         "업무추진비": cleanTitle + " 관련 업무추진비를 다음과 같이 집행하고자 합니다."
       }[type] || cleanTitle + " 관련하여 다음과 같이 집행하고자 합니다.";
