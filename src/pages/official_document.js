@@ -183,6 +183,7 @@
       '            <button id="macro-shortcut-btn" class="btn btn-secondary btn-sm" type="button">🔗 바로가기 만들기</button>',
       '            <button id="macro-launch-btn"   class="btn btn-secondary btn-sm" type="button">🌐 바로가기로 열기</button>',
       '            <button id="macro-check-btn"    class="btn btn-secondary btn-sm" type="button">🔍 연결 확인</button>',
+      '            <button id="macro-diag-btn"     class="btn btn-secondary btn-sm" type="button">🔬 페이지 진단</button>',
       '          </div>',
       '          <div style="display:flex;gap:6px;flex-wrap:wrap">',
       '            <button id="macro-start-btn"  class="btn btn-primary btn-sm"   type="button" disabled>▶ 자동입력 시작</button>',
@@ -993,6 +994,19 @@
 
     var checkBtn = document.getElementById("macro-check-btn");
     if (checkBtn) checkBtn.addEventListener("click", checkCdp);
+
+    var diagBtn = document.getElementById("macro-diag-btn");
+    if (diagBtn) diagBtn.addEventListener("click", async function () {
+      if (!macroEduTab) { await checkCdp(); if (!macroEduTab) return; }
+      setMacroStatus("페이지 구조 분석 중...", "var(--fg-2)");
+      var res = await api.macroDiagnose(macroEduTab.webSocketDebuggerUrl);
+      if (res.error) { setMacroStatus("❌ " + res.error, "#ef4444"); return; }
+      var msg = "iframe " + res.iframes.length + "개 | input " + res.inputs.length + "개 | contenteditable " + res.editables + "개";
+      if (res.iframes.length) msg += " | iframe내input: " + res.iframes.map(function(f){ return f.inputs; }).join(",");
+      msg += " | 버튼: [" + res.buttons.slice(0,6).join(", ") + "]";
+      setMacroStatus("🔬 " + msg, "var(--fg-2)");
+      console.log("에듀파인 진단:", JSON.stringify(res, null, 2));
+    });
 
     var shortcutBtn = document.getElementById("macro-shortcut-btn");
     if (shortcutBtn) shortcutBtn.addEventListener("click", async function () {

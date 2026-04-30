@@ -141,4 +141,5 @@ contextBridge.exposeInMainWorld('api', {
   macroCreateShortcut: () => ipcRenderer.invoke('macro-create-shortcut'),
   macroStop: () => ipcRenderer.invoke('macro-stop'),
   macroFillEdufineCdp: (cfg) => ipcRenderer.invoke('macro-fill-edufine-cdp', cfg),
+  macroDiagnose: (wsUrl) => ipcRenderer.invoke('macro-diagnose', wsUrl),
 });
