@@ -77,23 +77,55 @@ function Upload-ReleaseAsset($release, $filePath, $contentType) {
         -InFile $filePath | Out-Null
 }
 
-function Ensure-ReleaseAssets($version) {
+function Get-Release($version) {
     $tag = "v$version"
+    # Draft는 태그 API로 못 찾으므로 목록에서 검색
+    $releases = Invoke-GitHubApi "GET" "https://api.github.com/repos/KoreaUm/teacher-app/releases?per_page=10"
+    $release = $releases | Where-Object { $_.tag_name -eq $tag } | Select-Object -First 1
+    if (-not $release) { Fail "GitHub에서 v$version 릴리즈를 찾을 수 없습니다." }
+    return $release
+}
+
+function Publish-Release($release) {
+    Write-Host "Draft → Published 전환 중..." -ForegroundColor Yellow
+    Invoke-RestMethod `
+        -Method PATCH `
+        -Uri $release.url `
+        -Headers @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept = "application/vnd.github+json"
+            "X-GitHub-Api-Version" = "2022-11-28"
+            "Content-Type" = "application/json"
+        } `
+        -Body '{"draft":false}' | Out-Null
+    Write-Host "릴리즈 공개 완료!" -ForegroundColor Green
+}
+
+function Ensure-ReleaseAssets($version) {
     $distDir = Join-Path $scriptDir "dist"
     $setupPath = Join-Path $distDir "teacher-app-setup-$version.exe"
     $blockmapPath = Join-Path $distDir "teacher-app-setup-$version.exe.blockmap"
     $latestPath = Join-Path $distDir "latest.yml"
 
-    Write-Step "Verify GitHub release assets"
-    $release = Invoke-GitHubApi "GET" "https://api.github.com/repos/KoreaUm/teacher-app/releases/tags/$tag"
+    Write-Step "GitHub Draft 릴리즈 찾기 및 자산 확인"
+    $release = Get-Release $version
 
-    Upload-ReleaseAsset $release $latestPath "application/x-yaml"
-    $release = Invoke-GitHubApi "GET" "https://api.github.com/repos/KoreaUm/teacher-app/releases/tags/$tag"
-    Upload-ReleaseAsset $release $setupPath "application/octet-stream"
-    $release = Invoke-GitHubApi "GET" "https://api.github.com/repos/KoreaUm/teacher-app/releases/tags/$tag"
-    Upload-ReleaseAsset $release $blockmapPath "application/octet-stream"
+    if ($release.draft) {
+        # electron-builder가 이미 업로드했으므로 추가 업로드 불필요
+        # latest.yml만 빠진 경우 보완 업로드
+        $hasLatest = $release.assets | Where-Object { $_.name -eq "latest.yml" }
+        if (-not $hasLatest) {
+            Upload-ReleaseAsset $release $latestPath "application/x-yaml"
+            $release = Get-Release $version
+        }
 
-    Write-Host "Release assets verified for $tag" -ForegroundColor Green
+        # Draft → 공개
+        Publish-Release $release
+    } else {
+        Write-Host "이미 공개된 릴리즈입니다." -ForegroundColor Green
+    }
+
+    Write-Host "v$version 릴리즈 완료!" -ForegroundColor Green
 }
 
 if (-not $env:GH_TOKEN) {
@@ -122,6 +154,12 @@ Write-Utf8NoBom $pkgPath $updatedPkgRaw
 Write-Host "Updated package.json to $nextVersion" -ForegroundColor Green
 
 Write-Step "Git add / commit / push"
+# index.lock 잔여 파일 제거
+$lockFile = Join-Path $scriptDir ".git\index.lock"
+if (Test-Path $lockFile) {
+    Write-Host "index.lock 제거 중..." -ForegroundColor Yellow
+    Remove-Item $lockFile -Force
+}
 git add .
 Ensure-LastExitCode $LASTEXITCODE "git add failed"
 
