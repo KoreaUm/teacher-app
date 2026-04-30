@@ -137,6 +137,7 @@ contextBridge.exposeInMainWorld('api', {
   // 에듀파인 CDP 매크로
   macroCdpCheck: () => ipcRenderer.invoke('macro-cdp-check'),
   macroLaunchDebugBrowser: () => ipcRenderer.invoke('macro-launch-debug-browser'),
+  macroCreateShortcut: () => ipcRenderer.invoke('macro-create-shortcut'),
   macroStop: () => ipcRenderer.invoke('macro-stop'),
   macroFillEdufineCdp: (cfg) => ipcRenderer.invoke('macro-fill-edufine-cdp', cfg),
 });

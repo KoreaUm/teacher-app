@@ -1517,12 +1517,12 @@ ipcMain.handle('macro-cdp-check', async () => {
   }
 });
 
-// 브라우저를 디버그 모드로 실행
+// 브라우저를 디버그 모드로 실행 (전용 프로필 — 로그인 유지됨)
 ipcMain.removeHandler('macro-launch-debug-browser');
 ipcMain.handle('macro-launch-debug-browser', () => {
   const browserPath = findBrowserPath();
   if (!browserPath) return { error: 'Chrome 또는 Edge를 찾을 수 없습니다.' };
-  const profileDir = path.join(os.tmpdir(), 'edu_debug_profile');
+  const profileDir = path.join(os.homedir(), 'EdufineMacroProfile');
   const child = spawn(browserPath, [
     '--remote-debugging-port=9222',
     `--user-data-dir=${profileDir}`,
@@ -1533,6 +1533,34 @@ ipcMain.handle('macro-launch-debug-browser', () => {
   child.unref();
   const name = browserPath.includes('msedge') ? 'Edge' : 'Chrome';
   return { ok: true, browser: name };
+});
+
+// 데스크탑 바로가기 생성 (다음부터 로그인 상태 유지)
+ipcMain.removeHandler('macro-create-shortcut');
+ipcMain.handle('macro-create-shortcut', () => {
+  const browserPath = findBrowserPath();
+  if (!browserPath) return { error: 'Chrome 또는 Edge를 찾을 수 없습니다.' };
+  const profileDir = path.join(os.homedir(), 'EdufineMacroProfile');
+  const browserName = browserPath.includes('msedge') ? 'Edge' : 'Chrome';
+  const desktopPath = path.join(os.homedir(), 'Desktop');
+  const shortcutPath = path.join(desktopPath, '에듀파인(품의서매크로).lnk');
+  const psScript = `
+$shell = New-Object -ComObject WScript.Shell
+$sc = $shell.CreateShortcut('${shortcutPath.replace(/'/g, "''")}')
+$sc.TargetPath = '${browserPath.replace(/'/g, "''")}'
+$sc.Arguments = '--remote-debugging-port=9222 --user-data-dir="${profileDir}" --no-first-run https://klef.cbe.go.kr/keris_ui/main.do'
+$sc.Description = '에듀파인 품의서 매크로용 브라우저'
+$sc.Save()
+`;
+  try {
+    const tmpFile = path.join(os.tmpdir(), `shortcut_${Date.now()}.ps1`);
+    fs.writeFileSync(tmpFile, '﻿' + psScript, 'utf8');
+    execSync(`powershell -ExecutionPolicy Bypass -NonInteractive -File "${tmpFile}"`, { windowsHide: true });
+    fs.unlinkSync(tmpFile);
+    return { ok: true, browser: browserName, path: shortcutPath };
+  } catch (err) {
+    return { error: err.message };
+  }
 });
 
 // 중지 신호 전달

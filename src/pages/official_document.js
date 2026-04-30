@@ -168,16 +168,23 @@
       '          <div id="poom-rows"></div>',
       '          <div style="text-align:right;margin-top:6px;font-size:13px;color:var(--fg-2)">합계: <strong id="poom-total-display" style="color:var(--accent)">0</strong>원</div>',
       '        </div>',
+      '        <div style="margin-top:8px">',
+      '          <div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:4px">붙임 <small style="font-weight:400;color:var(--fg-3)">한 줄에 하나씩</small></div>',
+      '          <textarea id="poom-attachments" rows="2" class="input" style="width:100%;font-size:12px;resize:vertical" placeholder="견적서 1부&#10;사진 2장"></textarea>',
+      '        </div>',
       '        <div class="official-doc-btn-row" style="margin-top:12px">',
       '          <button id="poom-gen-btn" class="btn btn-primary official-doc-main-btn" type="button">개요 생성</button>',
       '          <button id="poom-clear-btn" class="btn btn-secondary official-doc-main-btn" type="button">초기화</button>',
       '        </div>',
       '        <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px">',
       '          <div style="font-size:12px;font-weight:600;color:var(--fg-2);margin-bottom:4px">🤖 에듀파인 자동입력</div>',
-      '          <div id="macro-cdp-status" style="font-size:11px;color:var(--fg-3);margin-bottom:8px;min-height:16px">브라우저 연결 상태를 확인하세요.</div>',
+      '          <div id="macro-cdp-status" style="font-size:11px;color:var(--fg-3);margin-bottom:8px;min-height:16px">에듀파인 연결 상태를 확인하세요.</div>',
+      '          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px">',
+      '            <button id="macro-shortcut-btn" class="btn btn-secondary btn-sm" type="button">🔗 바로가기 만들기</button>',
+      '            <button id="macro-launch-btn"   class="btn btn-secondary btn-sm" type="button">🌐 바로가기로 열기</button>',
+      '            <button id="macro-check-btn"    class="btn btn-secondary btn-sm" type="button">🔍 연결 확인</button>',
+      '          </div>',
       '          <div style="display:flex;gap:6px;flex-wrap:wrap">',
-      '            <button id="macro-check-btn"  class="btn btn-secondary btn-sm" type="button">🔍 상태 확인</button>',
-      '            <button id="macro-launch-btn" class="btn btn-secondary btn-sm" type="button">🌐 브라우저 열기</button>',
       '            <button id="macro-start-btn"  class="btn btn-primary btn-sm"   type="button" disabled>▶ 자동입력 시작</button>',
       '            <button id="macro-stop-btn"   class="btn btn-secondary btn-sm" type="button" style="display:none">⏹ 중지</button>',
       '          </div>',
@@ -667,6 +674,8 @@
       var title    = getValue("poom-title").trim();
       var plan     = getValue("poom-plan").trim();
       var planDate = getValue("poom-plan-date");
+      var attachEl = document.getElementById("poom-attachments");
+      var attachLines = attachEl ? attachEl.value.split("\n").map(function(s){ return s.trim(); }).filter(Boolean) : [];
       var items    = getPoomItems();
       var total    = items.reduce(function (s, i) { return s + i.amount; }, 0);
       var totalKr  = total > 0 ? numberToKorean(total) : "";
@@ -675,13 +684,14 @@
       if (plan) gaeyoLines.push("1. 관련: " + plan + (planDate ? "(" + fmtDate(planDate) + ")" : ""));
 
       var numPrefix = plan ? "2. " : "1. ";
-      var verbMap = { "물품": "구입", "수당": "지급", "업무추진비": "지출" };
-      var verb = verbMap[type] || "집행";
-      if (type === "물품") {
-        gaeyoLines.push(numPrefix + year + "학년도 " + title + "을(를) 다음과 같이 구입하고자 합니다.");
-      } else {
-        gaeyoLines.push(numPrefix + "위와 관련하여 다음과 같이 " + (type === "수당" ? "수당을 지급" : "업무추진비를 지출") + "하고자 합니다.");
-      }
+      // 제목 끝에 붙은 행위 관련 단어 제거 (지출, 구입, 구매 등)
+      var cleanTitle = (title || (year + "학년도")).replace(/[\s]*(지출|구입|구매|구매비|지급|집행|예산|비용|경비)\s*$/, "").trim();
+      var verbSentence = {
+        "물품":     cleanTitle + " 관련 물품을 다음과 같이 구입하고자 합니다.",
+        "수당":     cleanTitle + " 관련 수당을 다음과 같이 지급하고자 합니다.",
+        "업무추진비": cleanTitle + " 관련 업무추진비를 다음과 같이 집행하고자 합니다."
+      }[type] || cleanTitle + " 관련하여 다음과 같이 집행하고자 합니다.";
+      gaeyoLines.push(numPrefix + verbSentence);
 
       var alpha = ["가", "나", "다", "라", "마", "바", "사", "아", "자", "차"];
       var aIdx = 0;
@@ -700,7 +710,7 @@
             gaeyoLines.push("   " + a + ". " + lbl + ": " + str);
           }
         } else if (itype === "auto-amount") {
-          if (total > 0) gaeyoLines.push("   " + a + ". " + lbl + ": 금" + numComma(total) + "원(금" + totalKr + "원정).  끝.");
+          if (total > 0) gaeyoLines.push("   " + a + ". " + lbl + ": 금" + numComma(total) + "원(금" + totalKr + "원정)" + (attachLines.length ? "." : ".  끝."));
         } else {
           var inp = row.querySelector(".poom-gaeyo-input");
           var val = inp ? inp.value.trim() : "";
@@ -719,6 +729,19 @@
         });
         itemsLines.push("─".repeat(48));
         itemsLines.push(pad("합계", colW[0] + colW[1] + colW[2] + colW[3]) + numComma(total) + "원");
+      }
+
+      // 붙임 섹션
+      if (attachLines.length) {
+        gaeyoLines.push("");
+        if (attachLines.length === 1) {
+          gaeyoLines.push("붙임  " + attachLines[0] + ".  끝.");
+        } else {
+          attachLines.forEach(function (line, idx) {
+            var suffix = idx === attachLines.length - 1 ? ".  끝." : ".";
+            gaeyoLines.push((idx === 0 ? "붙임  " : "      ") + (idx + 1) + ". " + line + suffix);
+          });
+        }
       }
 
       var titleEl = document.getElementById("poom-out-title");
@@ -897,7 +920,7 @@
     var poomClearBtn = document.getElementById("poom-clear-btn");
     if (poomClearBtn) {
       poomClearBtn.addEventListener("click", function () {
-        ["poom-year","poom-title","poom-plan","poom-plan-date","poom-purpose"]
+        ["poom-year","poom-title","poom-plan","poom-plan-date","poom-purpose","poom-attachments"]
           .forEach(function (id) { var el = document.getElementById(id); if (el) { el.value = id === "poom-year" ? "2026" : ""; el.disabled = false; } });
         var chk = document.getElementById("poom-plan-edu");
         if (chk) chk.checked = false;
@@ -969,15 +992,29 @@
     var checkBtn = document.getElementById("macro-check-btn");
     if (checkBtn) checkBtn.addEventListener("click", checkCdp);
 
+    var shortcutBtn = document.getElementById("macro-shortcut-btn");
+    if (shortcutBtn) shortcutBtn.addEventListener("click", async function () {
+      setMacroStatus("바로가기 생성 중...", "var(--fg-2)");
+      var res = await api.macroCreateShortcut();
+      if (res.error) {
+        setMacroStatus("❌ " + res.error, "#ef4444");
+      } else {
+        setMacroStatus(
+          "✅ 바로가기 생성 완료! 데스크탑의 <b>에듀파인(품의서매크로)</b> 로 여세요. 로그인하면 다음부터 자동 유지됩니다.",
+          "#22c55e"
+        );
+      }
+    });
+
     var launchBtn = document.getElementById("macro-launch-btn");
     if (launchBtn) launchBtn.addEventListener("click", async function () {
       setMacroStatus("브라우저 실행 중...", "var(--fg-2)");
       var res = await api.macroLaunchDebugBrowser();
       if (res.error) {
-        setMacroStatus("❌ " + res.error, "#ef4444");
+        setMacroStatus("❌ " + res.error + " — 먼저 [바로가기 만들기]를 누르세요.", "#ef4444");
       } else {
         setMacroStatus(
-          (res.browser || "브라우저") + " 실행됨 — 에듀파인 로그인 후 품의서 내역 페이지를 열고 [상태 확인]을 누르세요.",
+          (res.browser || "브라우저") + " 실행됨 — 에듀파인 로그인 후 품의서 내역 페이지를 열고 [연결 확인]을 누르세요.",
           "#22c55e"
         );
       }
