@@ -1001,10 +1001,27 @@
       setMacroStatus("페이지 구조 분석 중...", "var(--fg-2)");
       var res = await api.macroDiagnose(macroEduTab.webSocketDebuggerUrl);
       if (res.error) { setMacroStatus("❌ " + res.error, "#ef4444"); return; }
-      var msg = "iframe " + res.iframes.length + "개 | input " + res.inputs.length + "개 | contenteditable " + res.editables + "개";
-      if (res.iframes.length) msg += " | iframe내input: " + res.iframes.map(function(f){ return f.inputs; }).join(",");
-      msg += " | 버튼: [" + res.buttons.slice(0,6).join(", ") + "]";
-      setMacroStatus("🔬 " + msg, "var(--fg-2)");
+
+      // 재귀적으로 요약 정보 추출
+      function summarizeDiag(d, depth) {
+        var indent = depth ? "  ".repeat(depth) + "└ " : "";
+        var lines = [];
+        var inputCount  = (d.inputs  || []).length;
+        var cedCount    = (d.ceds    || []).length;
+        var btnTexts    = (d.btns    || []).map(function(b){ return b.txt; }).filter(Boolean).slice(0, 8).join(", ");
+        var framesCount = (d.frames  || []).length;
+        lines.push(indent + "input:" + inputCount + " contenteditable:" + cedCount + " 버튼:[" + (btnTexts||"없음") + "] iframe:" + framesCount + "개");
+        (d.frames || []).forEach(function(f) {
+          lines.push(indent + "  📦 iframe[" + (f.id||f.name||f.i) + "] src=" + (f.src||"").slice(0,50));
+          if (f.sub) lines = lines.concat(summarizeDiag(f.sub, depth + 1));
+        });
+        return lines;
+      }
+
+      var lines = summarizeDiag(res, 0);
+      setMacroStatus("🔬 " + lines.join(" | "), "var(--fg-2)");
+      // 클립보드에도 복사 (개발자용)
+      try { navigator.clipboard.writeText("에듀파인 진단:\n" + lines.join("\n")); } catch(_) {}
       console.log("에듀파인 진단:", JSON.stringify(res, null, 2));
     });
 

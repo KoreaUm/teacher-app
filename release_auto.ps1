@@ -79,11 +79,25 @@ function Upload-ReleaseAsset($release, $filePath, $contentType) {
 
 function Get-Release($version) {
     $tag = "v$version"
-    # Draft는 태그 API로 못 찾으므로 목록에서 검색
-    $releases = Invoke-GitHubApi "GET" "https://api.github.com/repos/KoreaUm/teacher-app/releases?per_page=10"
-    $release = $releases | Where-Object { $_.tag_name -eq $tag } | Select-Object -First 1
-    if (-not $release) { Fail "GitHub에서 v$version 릴리즈를 찾을 수 없습니다." }
-    return $release
+    # 최대 10초 재시도 (업로드 직후 API 반영 지연 대응)
+    for ($i = 0; $i -lt 6; $i++) {
+        if ($i -gt 0) {
+            Write-Host "  릴리즈 감지 대기 중... ($i/5)" -ForegroundColor Yellow
+            Start-Sleep -Seconds 5
+        }
+        try {
+            # 태그 API 먼저 시도 (published 릴리즈)
+            $r = Invoke-GitHubApi "GET" "https://api.github.com/repos/KoreaUm/teacher-app/releases/tags/$tag"
+            if ($r.id) { return $r }
+        } catch {}
+        try {
+            # Draft는 목록에서 검색
+            $releases = Invoke-GitHubApi "GET" "https://api.github.com/repos/KoreaUm/teacher-app/releases?per_page=20"
+            $r = $releases | Where-Object { $_.tag_name -eq $tag } | Select-Object -First 1
+            if ($r) { return $r }
+        } catch {}
+    }
+    Fail "GitHub에서 v$version 릴리즈를 찾을 수 없습니다. (30초 대기 후에도 미확인)"
 }
 
 function Publish-Release($release) {

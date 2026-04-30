@@ -1578,23 +1578,39 @@ ipcMain.handle('macro-stop', async () => {
 ipcMain.removeHandler('macro-diagnose');
 ipcMain.handle('macro-diagnose', async (e, wsUrl) => {
   const diagScript = `(function() {
-    const iframes = [...document.querySelectorAll('iframe')].map(f => ({
-      src: f.src, id: f.id, name: f.name,
-      inputs: (() => { try { return f.contentDocument ? f.contentDocument.querySelectorAll('input').length : -1; } catch { return -1; } })()
-    }));
-    const inputs = [...document.querySelectorAll('input')].map(el => ({
-      type: el.type, readonly: el.readOnly, disabled: el.disabled,
-      class: el.className.slice(0,40), visible: el.offsetParent !== null
-    })).slice(0, 20);
-    const editables = document.querySelectorAll('[contenteditable="true"]').length;
-    const buttons = [...document.querySelectorAll('button,input[type=button],a')]
-      .filter(el => el.offsetParent !== null)
-      .map(el => (el.textContent || el.value || '').trim().slice(0, 30))
-      .filter(Boolean).slice(0, 15);
-    return JSON.stringify({ iframes, inputs, editables, buttons, url: location.href });
+    function collectDoc(doc, depth) {
+      if (!doc || depth > 4) return {};
+      try {
+        const inputs = [...doc.querySelectorAll('input')].map(el => ({
+          type: el.type, ro: el.readOnly, dis: el.disabled,
+          cls: el.className.slice(0,30), vis: el.offsetParent !== null,
+          w: Math.round(el.getBoundingClientRect().width)
+        })).slice(0, 15);
+        const ceds = [...doc.querySelectorAll('[contenteditable]')].map(el => ({
+          tag: el.tagName, cls: el.className.slice(0,30),
+          vis: el.offsetParent !== null,
+          txt: (el.textContent||'').slice(0,20)
+        })).slice(0, 10);
+        const btns = [...doc.querySelectorAll('button,input[type=button],input[type=submit],a[href="#"],a[onclick],span[onclick],td[onclick],div[onclick]')]
+          .filter(el => el.offsetParent !== null)
+          .map(el => ({
+            tag: el.tagName,
+            txt: (el.textContent||el.value||el.title||'').replace(/\\s+/g,' ').trim().slice(0,25),
+            cls: el.className.slice(0,20)
+          }))
+          .filter(x => x.txt).slice(0, 20);
+        const frames = [...doc.querySelectorAll('iframe')].map((f,i) => {
+          let sub = {};
+          try { if (f.contentDocument) sub = collectDoc(f.contentDocument, depth+1); } catch(_) {}
+          return { i, src: (f.src||'').slice(0,60), id: f.id, name: f.name, sub };
+        });
+        return { inputs, ceds, btns, frames, url: (doc.location||{}).href || '' };
+      } catch(e) { return { err: e.message }; }
+    }
+    return JSON.stringify(collectDoc(document, 0));
   })()`;
   try {
-    const result = await cdpEval(wsUrl, diagScript, 10000);
+    const result = await cdpEval(wsUrl, diagScript, 15000);
     const val = result && (result.value ?? (result.result && result.result.value));
     return val ? JSON.parse(val) : { error: '진단 실패' };
   } catch (e) { return { error: e.message }; }
@@ -1609,17 +1625,24 @@ ipcMain.handle('macro-fill-edufine-cdp', async (e, { wsUrl, items }) => {
   const _items = ${JSON.stringify(items)};
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-  function getAllDocs() {
-    const docs = [document];
-    document.querySelectorAll('iframe').forEach(f => {
-      try { if (f.contentDocument) docs.push(f.contentDocument); } catch(_) {}
-    });
-    return docs;
+  // 재귀적으로 모든 doc 수집 (iframe 안의 iframe까지)
+  function getAllDocs(root, _seen) {
+    const seen = _seen || new Set();
+    if (!root || seen.has(root)) return [];
+    seen.add(root);
+    const result = [root];
+    try {
+      [...root.querySelectorAll('iframe,frame')].forEach(f => {
+        try { if (f.contentDocument) result.push(...getAllDocs(f.contentDocument, seen)); } catch(_) {}
+      });
+    } catch(_) {}
+    return result;
   }
 
+  // 표준 input 셀 수집
   function visibleInputs() {
     const results = [];
-    getAllDocs().forEach(doc => {
+    getAllDocs(document).forEach(doc => {
       doc.querySelectorAll(
         'input[type="text"]:not([readonly]):not([disabled]),' +
         'input:not([type]):not([readonly]):not([disabled]),' +
@@ -1631,63 +1654,137 @@ ipcMain.handle('macro-fill-edufine-cdp', async (e, { wsUrl, items }) => {
     return results;
   }
 
-  function setVal(el, val) {
-    if (!el) return;
-    try { el.focus(); } catch(_) {}
-    try {
-      const s = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
-      if (s && s.set) s.set.call(el, String(val)); else el.value = String(val);
-    } catch { el.value = String(val); }
-    ['input','change','keyup','blur'].forEach(t => {
-      try { el.dispatchEvent(new Event(t, { bubbles: true })); } catch(_) {}
+  // contenteditable 셀 수집 (KERIS 그리드 방식)
+  function visibleEditables() {
+    const results = [];
+    getAllDocs(document).forEach(doc => {
+      doc.querySelectorAll('[contenteditable="true"],[contenteditable=""]').forEach(el => {
+        try {
+          const tag = el.tagName;
+          if (tag === 'BODY' || tag === 'HTML') return;
+          const r = el.getBoundingClientRect();
+          if (r.width > 5 && r.height > 5) results.push(el);
+        } catch(_) {}
+      });
     });
+    return results;
   }
 
+  // input 또는 contenteditable에 값 설정
+  function setVal(el, val) {
+    if (!el) return;
+    const sVal = String(val);
+    try { el.focus(); el.click(); } catch(_) {}
+    if (el.getAttribute && el.getAttribute('contenteditable') !== null) {
+      // contenteditable 셀
+      try { el.textContent = ''; } catch(_) {}
+      try {
+        el.focus();
+        document.execCommand('selectAll', false, null);
+        document.execCommand('insertText', false, sVal);
+      } catch(_) { el.textContent = sVal; }
+      ['input','change','keyup','blur'].forEach(t => {
+        try { el.dispatchEvent(new Event(t, { bubbles: true })); } catch(_) {}
+      });
+    } else {
+      // 일반 input
+      try {
+        const s = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+        if (s && s.set) s.set.call(el, sVal); else el.value = sVal;
+      } catch { el.value = sVal; }
+      ['input','change','keyup','blur'].forEach(t => {
+        try { el.dispatchEvent(new Event(t, { bubbles: true })); } catch(_) {}
+      });
+    }
+  }
+
+  // 행추가 버튼 탐색 (전체 doc, 부분 텍스트 매칭)
   function findAddBtn() {
-    for (const doc of getAllDocs()) {
-      const all = [...doc.querySelectorAll('button,input[type=button],input[type=submit],a,span,div,td')];
+    for (const doc of getAllDocs(document)) {
+      const all = [...doc.querySelectorAll('button,input[type=button],input[type=submit],a,span,td,div,li')];
       const match = all.find(el => {
-        const t = (el.textContent || el.value || el.title || el.getAttribute('aria-label') || '').replace(/\s/g,'');
-        return t === '행추가' || t === '행추가';
+        const t = (el.textContent || el.value || el.title || (el.getAttribute && el.getAttribute('aria-label')) || '').replace(/\\s/g,'');
+        return t.includes('행추가') || t.includes('행 추가') || t === '추가' || t === '내역추가' || t.includes('내역추가');
       });
       if (match) return match;
     }
     return null;
   }
 
+  // 버튼 클릭 (click + MouseEvent 병행)
+  function clickBtn(btn) {
+    try {
+      btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+      btn.dispatchEvent(new MouseEvent('mouseup',   { bubbles: true, cancelable: true }));
+      btn.dispatchEvent(new MouseEvent('click',     { bubbles: true, cancelable: true }));
+      btn.click();
+    } catch(_) {}
+  }
+
   const addBtn = findAddBtn();
   if (!addBtn) {
-    const btnTexts = [...document.querySelectorAll('button,input[type=button],a')]
-      .filter(el => el.offsetParent !== null)
-      .map(el => (el.textContent || el.value || '').trim().slice(0,20)).filter(Boolean).slice(0,10);
-    return JSON.stringify({ error: '행추가 버튼 없음. 발견된 버튼: [' + btnTexts.join(', ') + ']' });
+    // 어떤 버튼/클릭 요소가 있는지 수집해 반환
+    const found = [];
+    getAllDocs(document).forEach(doc => {
+      [...doc.querySelectorAll('button,input[type=button],a,span,td,div')]
+        .filter(el => el.offsetParent !== null)
+        .forEach(el => {
+          const t = (el.textContent||el.value||'').replace(/\\s+/g,' ').trim().slice(0,20);
+          if (t) found.push(t);
+        });
+    });
+    return JSON.stringify({ error: '행추가 버튼 없음', buttons: [...new Set(found)].slice(0,15) });
   }
 
   for (let i = 0; i < _items.length; i++) {
     if (window.__macroStop) return JSON.stringify({ stopped: true, count: i });
     const item = _items[i];
 
-    const before = new Set(visibleInputs());
-    addBtn.click();
-    await sleep(1200);
+    const beforeInputs  = new Set(visibleInputs());
+    const beforeEditables = new Set(visibleEditables());
 
-    const after = visibleInputs();
-    const newInputs = after.filter(el => !before.has(el));
-    const targets = newInputs.length ? newInputs : after.slice(-8);
+    clickBtn(addBtn);
+    await sleep(1500);
 
-    if (!targets.length) return JSON.stringify({ error: '행 ' + (i+1) + ': 입력 셀 없음 (before:' + before.size + ' after:' + after.length + ')' });
+    // 새로 생긴 input 탐색
+    const afterInputs    = visibleInputs();
+    const afterEditables = visibleEditables();
+    const newInputs      = afterInputs.filter(el => !beforeInputs.has(el));
+    const newEditables   = afterEditables.filter(el => !beforeEditables.has(el));
 
-    if (item.name  != null && targets[0]) { setVal(targets[0], item.name);  await sleep(150); }
-    if (item.spec  != null && targets[1]) { setVal(targets[1], item.spec);  await sleep(150); }
-    if (item.qty   != null && targets[2]) { setVal(targets[2], item.qty);   await sleep(150); }
-    const pi = targets.length >= 5 ? 4 : 3;
-    if (item.price != null && targets[pi]) { setVal(targets[pi], item.price); await sleep(150); }
+    let targets;
+    if (newInputs.length >= 2) {
+      targets = newInputs;
+    } else if (newEditables.length >= 2) {
+      targets = newEditables;
+    } else if (afterInputs.length > 0) {
+      // 행 추가 안 됐지만 기존 input 마지막 행 사용 (이미 비어 있는 경우)
+      const empty = afterInputs.filter(el => !(el.value||'').trim());
+      targets = empty.length >= 2 ? empty : afterInputs.slice(-6);
+    } else if (afterEditables.length > 0) {
+      const empty = afterEditables.filter(el => !(el.textContent||'').trim());
+      targets = empty.length >= 2 ? empty : afterEditables.slice(-6);
+    } else {
+      return JSON.stringify({
+        error: '행 ' + (i+1) + ': 입력 셀 없음',
+        detail: 'input=' + afterInputs.length + ' editable=' + afterEditables.length
+      });
+    }
+
+    if (item.name  != null && targets[0]) { setVal(targets[0], item.name);  await sleep(200); }
+    if (item.spec  != null && targets[1]) { setVal(targets[1], item.spec);  await sleep(200); }
+    if (item.qty   != null && targets[2]) { setVal(targets[2], item.qty);   await sleep(200); }
+    // 단가는 4번째 또는 5번째 셀 (비고 칸이 있을 수 있음)
+    const pi = targets.length >= 5 ? 4 : targets.length >= 4 ? 3 : targets.length - 1;
+    if (item.price != null && pi >= 0 && targets[pi]) { setVal(targets[pi], item.price); await sleep(200); }
+
+    await sleep(300);
   }
   return JSON.stringify({ done: true, count: _items.length });
 })()`;
 
   try {
-    const result = await cdpEval(wsUrl, expression, 120000);
+    const result = await cdpEval(wsUrl, expression, 180000);
     const val = result && (result.value ?? (result.result && result.result.value));
     if (!val) return { error: '응답 없음: ' + JSON.stringify(result) };
     try { return JSON.parse(val); } catch { return { error: val }; }
