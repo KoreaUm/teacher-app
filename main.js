@@ -315,6 +315,7 @@ app.on('window-all-closed', () => {
 });
 
 ipcMain.on('window-minimize', () => mainWindow.minimize());
+ipcMain.on('window-restore', () => { if (mainWindow) { mainWindow.restore(); mainWindow.focus(); } });
 ipcMain.on('window-maximize', () => {
   mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize();
 });
@@ -1601,12 +1602,25 @@ ipcMain.handle('macro-fill-edufine-cdp', async (e, { wsUrl, items }) => {
   }
 
   function findAddBtn() {
-    return [...document.querySelectorAll('button,input[type=button],a')].find(el =>
-      (el.textContent || el.value || '').replace(/\\s/g,'').includes('행추가')
-    );
+    const all = [...document.querySelectorAll('button,input[type=button],input[type=submit],a,span,div,td,li')];
+    const match = all.find(el => {
+      const t = (el.textContent || el.value || el.title || el.getAttribute('aria-label') || '').replace(/\\s/g,'');
+      return t === '행추가' || t === '행 추가' || t.includes('행추가');
+    });
+    if (match) return match;
+    // 못 찾으면 디버그: 보이는 버튼 목록 반환
+    const btnTexts = all
+      .filter(el => ['BUTTON','INPUT','A'].includes(el.tagName) && el.offsetParent !== null)
+      .map(el => (el.textContent || el.value || '').trim().slice(0, 20))
+      .filter(Boolean).slice(0, 10);
+    return { __debug: btnTexts };
   }
 
-  const addBtn = findAddBtn();
+  const addBtnResult = findAddBtn();
+  if (addBtnResult && addBtnResult.__debug) {
+    return JSON.stringify({ error: '행추가 버튼 없음. 발견된 버튼: ' + addBtnResult.__debug.join(' / ') });
+  }
+  const addBtn = addBtnResult;
   if (!addBtn) return JSON.stringify({ error: '행추가 버튼을 찾을 수 없습니다. 품의서 내역 탭이 선택되어 있는지 확인하세요.' });
 
   for (let i = 0; i < _items.length; i++) {
@@ -1632,9 +1646,13 @@ ipcMain.handle('macro-fill-edufine-cdp', async (e, { wsUrl, items }) => {
 
   try {
     const result = await cdpEval(wsUrl, expression, 120000);
-    const val = result && result.value;
+    // CDP Runtime.evaluate 응답 구조: { result: { result: { type, value } } }
+    const val = result && (
+      result.value ??
+      (result.result && result.result.value)
+    );
     if (!val) return { error: '응답 없음: ' + JSON.stringify(result) };
-    return JSON.parse(val);
+    try { return JSON.parse(val); } catch { return { error: val }; }
   } catch (err) {
     return { error: err.message };
   } finally {

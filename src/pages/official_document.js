@@ -1034,12 +1034,18 @@
       macroRunning = true;
       macroStartBtn.disabled = true;
       macroStopBtn.style.display = "";
-      setMacroStatus("🚀 " + items.length + "개 품목 자동입력 중…", "var(--accent)");
+      setMacroStatus("🚀 " + items.length + "개 품목 자동입력 중… (백그라운드 실행)", "var(--accent)");
+
+      // 앱 최소화 → 에듀파인 창이 보이게
+      setTimeout(function () { api.minimize(); }, 300);
 
       var result = await api.macroFillEdufineCdp({
         wsUrl: macroEduTab.webSocketDebuggerUrl,
         items: items,
       });
+
+      // 완료 후 앱 복원
+      api.restore();
 
       macroRunning = false;
       macroStartBtn.disabled = false;
