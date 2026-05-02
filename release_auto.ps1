@@ -1,4 +1,4 @@
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+﻿[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -82,7 +82,7 @@ function Get-Release($version) {
     Write-Host "  [Get-Release] tag=$tag 탐색 시작" -ForegroundColor Gray
     for ($i = 0; $i -lt 15; $i++) {
         if ($i -gt 0) {
-            Write-Host "  릴리즈 감지 대기 중... ($i/14) — 10초 대기" -ForegroundColor Yellow
+            Write-Host "  릴리즈 감지 대기 중... ($i/14) - 10초 대기" -ForegroundColor Yellow
             Start-Sleep -Seconds 10
         }
         # 1) published 릴리즈 (태그 API)
