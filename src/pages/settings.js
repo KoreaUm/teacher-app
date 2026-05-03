@@ -54,8 +54,10 @@ async function render(container) {
   const settings = await api.getAllSettings();
   const appMeta = await api.getAppMeta();
   const authState = window.appAuthGetState ? window.appAuthGetState() : null;
-  const provider = settings.ai_provider || 'claude';
+  const savedEngine = settings.ai_engine || 'local_lite';
+  const provider = (savedEngine === 'claude' || savedEngine === 'gemini') ? savedEngine : (settings.ai_provider || 'claude');
   const model = settings.ai_model || MODEL_OPTIONS[provider][0].value;
+  const aiEngine = savedEngine === 'cloud' ? provider : (savedEngine === 'rule' ? 'local_lite' : savedEngine);
   const classTimetableCount = parseClassTimetableCount(settings.class_timetable_json);
   const classTimetableFileName = settings.class_timetable_file_name || '';
   const classSubjects = parseClassTimetableSubjects(settings.class_timetable_json);
@@ -65,13 +67,22 @@ async function render(container) {
   subjectColorState = parseSubjectColors(settings.class_timetable_subject_colors, classSubjects);
 
   container.innerHTML = `
-    <div class="page-wrap" style="max-width:880px">
+    <div class="page-wrap settings-page-wrap">
       <div class="page-header">
         <h1 class="page-header-title">\uD658\uACBD \uC124\uC815</h1>
       </div>
 
+      <div class="settings-layout">
+      <aside class="settings-nav">
+        <button data-settings-target="settings-app">앱</button>
+        <button data-settings-target="settings-account">계정</button>
+        <button data-settings-target="settings-class">학급</button>
+        <button data-settings-target="settings-menu">메뉴</button>
+        <button data-settings-target="settings-ai">AI</button>
+        <button data-settings-target="settings-backup">백업</button>
+      </aside>
       <div class="settings-stack">
-        <section class="card settings-card">
+        <section class="card settings-card" id="settings-app">
           <div class="settings-head">
             <div>
               <div class="settings-title">앱 버전</div>
@@ -80,7 +91,7 @@ async function render(container) {
           </div>
         </section>
 
-        <section class="card settings-card">
+        <section class="card settings-card" id="settings-account">
           <div class="settings-head">
             <div>
               <div class="settings-title">Firebase 계정</div>
@@ -95,7 +106,7 @@ async function render(container) {
           </div>
         </section>
 
-        <section class="card settings-card">
+        <section class="card settings-card" id="settings-class">
           <div class="settings-head">
             <div class="settings-title">\uD559\uAE09 \uC815\uBCF4</div>
           </div>
@@ -110,7 +121,7 @@ async function render(container) {
           </div>
         </section>
 
-        <section class="card settings-card">
+        <section class="card settings-card" id="settings-menu">
           <div class="settings-head">
             <div>
               <div class="settings-title">\uC0C1\uB2E8 \uBA54\uB274 \uAD6C\uC131</div>
@@ -125,7 +136,7 @@ async function render(container) {
           </div>
         </section>
 
-        <section class="card settings-card">
+        <section class="card settings-card" id="settings-neis">
           <div class="settings-head">
             <div>
               <div class="settings-title">NEIS \uC124\uC815</div>
@@ -152,7 +163,7 @@ async function render(container) {
           </div>
         </section>
 
-        <section class="card settings-card">
+        <section class="card settings-card" id="settings-timetable">
           <div class="settings-head">
             <div>
               <div class="settings-title">\uD559\uAE09 \uC2DC\uAC04\uD45C \uC5C5\uB85C\uB4DC</div>
@@ -185,23 +196,62 @@ async function render(container) {
           </div>
         </section>
 
-        <section class="card settings-card">
+        <section class="card settings-card" id="settings-ai">
           <div class="settings-head">
             <div class="settings-title">AI \uC124\uC815</div>
           </div>
+          <div class="ai-engine-list">
+            <label class="ai-engine-option ${aiEngine === 'local_lite' ? 'selected' : ''}">
+              <input type="radio" name="ai-engine" value="local_lite" ${aiEngine === 'local_lite' ? 'checked' : ''}>
+              <div><b>Local AI Lite · qwen2.5:3b</b><span>보안: 외부 전송 없음 · 용도: 학생/상담 기본값 · 특징: 빠른 편, 1.5B보다 안정적</span></div>
+            </label>
+            <label class="ai-engine-option ${aiEngine === 'local_basic' ? 'selected' : ''}">
+              <input type="radio" name="ai-engine" value="local_basic" ${aiEngine === 'local_basic' ? 'checked' : ''}>
+              <div><b>Local AI Basic · Gemma 4 E2B</b><span>보안: 외부 전송 없음 · 용도: 더 나은 문장 품질 · 특징: 느릴 수 있음, 8GB RAM 이상 권장</span></div>
+            </label>
+            <label class="ai-engine-option ${aiEngine === 'local_pro' ? 'selected' : ''}">
+              <input type="radio" name="ai-engine" value="local_pro" ${aiEngine === 'local_pro' ? 'checked' : ''}>
+              <div><b>Local AI Pro · Gemma 4 E4B</b><span>보안: 외부 전송 없음 · 용도: 고품질 로컬 분석 · 특징: 가장 무거움, 16GB RAM 이상 권장</span></div>
+            </label>
+            <label class="ai-engine-option danger ${aiEngine === 'claude' ? 'selected' : ''}">
+              <input type="radio" name="ai-engine" value="claude" ${aiEngine === 'claude' ? 'checked' : ''}>
+              <div><b>Claude 외부 AI</b><span>보안: 외부 서버 전송 가능 · 보호: 동의 필수, 민감 페이지는 로컬 우선/익명화 · 주의: 학생정보 입력 금지 권장</span></div>
+            </label>
+            <label class="ai-engine-option danger ${aiEngine === 'gemini' ? 'selected' : ''}">
+              <input type="radio" name="ai-engine" value="gemini" ${aiEngine === 'gemini' ? 'checked' : ''}>
+              <div><b>Gemini 외부 AI</b><span>보안: 외부 서버 전송 가능 · 보호: 동의 필수, 민감 페이지는 로컬 우선/익명화 · 주의: 학생정보 입력 금지 권장</span></div>
+            </label>
+          </div>
+          <div class="settings-note" style="margin-bottom:12px">AI 도우미는 모든 페이지 상단의 <b>AI 도우미</b> 버튼으로 열 수 있습니다.</div>
+          <div class="ai-model-status" id="ai-model-status">AI 엔진 상태를 확인하는 중...</div>
+          <div class="settings-actions" style="margin-bottom:12px">
+            <button class="btn btn-primary btn-sm" id="ai-ollama-install-btn">로컬 AI 자동 설치/확인</button>
+            <button class="btn btn-primary btn-sm" id="ai-engine-apply-btn">엔진 적용/확인</button>
+          </div>
+          <details class="ai-advanced-tools">
+            <summary>고급 설정: GGUF 직접 연결</summary>
+            <div class="settings-actions" style="margin-top:10px;margin-bottom:12px">
+              <button class="btn btn-secondary btn-sm" id="ai-model-download-btn">모델 다운로드 페이지</button>
+              <button class="btn btn-secondary btn-sm" id="ai-model-folder-btn">모델 폴더 열기</button>
+              <button class="btn btn-secondary btn-sm" id="ai-model-pick-btn">모델 파일 선택</button>
+              <button class="btn btn-secondary btn-sm" id="ai-runtime-download-btn">실행 엔진 다운로드</button>
+              <button class="btn btn-secondary btn-sm" id="ai-runtime-folder-btn">실행 엔진 폴더</button>
+            </div>
+          </details>
           <div class="form-row">
-            <label>AI \uC81C\uACF5\uC5C5\uCCB4</label>
+            <label>외부 AI 제공업체</label>
             <select class="input" id="sp">
               <option value="claude" ${provider === 'claude' ? 'selected' : ''}>Claude (Anthropic)</option>
               <option value="gemini" ${provider === 'gemini' ? 'selected' : ''}>Gemini (Google)</option>
             </select>
           </div>
-          <div class="form-row"><label>API \uD0A4</label><input class="input" type="password" id="sk" value="${escapeHtml(settings.ai_api_key || '')}" placeholder="API \uD0A4 \uC785\uB825"></div>
+          <div class="form-row"><label>외부 AI API \uD0A4</label><input class="input" type="password" id="sk" value="${escapeHtml(settings.ai_api_key || '')}" placeholder="Claude/Gemini를 사용할 때만 입력"></div>
           <div class="form-row">
             <label>\uBAA8\uB378</label>
             <select class="input" id="sm"></select>
           </div>
           <div class="settings-actions">
+            <button class="btn btn-secondary btn-sm" id="ai-helper-test-btn">AI 도우미 열기</button>
             <button class="btn btn-primary btn-sm" id="sv-ai">\uC800\uC7A5</button>
           </div>
         </section>
@@ -248,7 +298,7 @@ async function render(container) {
           </div>` : ''}
         </section>
 
-        <section class="card settings-card">
+        <section class="card settings-card" id="settings-backup">
           <div class="settings-head">
             <div>
               <div class="settings-title">\uB370\uC774\uD130 \uBC31\uC5C5 / \uBCF5\uC6D0</div>
@@ -288,6 +338,7 @@ async function render(container) {
           </div>
         </section>
       </div>
+      </div>
     </div>
   `;
 
@@ -300,6 +351,64 @@ async function render(container) {
 
 async function init() {
   const autosaveTimers = {};
+  let currentAiEngine = document.querySelector('input[name="ai-engine"]:checked')?.value || 'local_lite';
+  const selectedAiEngine = () => document.querySelector('input[name="ai-engine"]:checked')?.value || 'local_lite';
+  const isExternalAiEngine = (engine) => engine === 'claude' || engine === 'gemini';
+  const externalAiLabel = (engine) => engine === 'gemini' ? 'Gemini' : 'Claude';
+  const setAiEngineSelection = (engine) => {
+    document.querySelectorAll('input[name="ai-engine"]').forEach((input) => {
+      input.checked = input.value === engine;
+      input.closest('.ai-engine-option')?.classList.toggle('selected', input.checked);
+    });
+  };
+  const confirmExternalAiConsent = (engine) => {
+    const label = externalAiLabel(engine);
+    const text = [
+      `${label} 외부 AI를 사용하면 질문, 상담 문장, 성적/학생 관련 내용 등 사용자가 입력한 정보가 외부 AI 서버로 전송될 수 있습니다.`,
+      '',
+      '학생 상담, 성적, 개인정보, 민감정보를 입력할 경우 그에 따른 개인정보 보호 책임은 사용자에게 있습니다.',
+      '민감정보는 가능하면 Local AI를 사용하세요. Local AI는 모델과 실행 엔진이 내 PC에서만 동작하므로 외부 전송이 없습니다.',
+      '',
+      '계속하려면 아래 입력창에 정확히 "동의합니다"를 입력하세요.'
+    ].join('\n');
+    return window.prompt(text, '') === '동의합니다';
+  };
+  const refreshAiStatus = async () => {
+    const box = document.getElementById('ai-model-status');
+    if (!box || !api.getAiEngineStatus) return;
+    const status = await api.getAiEngineStatus(selectedAiEngine());
+    const ready = status?.ready;
+    box.className = `ai-model-status ${ready ? 'ready' : 'not-ready'}`;
+    box.innerHTML = `
+      <b>${escapeHtml(status?.label || 'AI 엔진')}</b>
+      <span>${escapeHtml(status?.message || status?.error || '상태를 확인할 수 없습니다.')}</span>
+      ${status?.modelDir ? `<small>모델 폴더: ${escapeHtml(status.modelDir)}</small>` : ''}
+      ${status?.modelPath ? `<small>모델 파일: ${escapeHtml(status.modelPath)}</small>` : ''}
+      ${status?.model ? `<small>Ollama 모델: ${escapeHtml(status.model)}</small>` : ''}
+      ${status?.ollamaPath ? `<small>Ollama 위치: ${escapeHtml(status.ollamaPath)}</small>` : ''}
+      ${status?.runtimeDir ? `<small>실행 엔진 폴더: ${escapeHtml(status.runtimeDir)}</small>` : ''}
+      ${status?.runtimePath ? `<small>실행 엔진: ${escapeHtml(status.runtimePath)}</small>` : ''}
+    `;
+  };
+  const renderOllamaProgress = (progress = {}) => {
+    const box = document.getElementById('ai-model-status');
+    if (!box) return;
+    const percent = Number.isFinite(progress.percent) ? Math.max(0, Math.min(100, progress.percent)) : null;
+    box.className = `ai-model-status ${progress.step === 'done' ? 'ready' : 'not-ready'}`;
+    box.innerHTML = `
+      <b>${escapeHtml(progress.step === 'done' ? '로컬 AI 준비 완료' : '로컬 AI 준비 중')}</b>
+      <span>${escapeHtml(progress.message || '진행 상황을 확인하는 중입니다.')}</span>
+      ${percent == null ? '' : `
+        <div class="ai-progress-track"><div class="ai-progress-fill" style="width:${percent}%"></div></div>
+        <small>진행률: ${percent}%</small>
+      `}
+      ${progress.detail ? `<small>${escapeHtml(progress.detail)}</small>` : ''}
+    `;
+  };
+  if (window.__removeOllamaInstallProgress) window.__removeOllamaInstallProgress();
+  if (api.onOllamaInstallProgress) {
+    window.__removeOllamaInstallProgress = api.onOllamaInstallProgress(renderOllamaProgress);
+  }
   const autosaveSetting = (id, key, options = {}) => {
     const element = document.getElementById(id);
     if (!element) return;
@@ -321,7 +430,124 @@ async function init() {
   autosaveSetting('sr', 'weather_region');
   autosaveSetting('se', 'edu_office_code');
   autosaveSetting('ss', 'school_code');
-  autosaveSetting('sp', 'ai_provider', { event: 'change', read: (element) => element.value });
+  document.querySelectorAll('input[name="ai-engine"]').forEach((input) => {
+    input.addEventListener('change', async () => {
+      const nextEngine = input.value;
+      if (isExternalAiEngine(nextEngine) && !confirmExternalAiConsent(nextEngine)) {
+        setAiEngineSelection(currentAiEngine);
+        toast('외부 AI 사용 동의가 없어 이전 설정으로 되돌렸습니다.', 'warning', 4500);
+        return;
+      }
+      setAiEngineSelection(nextEngine);
+      currentAiEngine = nextEngine;
+      await api.setSetting('ai_engine', nextEngine);
+      if (isExternalAiEngine(nextEngine)) {
+        await api.setSetting('ai_provider', nextEngine);
+        await api.setSetting('ai_external_consent_provider', nextEngine);
+        await api.setSetting('ai_external_consent_at', new Date().toISOString());
+        const providerSelect = document.getElementById('sp');
+        if (providerSelect) {
+          providerSelect.value = nextEngine;
+          renderModelSelect(nextEngine, MODEL_OPTIONS[nextEngine][0].value);
+        }
+      }
+      await refreshAiStatus();
+      toast(isExternalAiEngine(nextEngine) ? `${externalAiLabel(nextEngine)} 외부 AI 설정을 저장했습니다.` : '로컬 AI 설정을 저장했습니다. 로컬 AI는 외부 전송이 없습니다.', 'success');
+    });
+  });
+  document.querySelectorAll('.settings-nav button').forEach((button) => {
+    button.addEventListener('click', () => {
+      document.getElementById(button.dataset.settingsTarget)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+  document.getElementById('ai-ollama-install-btn')?.addEventListener('click', async () => {
+    const engine = selectedAiEngine();
+    if (isExternalAiEngine(engine)) {
+      toast('로컬 AI를 선택한 뒤 자동 설치를 실행해 주세요.', 'warning');
+      return;
+    }
+    const button = document.getElementById('ai-ollama-install-btn');
+    if (button) {
+      button.disabled = true;
+      button.textContent = '로컬 AI 준비 중...';
+    }
+    const box = document.getElementById('ai-model-status');
+    if (box) {
+      renderOllamaProgress({
+        step: 'start',
+        percent: 1,
+        message: 'Ollama 설치 확인, 실행, 모델 다운로드, 작동 테스트를 시작합니다. 모델 다운로드는 처음 한 번만 오래 걸립니다.'
+      });
+    }
+    const result = await api.installOllamaAi(engine);
+    if (button) {
+      button.disabled = false;
+      button.textContent = '로컬 AI 자동 설치/확인';
+    }
+    await refreshAiStatus();
+    toast(result?.message || result?.error || '로컬 AI 준비 작업이 끝났습니다.', result?.success ? 'success' : 'warning', 7000);
+  });
+  document.getElementById('ai-model-download-btn')?.addEventListener('click', async () => {
+    const engine = selectedAiEngine();
+    if (isExternalAiEngine(engine)) {
+      toast('로컬 AI 엔진을 선택하면 모델 다운로드 페이지를 열 수 있습니다.', 'warning');
+      return;
+    }
+    await api.openAiModelDownload(engine);
+  });
+  document.getElementById('ai-model-folder-btn')?.addEventListener('click', async () => {
+    await api.openAiModelFolder();
+  });
+  document.getElementById('ai-runtime-download-btn')?.addEventListener('click', async () => {
+    if (!api.openAiRuntimeDownload) {
+      toast('실행 엔진 다운로드 기능을 사용할 수 없습니다.', 'warning');
+      return;
+    }
+    await api.openAiRuntimeDownload();
+  });
+  document.getElementById('ai-runtime-folder-btn')?.addEventListener('click', async () => {
+    if (!api.openAiRuntimeFolder) {
+      toast('실행 엔진 폴더를 열 수 없습니다.', 'warning');
+      return;
+    }
+    await api.openAiRuntimeFolder();
+  });
+  document.getElementById('ai-model-pick-btn')?.addEventListener('click', async () => {
+    const engine = selectedAiEngine();
+    if (isExternalAiEngine(engine)) {
+      toast('로컬 AI 엔진을 선택한 뒤 모델 파일을 지정해 주세요.', 'warning');
+      return;
+    }
+    const result = await api.selectAiModelFile(engine);
+    if (result?.cancelled) return;
+    if (result?.error) return toast(result.error, 'error');
+    await refreshAiStatus();
+    toast(result?.ready ? '모델 파일을 연결했습니다.' : '모델 파일 상태를 확인해 주세요.', result?.ready ? 'success' : 'warning');
+  });
+  document.getElementById('ai-engine-apply-btn')?.addEventListener('click', async () => {
+    const result = await api.applyAiEngine(selectedAiEngine());
+    await refreshAiStatus();
+    if (result?.applied) toast(result.message || 'AI 엔진이 준비되었습니다.', 'success');
+    else toast(result?.message || result?.error || 'AI 엔진을 적용할 수 없습니다.', 'warning', 4500);
+  });
+  await refreshAiStatus();
+  document.getElementById('sp')?.addEventListener('change', async (event) => {
+    const provider = event.target.value;
+    if (!confirmExternalAiConsent(provider)) {
+      event.target.value = isExternalAiEngine(currentAiEngine) ? currentAiEngine : 'claude';
+      toast('외부 AI 사용 동의가 없어 제공업체 변경을 취소했습니다.', 'warning', 4500);
+      return;
+    }
+    await api.setSetting('ai_provider', provider);
+    await api.setSetting('ai_engine', provider);
+    await api.setSetting('ai_external_consent_provider', provider);
+    await api.setSetting('ai_external_consent_at', new Date().toISOString());
+    currentAiEngine = provider;
+    setAiEngineSelection(provider);
+    renderModelSelect(provider, MODEL_OPTIONS[provider][0].value);
+    await refreshAiStatus();
+    toast(`${externalAiLabel(provider)} 외부 AI 설정을 저장했습니다. 민감정보 입력에 주의해 주세요.`, 'success');
+  });
   autosaveSetting('sk', 'ai_api_key');
   autosaveSetting('sm', 'ai_model', { event: 'change', read: (element) => element.value });
   autosaveSetting('gcal-cid', 'gcal_client_id');
@@ -441,11 +667,25 @@ async function init() {
   };
 
   document.getElementById('sv-ai').onclick = async () => {
-    await api.setSetting('ai_provider', document.getElementById('sp').value);
+    const selectedEngine = document.querySelector('input[name="ai-engine"]:checked')?.value || 'local_lite';
+    if (isExternalAiEngine(selectedEngine) && !confirmExternalAiConsent(selectedEngine)) {
+      toast('외부 AI 사용 동의가 없어 저장하지 않았습니다.', 'warning', 4500);
+      return;
+    }
+    await api.setSetting('ai_engine', selectedEngine);
+    await api.setSetting('ai_provider', isExternalAiEngine(selectedEngine) ? selectedEngine : document.getElementById('sp').value);
+    if (isExternalAiEngine(selectedEngine)) {
+      await api.setSetting('ai_external_consent_provider', selectedEngine);
+      await api.setSetting('ai_external_consent_at', new Date().toISOString());
+    }
     await api.setSetting('ai_api_key', document.getElementById('sk').value.trim());
     await api.setSetting('ai_model', document.getElementById('sm').value);
     toast('\uC800\uC7A5\uB418\uC5C8\uC2B5\uB2C8\uB2E4', 'success');
   };
+
+  document.getElementById('ai-helper-test-btn')?.addEventListener('click', () => {
+    window.openAiHelper?.('현재 AI 설정에서 무엇을 할 수 있어?');
+  });
 
   document.getElementById('shortcut-add-url').onclick = () => {
     shortcutState.push({ type: 'url', label: '새 웹사이트', value: 'https://' });

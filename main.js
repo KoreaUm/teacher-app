@@ -1,7 +1,7 @@
 ﻿const { app, BrowserWindow, ipcMain, shell, screen, dialog, Tray, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { spawn, execSync } = require('child_process');
+const { spawn, spawnSync, execSync } = require('child_process');
 const os = require('os');
 const http = require('http');
 const net = require('net');
@@ -21,6 +21,36 @@ let savedBounds    = null;
 let isClosingAfterCloudSync = false;
 let activeDbUserId = '';
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
+const AI_MODEL_DOWNLOADS = {
+  local_lite: {
+    label: 'Local AI Lite',
+    settingKey: 'ai_local_lite_model_path',
+    recommendedFile: 'qwen2.5-3b-instruct-q4.gguf',
+    downloadUrl: '',
+    filesUrl: ''
+  },
+  local_basic: {
+    label: 'Gemma 4 E2B Basic',
+    settingKey: 'ai_local_basic_model_path',
+    recommendedFile: 'gemma-4-E2B-it-Q4_K_M.gguf',
+    downloadUrl: 'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_M.gguf?download=true',
+    filesUrl: 'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/tree/main'
+  },
+  local_pro: {
+    label: 'Gemma 4 E4B Pro',
+    settingKey: 'ai_local_pro_model_path',
+    recommendedFile: 'gemma-4-E4B-it-Q4_K_M.gguf',
+    downloadUrl: 'https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q4_K_M.gguf?download=true',
+    filesUrl: 'https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/tree/main'
+  }
+};
+const AI_RUNTIME_DOWNLOAD_URL = 'https://github.com/ggml-org/llama.cpp/releases/latest';
+const OLLAMA_INSTALLER_URL = 'https://ollama.com/download/OllamaSetup.exe';
+const OLLAMA_MODELS = {
+  local_lite: 'qwen2.5:3b',
+  local_basic: 'gemma4:e2b',
+  local_pro: 'gemma4:e4b'
+};
 let updateState = {
   status: 'idle',
   version: app.getVersion(),
@@ -28,6 +58,340 @@ let updateState = {
   progress: 0,
   info: null,
 };
+
+function getAiModelDir() {
+  const dir = path.join(app.getPath('userData'), 'ai-models');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function getAiRuntimeDir() {
+  const dir = path.join(app.getPath('userData'), 'ai-runtime');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function findAiRuntimePath() {
+  const runtimeDir = getAiRuntimeDir();
+  const candidates = [
+    path.join(runtimeDir, 'llama-server.exe'),
+    path.join(runtimeDir, 'llama-cli.exe'),
+    path.join(runtimeDir, 'llama.exe')
+  ];
+  return candidates.find((candidate) => {
+    try { return fs.existsSync(candidate) && fs.statSync(candidate).isFile(); } catch { return false; }
+  }) || '';
+}
+
+function testAiRuntimePath(runtimePath) {
+  if (!runtimePath) return { ok: false, message: '실행 엔진 파일이 없습니다.' };
+  try {
+    const result = spawnSync(runtimePath, ['--version'], {
+      encoding: 'utf8',
+      timeout: 5000,
+      windowsHide: true
+    });
+    if (result.error) return { ok: false, message: result.error.message };
+    if (result.status === 0) return { ok: true, message: '실행 엔진 실행 테스트를 통과했습니다.' };
+    const detail = String(result.stderr || result.stdout || '').trim();
+    return { ok: false, message: detail || `실행 엔진 테스트가 종료 코드 ${result.status}로 끝났습니다.` };
+  } catch (err) {
+    return { ok: false, message: err.message };
+  }
+}
+
+function findOllamaPath() {
+  const candidates = [
+    path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Ollama', 'ollama.exe'),
+    path.join(process.env.ProgramFiles || '', 'Ollama', 'ollama.exe'),
+    path.join(process.env['ProgramFiles(x86)'] || '', 'Ollama', 'ollama.exe')
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    try { if (fs.existsSync(candidate)) return candidate; } catch {}
+  }
+  try {
+    const found = execSync('where.exe ollama', {
+      encoding: 'utf8',
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'ignore']
+    }).split(/\r?\n/).map((s) => s.trim()).find(Boolean);
+    if (found) return found;
+  } catch {}
+  return '';
+}
+
+function getOllamaModelForEngine(engine) {
+  return OLLAMA_MODELS[engine] || OLLAMA_MODELS.local_lite;
+}
+
+function isStudentSensitivePage(page) {
+  return /학생|상담|성적|출석|관찰|수업|상담 일지|성적관리|학생 명단|AI 분석/i.test(String(page || ''));
+}
+
+function anonymizeSensitiveText(text) {
+  let value = String(text || '');
+  value = value.replace(/01[016789]-?\d{3,4}-?\d{4}/g, '[전화번호]');
+  value = value.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[이메일]');
+  value = value.replace(/\b\d{6}-\d{7}\b/g, '[주민번호]');
+  value = value.replace(/\b\d{1,2}\s*학년\s*\d{1,2}\s*반\s*\d{1,2}\s*번\b/g, '[학년반번호]');
+  value = value.replace(/\b\d{1,2}\s*반\s*\d{1,2}\s*번\b/g, '[반번호]');
+  value = value.replace(/\b\d{4,6}\b/g, '[번호]');
+  value = value.replace(/([가-힣]{2,4})(?=\s*(학생|군|양|님|:|은|는|이|가|을|를|의))/g, '[학생]');
+  return value;
+}
+
+function pickContextValue(context, label) {
+  const escaped = String(label || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = String(context || '').match(new RegExp(`^${escaped}:\\s*(.*)$`, 'm'));
+  return match ? match[1].trim() : '';
+}
+
+function buildCounselingFollowUpFromContext(context, question) {
+  const ctx = String(context || '');
+  const q = String(question || '');
+  if (!/상담 페이지 저장 기록|상담기록/.test(ctx)) return '';
+  if (!/후속|조치|다음|어떻게|상담|면담|지도|관리|도와|해야|하나|계획|방안|방법|문제|갈등|관계/.test(q)) return '';
+  const student = pickContextValue(ctx, '학생') || pickContextValue(ctx, '질문 대상 학생') || '해당 학생';
+  const topic = pickContextValue(ctx, '주제') || '확인 필요';
+  const summary = pickContextValue(ctx, '요약') || pickContextValue(ctx, '상담 내용') || '확인 필요';
+  const risk = pickContextValue(ctx, '유형/상태/위험도').split('/').map((s) => s.trim()).pop() || '확인 필요';
+  const follow = pickContextValue(ctx, '기존 후속 조치') || '후속 조치 미기록';
+  const nextAction = pickContextValue(ctx, '다음 조치') || '';
+  const nextDate = pickContextValue(ctx, '후속 예정일') || '미지정';
+  const flags = pickContextValue(ctx, '위험 신호') || '없음';
+  return [
+    `${student} 학생의 현재 상담 기록 기준으로 정리하면 다음과 같습니다.`,
+    '',
+    `- 상담 주제: ${topic}`,
+    `- 핵심 요약: ${summary}`,
+    `- 현재 위험도: ${risk}`,
+    `- 기존 후속 조치: ${follow}`,
+    nextAction ? `- 다음 조치: ${nextAction}` : '- 다음 조치: 확인 필요',
+    `- 후속 예정일: ${nextDate}`,
+    `- 기록된 위험 신호: ${flags || '없음'}`,
+    '',
+    '권장 후속 조치:',
+    '1. 관련 학생을 각각 따로 상담하여 사실관계, 감정 상태, 원하는 해결 방향을 확인합니다.',
+    `2. ${student} 학생에게 2~3일 안에 짧은 재상담 시간을 잡아 관계 변화와 등교·수업 참여 상태를 확인합니다.`,
+    '3. 두 학생을 바로 대면시키기보다, 각각의 입장을 확인한 뒤 필요할 때만 중재 자리를 마련합니다.',
+    '4. 상담 기록에 다음 확인일과 담당 교사의 관찰 포인트를 구체적으로 남깁니다.',
+    '5. 갈등이 반복되거나 결석·정서 변화·폭력 징후가 보이면 보호자 또는 전문상담교사 연계를 검토합니다.',
+    '',
+    '확인 필요: 상담 기록에 없는 성적, 가정 상황, 심리 상태는 추측하지 않았습니다.'
+  ].join('\n');
+}
+
+function containsCjkChinese(text) {
+  return /[\u4e00-\u9fff]/.test(String(text || ''));
+}
+
+function requestOllamaJson(pathname, body = null, timeoutMs = 20000) {
+  return new Promise((resolve) => {
+    const data = body ? JSON.stringify(body) : '';
+    const req = http.request({
+      hostname: '127.0.0.1',
+      port: 11434,
+      path: pathname,
+      method: body ? 'POST' : 'GET',
+      timeout: timeoutMs,
+      headers: body ? {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(data)
+      } : {}
+    }, (res) => {
+      let raw = '';
+      res.on('data', (chunk) => { raw += chunk; });
+      res.on('end', () => {
+        try {
+          resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, statusCode: res.statusCode, data: raw ? JSON.parse(raw) : {} });
+        } catch (err) {
+          resolve({ ok: false, statusCode: res.statusCode, error: err.message, raw });
+        }
+      });
+    });
+    req.on('timeout', () => {
+      req.destroy(new Error('Ollama 응답 시간이 초과되었습니다.'));
+    });
+    req.on('error', (err) => resolve({ ok: false, error: err.message }));
+    if (data) req.write(data);
+    req.end();
+  });
+}
+
+async function getOllamaStatus(engine = 'local_lite') {
+  const ollamaPath = findOllamaPath();
+  const model = getOllamaModelForEngine(engine);
+  if (!ollamaPath) {
+    return {
+      installed: false,
+      running: false,
+      modelInstalled: false,
+      ready: false,
+      model,
+      message: 'Ollama가 설치되어 있지 않습니다. 로컬 AI 자동 설치를 눌러 주세요.'
+    };
+  }
+  const tags = await requestOllamaJson('/api/tags', null, 5000);
+  const running = !!tags.ok;
+  const models = Array.isArray(tags.data?.models) ? tags.data.models : [];
+  const modelInstalled = models.some((item) => item.name === model || item.model === model || String(item.name || item.model || '').startsWith(`${model}:`));
+  return {
+    installed: true,
+    running,
+    modelInstalled,
+    ready: running && modelInstalled,
+    path: ollamaPath,
+    model,
+    message: !running
+      ? 'Ollama는 설치되어 있지만 아직 실행 중이 아닙니다. 자동 설치/확인을 누르면 실행을 시도합니다.'
+      : modelInstalled
+        ? `${model} 모델이 준비되어 있습니다. 로컬 AI는 외부 전송 없이 이 PC에서 실행됩니다.`
+        : `${model} 모델이 아직 없습니다. 자동 설치/확인을 누르면 모델을 다운로드합니다.`
+  };
+}
+
+function startOllamaServer(ollamaPath) {
+  if (!ollamaPath) return;
+  try {
+    const child = spawn(ollamaPath, ['serve'], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true
+    });
+    child.unref();
+  } catch {}
+}
+
+function downloadFile(url, destination, onProgress) {
+  return new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(destination);
+    const handle = (currentUrl) => {
+      httpsGet(currentUrl, (res) => {
+        if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
+          res.resume();
+          handle(new URL(res.headers.location, currentUrl).toString());
+          return;
+        }
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          res.resume();
+          reject(new Error(`다운로드 실패: HTTP ${res.statusCode}`));
+          return;
+        }
+        const total = Number(res.headers['content-length'] || 0);
+        let received = 0;
+        res.on('data', (chunk) => {
+          received += chunk.length;
+          if (total && onProgress) onProgress({ received, total, percent: Math.min(99, Math.round((received / total) * 100)) });
+        });
+        res.pipe(file);
+        file.on('finish', () => file.close(resolve));
+      }).on('error', reject);
+    };
+    handle(url);
+  });
+}
+
+function httpsGet(url, callback) {
+  return require(url.startsWith('https:') ? 'https' : 'http').get(url, callback);
+}
+
+function runCommand(command, args, options = {}) {
+  return new Promise((resolve) => {
+    const onData = options.onData;
+    const spawnOptions = Object.assign({}, options);
+    delete spawnOptions.onData;
+    const child = spawn(command, args, {
+      windowsHide: true,
+      ...spawnOptions
+    });
+    let output = '';
+    const handleData = (data) => {
+      const text = data.toString();
+      output += text;
+      if (onData) onData(text);
+    };
+    child.stdout?.on('data', handleData);
+    child.stderr?.on('data', handleData);
+    child.on('error', (err) => resolve({ ok: false, error: err.message, output }));
+    child.on('close', (code) => resolve({ ok: code === 0, code, output }));
+  });
+}
+
+async function waitForOllamaReady(ollamaPath, timeoutMs = 45000) {
+  startOllamaServer(ollamaPath);
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const tags = await requestOllamaJson('/api/tags', null, 3000);
+    if (tags.ok) return true;
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+  return false;
+}
+
+async function getAiEngineStatus(engine) {
+  const selectedEngine = engine || db.getSetting('ai_engine', 'local_lite');
+  const modelDir = getAiModelDir();
+  const runtimeDir = getAiRuntimeDir();
+  if (selectedEngine === 'cloud' || selectedEngine === 'claude' || selectedEngine === 'gemini') {
+    const provider = selectedEngine === 'cloud' ? db.getSetting('ai_provider', 'claude') : selectedEngine;
+    const label = provider === 'gemini' ? 'Gemini 외부 AI' : 'Claude 외부 AI';
+    const hasKey = !!db.getSetting('ai_api_key', '');
+    return {
+      engine: selectedEngine,
+      provider,
+      ready: hasKey,
+      label,
+      message: hasKey ? `${label} API 키가 설정되어 있습니다. 입력 내용은 외부 AI 서버로 전송될 수 있습니다.` : `${label}를 쓰려면 API 키가 필요합니다.`,
+      modelDir,
+      runtimeDir
+    };
+  }
+  const meta = AI_MODEL_DOWNLOADS[selectedEngine];
+  if (!meta) return { engine: selectedEngine, ready: false, label: selectedEngine, message: '알 수 없는 AI 엔진입니다.', modelDir, runtimeDir };
+  const ollamaStatus = await getOllamaStatus(selectedEngine);
+  return {
+    engine: selectedEngine,
+    ready: ollamaStatus.ready,
+    label: `${meta.label} · Ollama`,
+    model: ollamaStatus.model,
+    ollamaPath: ollamaStatus.path || '',
+    ollamaInstalled: ollamaStatus.installed,
+    ollamaRunning: ollamaStatus.running,
+    ollamaModelInstalled: ollamaStatus.modelInstalled,
+    modelDir,
+    runtimeDir,
+    message: ollamaStatus.message
+  };
+/*
+  const configuredPath = db.getSetting(meta.settingKey, '');
+  const candidates = [
+    configuredPath,
+    path.join(modelDir, meta.recommendedFile)
+  ].filter(Boolean);
+  const foundPath = candidates.find((candidate) => {
+    try { return fs.existsSync(candidate) && fs.statSync(candidate).isFile(); } catch { return false; }
+  }) || '';
+  const runtimePath = findAiRuntimePath();
+  let message = `${meta.recommendedFile} 모델 파일을 선택하거나 ai-models 폴더에 넣어 주세요.`;
+  if (foundPath && !runtimePath) {
+    message = `모델 파일은 준비됐지만 실행 엔진(llama.cpp)이 아직 없습니다. ai-runtime 폴더에 llama-server.exe 또는 llama-cli.exe를 넣어 주세요.`;
+  } else if (foundPath && runtimePath) {
+    message = `모델과 실행 엔진이 준비되어 있습니다: ${path.basename(foundPath)} / ${path.basename(runtimePath)}`;
+  }
+  return {
+    engine: selectedEngine,
+    ready: !!foundPath && !!runtimePath,
+    label: meta.label,
+    modelPath: foundPath || configuredPath,
+    runtimePath,
+    modelDir,
+    runtimeDir,
+    downloadUrl: meta.downloadUrl,
+    runtimeDownloadUrl: AI_RUNTIME_DOWNLOAD_URL,
+    message
+  };
+*/
+}
 
 function setUpdateState(next) {
   updateState = Object.assign({}, updateState, next || {});
@@ -426,6 +790,171 @@ ipcMain.handle('switch-user-database', (e, uid, options = {}) => {
 ipcMain.handle('get-setting', (e, key, def) => db.getSetting(key, def));
 ipcMain.handle('set-setting', (e, key, val) => db.setSetting(key, val));
 ipcMain.handle('get-all-settings', () => db.getAllSettings());
+ipcMain.handle('get-ai-engine-status', async (e, engine) => {
+  try {
+    return await getAiEngineStatus(engine);
+  } catch (err) {
+    return { ready: false, error: err.message };
+  }
+});
+ipcMain.handle('select-ai-model-file', async (e, engine) => {
+  try {
+    const meta = AI_MODEL_DOWNLOADS[engine];
+    if (!meta) return { error: '로컬 AI 엔진을 먼저 선택해 주세요.' };
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: `${meta.label} 모델 파일 선택`,
+      properties: ['openFile'],
+      filters: [
+        { name: 'GGUF Model', extensions: ['gguf'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    });
+    if (result.canceled || !result.filePaths?.[0]) return { cancelled: true };
+    db.setSetting(meta.settingKey, result.filePaths[0]);
+    return await getAiEngineStatus(engine);
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+ipcMain.handle('open-ai-model-folder', () => {
+  try {
+    return shell.openPath(getAiModelDir());
+  } catch (err) {
+    return err.message;
+  }
+});
+ipcMain.handle('open-ai-runtime-folder', () => {
+  try {
+    return shell.openPath(getAiRuntimeDir());
+  } catch (err) {
+    return err.message;
+  }
+});
+ipcMain.handle('open-ai-model-download', (e, engine) => {
+  const meta = AI_MODEL_DOWNLOADS[engine] || AI_MODEL_DOWNLOADS.local_basic;
+  return shell.openExternal(meta.downloadUrl);
+});
+ipcMain.handle('open-ai-runtime-download', () => shell.openExternal(AI_RUNTIME_DOWNLOAD_URL));
+ipcMain.handle('install-ollama-ai', async (e, engine = 'local_lite') => {
+  const sendProgress = (payload) => {
+    try {
+      e.sender.send('ollama-install-progress', Object.assign({
+        step: '',
+        message: '',
+        percent: null,
+        detail: ''
+      }, payload || {}));
+    } catch {}
+  };
+  try {
+    const targetEngine = AI_MODEL_DOWNLOADS[engine] ? engine : 'local_lite';
+    const model = getOllamaModelForEngine(targetEngine);
+    sendProgress({ step: 'check', percent: 5, message: 'Ollama 설치 여부를 확인하는 중입니다.' });
+    let ollamaPath = findOllamaPath();
+
+    if (!ollamaPath) {
+      const installerPath = path.join(app.getPath('temp'), 'OllamaSetup.exe');
+      sendProgress({ step: 'download-installer', percent: 10, message: 'Ollama 설치 파일을 다운로드하는 중입니다.' });
+      await downloadFile(OLLAMA_INSTALLER_URL, installerPath, (progress) => {
+        sendProgress({
+          step: 'download-installer',
+          percent: Math.max(10, Math.min(35, Math.round(10 + (progress.percent * 0.25)))),
+          message: `Ollama 설치 파일 다운로드 중... ${progress.percent}%`
+        });
+      });
+      sendProgress({ step: 'run-installer', percent: 40, message: 'Ollama 설치 파일을 실행했습니다. 설치 창을 완료해 주세요.' });
+      shell.openPath(installerPath);
+      return {
+        success: false,
+        needsUserAction: true,
+        message: 'Ollama 설치 파일을 실행했습니다. 설치 창에서 설치를 완료한 뒤 다시 "로컬 AI 자동 설치/확인"을 눌러 주세요.'
+      };
+    }
+
+    sendProgress({ step: 'start', percent: 20, message: 'Ollama를 실행하고 응답을 기다리는 중입니다.' });
+    const serverReady = await waitForOllamaReady(ollamaPath);
+    if (!serverReady) {
+      return {
+        success: false,
+        message: 'Ollama를 실행하지 못했습니다. Windows 트레이에서 Ollama가 실행 중인지 확인한 뒤 다시 시도해 주세요.'
+      };
+    }
+
+    sendProgress({ step: 'model-check', percent: 35, message: `${model} 모델 설치 여부를 확인하는 중입니다.` });
+    const before = await getOllamaStatus(targetEngine);
+    if (!before.modelInstalled) {
+      sendProgress({ step: 'model-download', percent: 40, message: `${model} 모델을 다운로드하는 중입니다. 처음에는 오래 걸릴 수 있습니다.` });
+      let lastProgressAt = 0;
+      const pulled = await runCommand(ollamaPath, ['pull', model], {
+        timeout: 60 * 60 * 1000,
+        onData: (text) => {
+          const compact = text.replace(/\u001b\[[0-9;]*m/g, '').replace(/\r/g, '\n').split('\n').map((line) => line.trim()).filter(Boolean).slice(-1)[0] || '';
+          const match = compact.match(/(\d{1,3})%/);
+          const now = Date.now();
+          if (now - lastProgressAt < 700 && !match) return;
+          lastProgressAt = now;
+          const pullPercent = match ? Math.min(100, Number(match[1])) : null;
+          sendProgress({
+            step: 'model-download',
+            percent: pullPercent == null ? 45 : Math.round(40 + (pullPercent * 0.45)),
+            message: pullPercent == null ? `${model} 모델 다운로드 중...` : `${model} 모델 다운로드 중... ${pullPercent}%`,
+            detail: compact
+          });
+        }
+      });
+      if (!pulled.ok) {
+        return {
+          success: false,
+          message: `모델 다운로드에 실패했습니다. 인터넷 연결을 확인해 주세요.\n${pulled.error || pulled.output || ''}`
+        };
+      }
+    }
+
+    sendProgress({ step: 'test', percent: 90, message: '로컬 AI가 실제로 답변하는지 테스트하는 중입니다.' });
+    const test = await requestOllamaJson('/api/generate', {
+      model,
+      prompt: '한국어로 짧게 "로컬 AI 준비 완료"라고 답하세요.',
+      stream: false
+    }, 60000);
+    if (!test.ok) {
+      return {
+        success: false,
+        message: `모델은 준비됐지만 테스트 호출에 실패했습니다. ${test.error || test.raw || ''}`
+      };
+    }
+
+    db.setSetting('ai_engine', targetEngine);
+    db.setSetting('ai_ollama_model', model);
+    sendProgress({ step: 'done', percent: 100, message: '로컬 AI 준비가 완료되었습니다.' });
+    return {
+      success: true,
+      message: `${model} 로컬 AI 준비가 완료되었습니다. 입력 내용은 외부 서버로 전송되지 않습니다.`,
+      status: await getOllamaStatus(targetEngine)
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+ipcMain.handle('apply-ai-engine', async (e, engine) => {
+  try {
+    if (engine) db.setSetting('ai_engine', engine);
+    const status = await getAiEngineStatus(engine);
+    if (!status.ready) return Object.assign({}, status, { applied: false });
+    if (status.runtimePath) {
+      const runtimeCheck = testAiRuntimePath(status.runtimePath);
+      if (!runtimeCheck.ok) {
+        return Object.assign({}, status, {
+          ready: false,
+          applied: false,
+          message: `실행 엔진 파일은 찾았지만 실행 테스트에 실패했습니다. ${runtimeCheck.message}`
+        });
+      }
+    }
+    return Object.assign({}, status, { applied: true, message: `${status.label} 엔진을 사용할 준비가 되었습니다.` });
+  } catch (err) {
+    return { ready: false, applied: false, error: err.message };
+  }
+});
 ipcMain.handle('export-backup', async () => {
   try {
     const defaultName = `teacher_app_backup_${formatFileTimestamp(new Date())}.db`;
@@ -887,6 +1416,83 @@ ipcMain.handle('ai-generate-official-doc', async (e, apiKey, model, provider, in
     const options = { system, userPrompt, maxTokens: 2048 };
     if (provider === 'gemini') return await runGemini(apiKey, model, '', options);
     return await runClaude(apiKey, model, '', options);
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('ai-assistant-chat', async (e, payload = {}) => {
+  try {
+    const apiKey = String(payload.apiKey || '');
+    const provider = String(payload.provider || 'claude');
+    const model = String(payload.model || '');
+    const page = String(payload.page || '현재 페이지');
+    const sensitive = !!payload.sensitive || isStudentSensitivePage(page);
+    const question = sensitive ? anonymizeSensitiveText(payload.question || '') : String(payload.question || '');
+    const context = sensitive ? anonymizeSensitiveText(payload.context || '') : String(payload.context || '');
+    if (!apiKey || !question) return { error: 'AI 설정 또는 질문이 비어 있습니다.' };
+    const directCounselingAnswer = buildCounselingFollowUpFromContext(context, question);
+    if (directCounselingAnswer) return { result: directCounselingAnswer };
+    const options = {
+      system: [
+        '당신은 교사 업무 관리 앱 안의 AI 도우미입니다.',
+        '사용자는 교사이며, 학생 상담/공문/시간표/할일/학사 업무를 빠르게 처리하려고 합니다.',
+        sensitive ? '입력 내용은 외부 전송 전 익명화되었습니다. 실제 이름, 번호, 연락처를 추정하거나 복원하지 마세요.' : '',
+        '학생 상담과 개인정보는 매우 민감하므로 단정적 진단, 의료적 판단, 낙인 표현을 피하고 학교 절차와 교사의 최종 판단을 존중하세요.',
+        '한국어로 짧고 실무적으로 답하세요.'
+      ].filter(Boolean).join('\n'),
+      userPrompt: `현재 페이지: ${page}\n\n${context ? `앱에 저장된 관련 맥락:\n${context}\n\n` : ''}사용자 질문:\n${question}`,
+      maxTokens: 1200
+    };
+    if (provider === 'gemini') return await runGemini(apiKey, model || 'gemini-2.5-flash', '', options);
+    return await runClaude(apiKey, model || 'claude-haiku-4-5', '', options);
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('ai-local-chat', async (e, payload = {}) => {
+  try {
+    const engine = String(payload.engine || db.getSetting('ai_engine', 'local_lite'));
+    const model = getOllamaModelForEngine(engine);
+    const question = String(payload.question || '').trim();
+    const context = String(payload.context || '').trim();
+    const page = String(payload.page || '현재 페이지');
+    if (!question) return { error: '질문이 비어 있습니다.' };
+    const directCounselingAnswer = buildCounselingFollowUpFromContext(context, question);
+    if (directCounselingAnswer) return { result: directCounselingAnswer };
+    const status = await getOllamaStatus(engine);
+    if (!status.ready) return { error: status.message || '로컬 AI가 아직 준비되지 않았습니다.' };
+    const buildPrompt = (retryText = '') => [
+        '당신은 교사 업무 관리 앱 안의 로컬 AI 도우미입니다.',
+        '반드시 한국어로만 답하세요. 중국어, 일본어, 영어 문장을 섞지 마세요.',
+        '학생을 부를 때는 "同学" 같은 중국어 표현을 절대 쓰지 말고 "학생" 또는 "해당 학생"이라고 쓰세요.',
+        '학생 상담, 성적, 개인정보는 민감하므로 외부 전송 없이 로컬에서만 답합니다.',
+        context ? '아래 앱 저장 기록을 최우선 근거로 사용하세요. 기록에 없는 사실은 만들지 마세요.' : '',
+        '짧고 빠르게 답하세요. 기본 답변은 500자 이내로 제한합니다.',
+        '의학적 진단, 낙인 표현, 단정적 판단을 피하고 교사가 활용할 수 있는 실무 문장으로 도와주세요.',
+        `현재 페이지: ${page}`,
+        '',
+        context ? `앱에 저장된 관련 맥락:\n${context}\n` : '',
+        retryText ? `이전 답변에 한국어가 아닌 문자가 섞였습니다. 아래 질문에 대해 다시 한국어로만 답하세요.\n${retryText}` : `사용자 질문: ${question}`
+      ].join('\n');
+    const runLocal = (prompt) => requestOllamaJson('/api/generate', {
+      model,
+      stream: false,
+      prompt,
+      options: {
+        temperature: 0.2,
+        num_predict: context ? 760 : 420
+      }
+    }, 120000);
+    let result = await runLocal(buildPrompt());
+    if (!result.ok) return { error: result.error || result.raw || 'Ollama 호출에 실패했습니다.' };
+    let answer = result.data?.response || '';
+    if (containsCjkChinese(answer)) {
+      const retry = await runLocal(buildPrompt(`질문: ${question}\n\n금지: 중국어 한자 표현, 同学, 您, 请, 成绩报告 같은 중국어 표현`));
+      if (retry.ok && retry.data?.response) answer = retry.data.response;
+    }
+    return { result: answer };
   } catch (err) {
     return { error: err.message };
   }

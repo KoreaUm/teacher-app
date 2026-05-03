@@ -50,6 +50,7 @@
             <span id="opacity-lbl" style="font-size:12px;font-weight:600;color:var(--accent);width:34px;text-align:right">100%</span>
           </div>
         </div>
+        <button id="ai-helper-btn" class="topbar-btn ai-helper-open" title="AI 도우미">AI 도우미</button>
         <div class="vdiv"></div>
         <span id="header-date"></span>
       </div>
@@ -58,6 +59,28 @@
     <main id="page-content"></main>
   </div>
 </div>
+
+<aside id="ai-helper-panel" class="ai-helper-panel" aria-hidden="true">
+  <div class="ai-helper-head">
+    <div>
+      <div class="ai-helper-kicker">AI Assistant</div>
+      <strong>AI 도우미</strong>
+    </div>
+    <button id="ai-helper-close" class="ai-helper-close" title="닫기">×</button>
+  </div>
+  <div id="ai-helper-status" class="ai-helper-status">AI 상태를 확인하는 중...</div>
+  <div id="ai-helper-messages" class="ai-helper-messages"></div>
+  <div class="ai-helper-suggestions">
+    <button data-ai-prompt="현재 페이지에서 무엇을 도와줄 수 있어?">이 페이지 도움</button>
+    <button data-ai-prompt="상담 기록을 더 전문적으로 쓰는 방법을 알려줘.">상담 기록 팁</button>
+    <button data-ai-prompt="후속 조치 문장을 예시로 만들어줘.">후속 조치 예시</button>
+  </div>
+  <div class="ai-helper-input-row">
+    <textarea id="ai-helper-input" placeholder="무엇이든 물어보세요. 예: 이 상담 내용을 요약해줘"></textarea>
+    <button id="ai-helper-send" class="btn btn-primary btn-sm">전송</button>
+  </div>
+</aside>
+<div id="ai-helper-backdrop" class="ai-helper-backdrop"></div>
 
 <script>
 (function () {
@@ -2164,6 +2187,192 @@
     }).catch(function () {});
   }
 
+  function getCurrentPageLabel() {
+    if (currentPage === "dashboard") return "대시보드";
+    var page = getMenuPageOptions().find(function (item) { return item.key === currentPage; });
+    return page ? page.label : currentPage;
+  }
+
+  function escapeAiHtml(value) {
+    return String(value == null ? "" : value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function buildRuleBasedAiReply(question, settings) {
+    var page = getCurrentPageLabel();
+    var q = String(question || "");
+    if (/상담|학생|후속|위기/.test(q) || currentPage === "counseling") {
+      return [
+        "현재 " + page + " 맥락에서는 상담 기록을 이렇게 도와드릴 수 있습니다.",
+        "",
+        "1. 학생 발화, 교사 관찰, 합의한 행동, 후속 확인일로 나누어 적어 보세요.",
+        "2. 위험 신호가 있으면 앱 기록만으로 끝내지 말고 학교 절차에 따라 관리자/전문상담교사/보호자 연계를 검토해야 합니다.",
+        "3. 후속 조치는 '언제, 누가, 무엇을 확인할지'가 보이게 쓰는 것이 좋습니다.",
+        "",
+        "예시: 다음 주 금요일까지 수업 참여 변화와 과제 제출 여부를 확인하고, 변화가 없을 경우 보호자 상담을 진행한다."
+      ].join("\n");
+    }
+    if (/공문|문서|제목|붙임/.test(q) || currentPage === "official_document") {
+      return "공문은 제목을 먼저 간결하게 잡고, 본문은 '관련', '주요 내용', '협조/보고/제출 사항', '붙임' 순서로 정리하면 안정적입니다.";
+    }
+    if (/시간표|할일|캘린더|일정/.test(q)) {
+      return "시간표·할일·캘린더는 반복 업무를 줄이는 쪽으로 도와드릴 수 있습니다. 날짜, 대상, 기한, 반복 여부가 빠졌는지 먼저 확인해 보세요.";
+    }
+    if (settings.ai_engine === "local_lite" || settings.ai_engine === "local_basic" || settings.ai_engine === "local_pro" || settings.ai_engine === "rule") {
+      return "로컬 AI가 선택되어 있습니다. 로컬 AI는 내 PC에서만 실행되므로 외부 전송이 없습니다. 모델과 실행 엔진 연결이 완료되면 이 자리에서 답변을 생성합니다.";
+    }
+    return "현재 페이지는 " + page + "입니다. 페이지 사용법 안내, 기록 문장 다듬기, 체크리스트 만들기, 후속 조치 예시를 도와드릴 수 있습니다.";
+  }
+
+  function addAiMessage(role, text) {
+    var box = document.getElementById("ai-helper-messages");
+    if (!box) return;
+    var item = document.createElement("div");
+    item.className = "ai-helper-msg " + role;
+    item.innerHTML = "<div>" + escapeAiHtml(text).replace(/\n/g, "<br>") + "</div>";
+    box.appendChild(item);
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function refreshAiHelperStatus() {
+    var status = document.getElementById("ai-helper-status");
+    if (!status) return Promise.resolve({});
+    return api.getAllSettings().then(function (settings) {
+      var engine = settings.ai_engine || "local_lite";
+      if (engine === "local_lite") status.textContent = "Local AI Lite · 빠른 응답 · 학생/상담 기본 로컬 AI";
+      else if (engine === "local_basic") status.textContent = "Local AI Basic · Gemma 4 E2B 권장 · 모델 연결 준비 중";
+      else if (engine === "local_pro") status.textContent = "Local AI Pro · Gemma 4 E4B 권장 · 16GB RAM 이상 권장";
+      else if (engine === "gemini") status.textContent = "Gemini 외부 AI · 입력 내용 외부 전송 가능 · 민감정보 주의";
+      else if (engine === "claude" || engine === "cloud") status.textContent = "Claude 외부 AI · 입력 내용 외부 전송 가능 · 민감정보 주의";
+      else status.textContent = "Local AI · 외부 전송 없음";
+      return settings;
+    });
+  }
+
+  function openAiHelper(seedPrompt) {
+    var panel = document.getElementById("ai-helper-panel");
+    var backdrop = document.getElementById("ai-helper-backdrop");
+    if (!panel || !backdrop) return;
+    panel.classList.add("open");
+    backdrop.classList.add("open");
+    panel.setAttribute("aria-hidden", "false");
+    refreshAiHelperStatus().then(function () {
+      var messages = document.getElementById("ai-helper-messages");
+      if (messages && !messages.children.length) {
+        addAiMessage("assistant", "저는 모든 페이지에서 열리는 AI 도우미입니다. 현재 페이지는 " + getCurrentPageLabel() + "입니다. 무엇을 도와드릴까요?");
+      }
+      if (seedPrompt) {
+        var input = document.getElementById("ai-helper-input");
+        if (input) input.value = seedPrompt;
+      }
+    });
+  }
+
+  function closeAiHelper() {
+    var panel = document.getElementById("ai-helper-panel");
+    var backdrop = document.getElementById("ai-helper-backdrop");
+    if (panel) {
+      panel.classList.remove("open");
+      panel.setAttribute("aria-hidden", "true");
+    }
+    if (backdrop) backdrop.classList.remove("open");
+  }
+
+  function sendAiHelperMessage() {
+    var input = document.getElementById("ai-helper-input");
+    if (!input) return;
+    var question = input.value.trim();
+    if (!question) return;
+    input.value = "";
+    addAiMessage("user", question);
+    addAiMessage("assistant", "생각하는 중...");
+    var box = document.getElementById("ai-helper-messages");
+    var pending = box ? box.lastElementChild : null;
+    var pageContext = "";
+    var directAnswer = "";
+    try {
+      if (typeof window.appGetAiPageContext === "function") {
+        pageContext = window.appGetAiPageContext(question) || "";
+      }
+      if (typeof window.appGetAiDirectAnswer === "function") {
+        directAnswer = window.appGetAiDirectAnswer(question) || "";
+      }
+    } catch (error) {
+      pageContext = "";
+      directAnswer = "";
+    }
+    if (directAnswer) {
+      if (pending) pending.querySelector("div").innerHTML = escapeAiHtml(directAnswer).replace(/\n/g, "<br>");
+      return;
+    }
+    api.getAllSettings().then(function (settings) {
+      var externalProvider = settings.ai_engine === "gemini" ? "gemini" : ((settings.ai_engine === "claude" || settings.ai_engine === "cloud") ? "claude" : "");
+      var sensitivePage = /학생|상담|성적|출석|관찰|수업|AI 분석/.test(getCurrentPageLabel() || "") || currentPage === "counseling" || currentPage === "students" || currentPage === "grades";
+      var localEngine = (settings.ai_engine === "local_lite" || settings.ai_engine === "local_basic" || settings.ai_engine === "local_pro") ? settings.ai_engine : "";
+      if (sensitivePage && !localEngine) localEngine = "local_lite";
+      if (localEngine && api.aiLocalChat) {
+        return api.aiLocalChat({
+          engine: localEngine,
+          page: getCurrentPageLabel(),
+          question: question,
+          context: pageContext
+        }).then(function (result) {
+          return result && result.result ? result.result : buildRuleBasedAiReply(question, settings);
+        }).catch(function () {
+          return "로컬 AI 호출에 실패했습니다. 로컬 안내 문장으로 대신 안내합니다.\n\n" + buildRuleBasedAiReply(question, settings);
+        });
+      }
+      if (externalProvider && settings.ai_api_key && api.aiAssistantChat) {
+        return api.aiAssistantChat({
+          provider: externalProvider,
+          model: settings.ai_model || "",
+          apiKey: settings.ai_api_key,
+          page: getCurrentPageLabel(),
+          question: question,
+          context: pageContext,
+          sensitive: sensitivePage
+        }).then(function (result) {
+          return result && result.result ? result.result : buildRuleBasedAiReply(question, settings);
+        }).catch(function () {
+          return "외부 AI 호출에 실패했습니다. 로컬 안내 문장으로 대신 안내합니다.\n\n" + buildRuleBasedAiReply(question, settings);
+        });
+      }
+      return buildRuleBasedAiReply(question, settings);
+    }).then(function (answer) {
+      if (pending) pending.querySelector("div").innerHTML = escapeAiHtml(answer).replace(/\n/g, "<br>");
+    });
+  }
+
+  function initAiHelper() {
+    var openBtn = document.getElementById("ai-helper-btn");
+    var closeBtn = document.getElementById("ai-helper-close");
+    var backdrop = document.getElementById("ai-helper-backdrop");
+    var sendBtn = document.getElementById("ai-helper-send");
+    var input = document.getElementById("ai-helper-input");
+    if (openBtn) openBtn.addEventListener("click", function () { openAiHelper(); });
+    if (closeBtn) closeBtn.addEventListener("click", closeAiHelper);
+    if (backdrop) backdrop.addEventListener("click", closeAiHelper);
+    if (sendBtn) sendBtn.addEventListener("click", sendAiHelperMessage);
+    if (input) {
+      input.addEventListener("keydown", function (event) {
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          sendAiHelperMessage();
+        }
+      });
+    }
+    document.querySelectorAll("[data-ai-prompt]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        openAiHelper(button.getAttribute("data-ai-prompt"));
+      });
+    });
+    window.openAiHelper = openAiHelper;
+  }
+
   window.reloadTopNavigation = function () {
     return api.getSetting("menu_groups_config", "").then(function (raw) {
       menuGroups = parseMenuGroups(raw);
@@ -2336,6 +2545,7 @@
       initWidgetButton();
       initEditButton();
       initOpacityPanel();
+      initAiHelper();
       updateDate();
       setInterval(updateDate, 60000);
       return initAuthGate();

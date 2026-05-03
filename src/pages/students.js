@@ -4,6 +4,7 @@ async function render(c){
   <div class="page-header"><h1 class="page-header-title">👥 학생 명단</h1>
     <div class="page-header-actions">
       <input type="text" id="st-search" class="input" placeholder="이름 검색..." style="width:180px">
+      <button class="btn btn-secondary" id="st-template-btn">CSV 양식 다운로드</button>
       <button class="btn btn-secondary" id="st-csv-btn">📥 CSV 가져오기</button>
       <input type="file" id="st-csv-input" accept=".csv" style="display:none">
       <button class="btn btn-primary" id="st-add-btn">+ 학생 추가</button>
@@ -16,6 +17,7 @@ async function init(){
   await refresh();
   document.getElementById('st-search').oninput=e=>refresh(e.target.value);
   document.getElementById('st-add-btn').onclick=()=>showStudentModal(null);
+  document.getElementById('st-template-btn').onclick=downloadStudentTemplate;
   document.getElementById('st-csv-btn').onclick=()=>document.getElementById('st-csv-input').click();
   document.getElementById('st-csv-input').onchange=e=>importCSV(e.target.files[0]);
 }
@@ -74,14 +76,52 @@ function showStudentModal(s){
 }
 async function importCSV(file){
   if(!file)return;
-  const text=await file.text();const lines=text.split('\n').filter(l=>l.trim());const rows=[];
+  const input=document.getElementById('st-csv-input');
+  const text=await file.text();const lines=parseCSV(text).filter(row=>row.some(cell=>String(cell||'').trim()));const rows=[];
   for(let i=1;i<lines.length;i++){
-    const cols=lines[i].split(',').map(c=>c.trim().replace(/^"|"$/g,''));
+    const cols=lines[i].map(c=>String(c||'').trim());
     if(cols.length<2)continue;
     rows.push({number:parseInt(cols[0])||i,name:cols[1]||'',gender:cols[2]||'',birth_date:cols[3]||'',phone:cols[4]||'',parent_phone:cols[5]||'',address:cols[6]||'',note:cols[7]||''});
   }
+  if(input)input.value='';
   if(!rows.length){toast('CSV 파일을 확인하세요','error');return;}
   if(confirm(`학생 ${rows.length}명을 가져오시겠습니까?`)){await api.importStudentsCSV(rows);toast(`${rows.length}명 완료`,'success');refresh();}
+}
+function downloadStudentTemplate(){
+  downloadCSV('학생명단_양식.csv', [
+    ['번호','이름','성별','생년월일','학생전화','학부모전화','주소','메모'],
+    ['1','홍길동','남','2010-03-15','010-1234-5678','010-2345-6789','충북 충주시 ○○로 1','상담 시 참고할 메모'],
+    ['2','김하늘','여','2010-07-22','010-3456-7890','010-4567-8901','충북 충주시 △△길 2','']
+  ]);
+}
+function downloadCSV(filename, rows){
+  const csv=rows.map(row=>row.map(cell=>`"${String(cell??'').replace(/"/g,'""')}"`).join(',')).join('\r\n');
+  const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download=filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+function parseCSV(text){
+  const rows=[];let row=[];let cell='';let quoted=false;
+  for(let i=0;i<String(text||'').length;i++){
+    const ch=text[i];const next=text[i+1];
+    if(ch==='"'){
+      if(quoted&&next==='"'){cell+='"';i++;}
+      else quoted=!quoted;
+    }else if(ch===','&&!quoted){
+      row.push(cell);cell='';
+    }else if((ch==='\n'||ch==='\r')&&!quoted){
+      if(ch==='\r'&&next==='\n')i++;
+      row.push(cell);rows.push(row);row=[];cell='';
+    }else{
+      cell+=ch;
+    }
+  }
+  if(cell||row.length){row.push(cell);rows.push(row);}
+  return rows;
 }
 window.registerPage('students',{render,init,refresh:()=>refresh()});
 })();

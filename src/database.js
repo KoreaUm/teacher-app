@@ -168,12 +168,35 @@ class AppDatabase {
       );
     `);
     this._ensureTodoCalendarColumn();
+    this._ensureCounselingColumns();
   }
 
   _ensureTodoCalendarColumn() {
     try {
       this.db.exec('ALTER TABLE todos ADD COLUMN gcal_event_id TEXT');
     } catch (_) {}
+  }
+
+  _ensureCounselingColumns() {
+    const columns = {
+      topic: "TEXT DEFAULT ''",
+      teacher_role: "TEXT DEFAULT '담임교사'",
+      domain: "TEXT DEFAULT ''",
+      summary: "TEXT DEFAULT ''",
+      mood: "TEXT DEFAULT ''",
+      risk_level: "TEXT DEFAULT '낮음'",
+      risk_flags: "TEXT DEFAULT ''",
+      next_action: "TEXT DEFAULT ''",
+      next_date: "TEXT DEFAULT ''",
+      status: "TEXT DEFAULT '진행'",
+      confidential_note: "TEXT DEFAULT ''",
+      updated_at: "TEXT DEFAULT ''"
+    };
+    Object.keys(columns).forEach((name) => {
+      try {
+        this.db.exec(`ALTER TABLE counseling ADD COLUMN ${name} ${columns[name]}`);
+      } catch (_) {}
+    });
   }
 
   getPath() {
@@ -315,6 +338,7 @@ class AppDatabase {
   }
 
   getCounseling(filter = {}) {
+    this._ensureCounselingColumns();
     let query = 'SELECT c.*, s.name, s.number FROM counseling c LEFT JOIN students s ON c.student_id=s.id WHERE 1=1';
     const params = [];
     if (filter.student_id) {
@@ -329,21 +353,86 @@ class AppDatabase {
       query += ' AND c.date<=?';
       params.push(filter.date_to);
     }
-    query += ' ORDER BY c.date DESC';
+    if (filter.status) {
+      query += ' AND c.status=?';
+      params.push(filter.status);
+    }
+    if (filter.teacher_role) {
+      query += ' AND c.teacher_role=?';
+      params.push(filter.teacher_role);
+    }
+    if (filter.domain) {
+      query += ' AND c.domain=?';
+      params.push(filter.domain);
+    }
+    if (filter.risk_level) {
+      query += ' AND c.risk_level=?';
+      params.push(filter.risk_level);
+    }
+    if (filter.search) {
+      query += ' AND (s.name LIKE ? OR c.type LIKE ? OR c.teacher_role LIKE ? OR c.domain LIKE ? OR c.topic LIKE ? OR c.content LIKE ? OR c.summary LIKE ? OR c.follow_up LIKE ? OR c.next_action LIKE ?)';
+      const keyword = `%${filter.search}%`;
+      params.push(keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword, keyword);
+    }
+    query += " ORDER BY CASE WHEN c.status='진행' THEN 0 ELSE 1 END, CASE c.risk_level WHEN '높음' THEN 0 WHEN '중간' THEN 1 ELSE 2 END, c.date DESC, c.id DESC";
     return this.db.prepare(query).all(...params);
   }
 
   addCounseling(data) {
+    this._ensureCounselingColumns();
     const result = this.db.prepare(
-      'INSERT INTO counseling(student_id,date,type,content,result,follow_up) VALUES(?,?,?,?,?,?)'
-    ).run(data.student_id || null, data.date, data.type || '개인', data.content || '', data.result || '', data.follow_up || '');
+      `INSERT INTO counseling(
+        student_id,date,type,teacher_role,domain,topic,summary,content,result,follow_up,mood,risk_level,risk_flags,next_action,next_date,status,confidential_note,updated_at
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))`
+    ).run(
+      data.student_id || null,
+      data.date,
+      data.type || '개인',
+      data.teacher_role || '담임교사',
+      data.domain || '',
+      data.topic || '',
+      data.summary || '',
+      data.content || '',
+      data.result || '',
+      data.follow_up || '',
+      data.mood || '',
+      data.risk_level || '낮음',
+      data.risk_flags || '',
+      data.next_action || '',
+      data.next_date || '',
+      data.status || '진행',
+      data.confidential_note || ''
+    );
     return result.lastInsertRowid;
   }
 
   updateCounseling(id, data) {
+    this._ensureCounselingColumns();
     this.db.prepare(
-      'UPDATE counseling SET student_id=?,date=?,type=?,content=?,result=?,follow_up=? WHERE id=?'
-    ).run(data.student_id || null, data.date, data.type || '개인', data.content || '', data.result || '', data.follow_up || '', id);
+      `UPDATE counseling SET
+        student_id=?,date=?,type=?,teacher_role=?,domain=?,topic=?,summary=?,content=?,result=?,follow_up=?,
+        mood=?,risk_level=?,risk_flags=?,next_action=?,next_date=?,status=?,confidential_note=?,updated_at=datetime('now')
+       WHERE id=?`
+    ).run(
+      data.student_id || null,
+      data.date,
+      data.type || '개인',
+      data.teacher_role || '담임교사',
+      data.domain || '',
+      data.topic || '',
+      data.summary || '',
+      data.content || '',
+      data.result || '',
+      data.follow_up || '',
+      data.mood || '',
+      data.risk_level || '낮음',
+      data.risk_flags || '',
+      data.next_action || '',
+      data.next_date || '',
+      data.status || '진행',
+      data.confidential_note || '',
+      id
+    );
     return true;
   }
 

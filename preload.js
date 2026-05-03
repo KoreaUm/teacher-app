@@ -28,6 +28,19 @@ contextBridge.exposeInMainWorld('api', {
   getAppMeta: () => ipcRenderer.invoke('get-app-meta'),
   exportBackup: () => ipcRenderer.invoke('export-backup'),
   importBackup: () => ipcRenderer.invoke('import-backup'),
+  getAiEngineStatus: (engine) => ipcRenderer.invoke('get-ai-engine-status', engine),
+  onOllamaInstallProgress: (callback) => {
+    const handler = (event, payload) => callback(payload);
+    ipcRenderer.on('ollama-install-progress', handler);
+    return () => ipcRenderer.removeListener('ollama-install-progress', handler);
+  },
+  selectAiModelFile: (engine) => ipcRenderer.invoke('select-ai-model-file', engine),
+  openAiModelFolder: () => ipcRenderer.invoke('open-ai-model-folder'),
+  openAiRuntimeFolder: () => ipcRenderer.invoke('open-ai-runtime-folder'),
+  openAiModelDownload: (engine) => ipcRenderer.invoke('open-ai-model-download', engine),
+  openAiRuntimeDownload: () => ipcRenderer.invoke('open-ai-runtime-download'),
+  installOllamaAi: (engine) => ipcRenderer.invoke('install-ollama-ai', engine),
+  applyAiEngine: (engine) => ipcRenderer.invoke('apply-ai-engine', engine),
 
   // Students
   getStudents: () => ipcRenderer.invoke('get-students'),
@@ -129,6 +142,10 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('ai-extract-timetable-image', key, model, provider, image),
   aiExtractEstimateImage: (key, model, provider, image) =>
     ipcRenderer.invoke('ai-extract-estimate-image', key, model, provider, image),
+  aiAssistantChat: (payload) =>
+    ipcRenderer.invoke('ai-assistant-chat', payload),
+  aiLocalChat: (payload) =>
+    ipcRenderer.invoke('ai-local-chat', payload),
   parseExcelEstimate: (bufferData) =>
     ipcRenderer.invoke('parse-excel-estimate', bufferData),
   importClassTimetableExcel: (payload) =>
