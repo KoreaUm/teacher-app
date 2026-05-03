@@ -1067,6 +1067,16 @@
     });
   };
 
+  window.appCareerDeleteAllRecords = function () {
+    return requireGradeSession().then(function () {
+      return getGradesBookDoc().collection("careerStudents").get();
+    }).then(function (snap) {
+      var batch = window.firebase.firestore().batch();
+      snap.forEach(function (doc) { batch.delete(doc.ref); });
+      return batch.commit();
+    });
+  };
+
   window.appCareerListLinks = function () {
     return requireGradeSession().then(function () {
       return getGradesBookDoc().collection("quickLinks").get();

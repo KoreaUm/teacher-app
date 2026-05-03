@@ -876,9 +876,12 @@ async function importCSV(file) {
   if (rows.length < 2) return toast('CSV 데이터가 비어 있습니다.', 'error');
   const dataRows = rows.slice(1).filter((row) => row.some((cell) => String(cell || '').trim()));
   if (!dataRows.length) return toast('가져올 데이터가 없습니다.', 'error');
-  if (!confirm(`${dataRows.length}건을 클라우드에 업로드할까요?`)) return;
   const importInput = document.getElementById('career-import-input');
   if (importInput) importInput.value = '';
+  const shouldDelete = confirm(`기존 학생 데이터를 삭제하고 CSV로 교체할까요?\n\n확인 → 기존 데이터 삭제 후 ${dataRows.length}건 업로드\n취소 → 기존 데이터 유지하고 ${dataRows.length}건 병합`);
+  if (shouldDelete) {
+    await window.appCareerDeleteAllRecords();
+  }
   for (const row of dataRows) {
     await window.appCareerSaveRecord(csvRowToRecord(row));
   }
