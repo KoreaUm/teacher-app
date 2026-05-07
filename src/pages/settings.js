@@ -260,39 +260,31 @@ async function render(container) {
         <section class="card settings-card">
           <div class="settings-head">
             <div>
-              <div class="settings-title">📅 Google 캘린더 연동</div>
-              <div class="settings-note">할일 추가 시 Google 캘린더에 자동 등록 → 갤럭시 캘린더에서 확인 가능</div>
+              <div class="settings-title">✅ Google 계정 연동</div>
+              <div class="settings-note">할일은 Google Tasks에 동기화하고, 일정형 마감은 Google 캘린더와 함께 사용할 수 있습니다.</div>
             </div>
           </div>
 
           ${settings.gcal_refresh_token ? `
-          <div style="background:var(--success);color:#fff;border-radius:8px;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-            <span>✅ Google 캘린더 연동됨</span>
-            <button class="btn btn-sm" style="background:rgba(255,255,255,0.2);color:#fff;border:none" id="gcal-disconnect">연동 해제</button>
+          <div style="background:var(--success);color:#fff;border-radius:8px;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+            <span>✅ Google 계정 연동됨</span>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn btn-sm" style="background:rgba(255,255,255,0.2);color:#fff;border:none" id="gcal-connect">권한 다시 연결</button>
+              <button class="btn btn-sm" style="background:rgba(255,255,255,0.2);color:#fff;border:none" id="gcal-disconnect">연동 해제</button>
+            </div>
           </div>` : `
-          <div style="background:var(--bg2,#f4f6fb);border-radius:10px;padding:14px 16px;margin-bottom:14px;font-size:13px;line-height:2">
-            <b>최초 1회 설정 (5분)</b><br>
+          <div style="background:var(--bg2,#f4f6fb);border-radius:10px;padding:14px 16px;margin-bottom:14px;font-size:13px;line-height:1.8">
+            <b>사용자는 Google 계정 연결만 하면 됩니다.</b><br>
             <span style="color:var(--text2)">
-            ① <a href="#" id="gcal-guide-link" style="color:var(--accent)">Google Cloud Console</a> 접속<br>
-            ② 새 프로젝트 만들기 → <b>Google Calendar API</b> 사용 설정<br>
-            ③ 사용자 인증 정보 → OAuth 클라이언트 ID → <b>데스크톱 앱</b> 선택<br>
-            ④ Client ID / Client Secret 복사 후 아래 입력
+              OAuth 앱 설정은 쌤포트 배포판에 포함됩니다. 선생님은 아래 버튼을 눌러 개인 Google 계정으로 로그인하고 Calendar/Tasks 권한만 허용해 주세요.
             </span>
-          </div>
-          <div class="form-row">
-            <label>Client ID</label>
-            <input class="input" id="gcal-cid" value="${escapeHtml(settings.gcal_client_id||'')}" placeholder="숫자.apps.googleusercontent.com">
-          </div>
-          <div class="form-row">
-            <label>Client Secret</label>
-            <input class="input" type="password" id="gcal-csec" value="${escapeHtml(settings.gcal_client_secret||'')}" placeholder="GOCSPX-...">
           </div>
           <div id="gcal-status" style="font-size:12px;color:var(--text3);margin-bottom:4px">연동되지 않음</div>
           `}
 
           ${!settings.gcal_refresh_token ? `
           <div style="background:#fff8e1;border-radius:8px;padding:10px 14px;font-size:12px;color:#7a5c00;margin-bottom:12px">
-            💡 <b>"액세스 차단됨"</b> 화면이 뜨면 → <b>고급</b> 클릭 → <b>"계속(안전하지 않음)"</b> 클릭
+            💡 학교 Google 계정은 기관 정책으로 차단될 수 있습니다. 가능하면 개인 Gmail 계정으로 연결해 주세요.
           </div>
           <div class="settings-actions">
             <button class="btn btn-primary" id="gcal-connect">🔗 Google 계정 연결하기</button>
@@ -551,8 +543,6 @@ async function init() {
   });
   autosaveSetting('sk', 'ai_api_key');
   autosaveSetting('sm', 'ai_model', { event: 'change', read: (element) => element.value });
-  autosaveSetting('gcal-cid', 'gcal_client_id');
-  autosaveSetting('gcal-csec', 'gcal_client_secret');
 
   document.getElementById('cloud-pull-btn')?.addEventListener('click', async () => {
     if (!window.pullCloudNow) return;
@@ -733,30 +723,18 @@ async function init() {
   };
 
   // ── Google Calendar OAuth ──
-  document.getElementById('gcal-guide-link')?.addEventListener('click', (e) => {
-    e.preventDefault();
-    api.openUrl('https://console.cloud.google.com');
-  });
-
   document.getElementById('gcal-connect')?.addEventListener('click', async () => {
-    const cid  = document.getElementById('gcal-cid').value.trim();
-    const csec = document.getElementById('gcal-csec').value.trim();
-    if (!cid || !csec) { toast('Client ID와 Client Secret을 입력하세요', 'error'); return; }
-
-    await api.setSetting('gcal_client_id', cid);
-    await api.setSetting('gcal_client_secret', csec);
-
     const statusEl = document.getElementById('gcal-status');
     if (statusEl) { statusEl.style.color = 'var(--text2)'; statusEl.textContent = '🔄 브라우저에서 로그인 후 허용 클릭...'; }
 
-    const result = await api.gcalOAuthStart(cid, csec);
+    const result = await api.gcalOAuthStart();
     if (result?.error) {
       if (statusEl) { statusEl.style.color = 'var(--danger)'; statusEl.textContent = '❌ ' + result.error; }
       toast(result.error, 'error');
       return;
     }
     await api.setSetting('gcal_refresh_token', result.refresh_token);
-    toast('Google 캘린더 연동 완료! 페이지를 새로고침합니다.', 'success');
+    toast('Google 계정 연동 완료! 페이지를 새로고침합니다.', 'success');
     setTimeout(() => window.registerPage && window.__pages?.settings?.refresh
       ? window.__pages.settings.refresh()
       : window.navigateTo?.('settings'), 1500);

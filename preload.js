@@ -109,12 +109,19 @@ contextBridge.exposeInMainWorld('api', {
   replaceTodos: (items) => ipcRenderer.invoke('replace-todos', items),
   setTodoGcalId: (id, gcalId) => ipcRenderer.invoke('set-todo-gcal-id', id, gcalId),
   getTodoGcalId: (id) => ipcRenderer.invoke('get-todo-gcal-id', id),
+  setTodoGoogleTaskId: (id, taskId) => ipcRenderer.invoke('set-todo-google-task-id', id, taskId),
+  getTodoGoogleTaskId: (id) => ipcRenderer.invoke('get-todo-google-task-id', id),
 
   // Google Calendar
-  gcalOAuthStart: (cid, csec) => ipcRenderer.invoke('gcal-oauth-start', cid, csec),
-  gcalRefreshToken: (cid, csec, rt) => ipcRenderer.invoke('gcal-refresh-token', cid, csec, rt),
+  gcalOAuthStart: () => ipcRenderer.invoke('gcal-oauth-start'),
+  gcalRefreshToken: (refreshToken) => ipcRenderer.invoke('gcal-refresh-token', refreshToken),
   gcalAddEvent: (token, event) => ipcRenderer.invoke('gcal-add-event', token, event),
+  gcalUpdateEvent: (token, eventId, event) => ipcRenderer.invoke('gcal-update-event', token, eventId, event),
   gcalDeleteEvent: (token, eventId) => ipcRenderer.invoke('gcal-delete-event', token, eventId),
+  googleTasksAddTask: (token, task) => ipcRenderer.invoke('gtasks-add-task', token, task),
+  googleTasksUpdateTask: (token, taskId, task) => ipcRenderer.invoke('gtasks-update-task', token, taskId, task),
+  googleTasksSetStatus: (token, taskId, isDone) => ipcRenderer.invoke('gtasks-set-status', token, taskId, isDone),
+  googleTasksDeleteTask: (token, taskId) => ipcRenderer.invoke('gtasks-delete-task', token, taskId),
 
   // D-Day
   getDdays: () => ipcRenderer.invoke('get-ddays'),

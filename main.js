@@ -57,6 +57,14 @@ const OLLAMA_MODELS = {
   local_basic: 'gemma4:e2b',
   local_pro: 'gemma4:e4b'
 };
+const GOOGLE_CALENDAR_CLIENT_ID =
+  process.env.SSAMPORT_GOOGLE_CLIENT_ID ||
+  '780135122795-ldmauftdqlfksb4tfgrmro09b1mguh4f.apps.googleusercontent.com';
+const GOOGLE_CALENDAR_CLIENT_SECRET = process.env.SSAMPORT_GOOGLE_CLIENT_SECRET || '';
+const GOOGLE_OAUTH_SCOPES = [
+  'https://www.googleapis.com/auth/calendar.events',
+  'https://www.googleapis.com/auth/tasks'
+];
 let updateState = {
   status: 'idle',
   version: app.getVersion(),
@@ -84,6 +92,32 @@ function escapeHtml(value) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function base64Url(buffer) {
+  return Buffer.from(buffer)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+function createPkcePair() {
+  const verifier = base64Url(crypto.randomBytes(32));
+  const challenge = base64Url(crypto.createHash('sha256').update(verifier).digest());
+  return { verifier, challenge };
+}
+
+function getGoogleCalendarOAuthConfig(fallbackClientId = '', fallbackClientSecret = '') {
+  const clientId =
+    String(GOOGLE_CALENDAR_CLIENT_ID || '').trim() ||
+    String(fallbackClientId || '').trim() ||
+    String(db?.getSetting?.('gcal_client_id', '') || '').trim();
+  const clientSecret =
+    String(GOOGLE_CALENDAR_CLIENT_SECRET || '').trim() ||
+    String(fallbackClientSecret || '').trim() ||
+    String(db?.getSetting?.('gcal_client_secret', '') || '').trim();
+  return { clientId, clientSecret };
 }
 
 function buildManualPdfHtml() {
@@ -1230,22 +1264,31 @@ ipcMain.handle('delete-todo', (e, id) => db.deleteTodo(id));
 ipcMain.handle('replace-todos', (e, items) => db.replaceTodos(items));
 ipcMain.handle('set-todo-gcal-id', (e, id, gcalId) => db.setTodoGcalId(id, gcalId));
 ipcMain.handle('get-todo-gcal-id', (e, id) => db.getTodoGcalId(id));
+ipcMain.handle('set-todo-google-task-id', (e, id, googleTaskId) => db.setTodoGoogleTaskId(id, googleTaskId));
+ipcMain.handle('get-todo-google-task-id', (e, id) => db.getTodoGoogleTaskId(id));
 
 // ── Google Calendar OAuth ─────────────────────────────────
-ipcMain.handle('gcal-oauth-start', async (e, clientId, clientSecret) => {
+ipcMain.handle('gcal-oauth-start', async (e, legacyClientId = '', legacyClientSecret = '') => {
   const http = require('http');
   const https = require('https');
   const { URL } = require('url');
+  const { clientId, clientSecret } = getGoogleCalendarOAuthConfig(legacyClientId, legacyClientSecret);
+  if (!clientId) {
+    return { error: 'Google 연동 설정이 아직 앱에 포함되지 않았습니다. 개발자에게 문의해 주세요.' };
+  }
   return new Promise((resolve) => {
     const server = http.createServer();
     server.listen(0, '127.0.0.1', () => {
       const port = server.address().port;
       const redirectUri = `http://127.0.0.1:${port}`;
+      const pkce = createPkcePair();
       const authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' +
         `client_id=${encodeURIComponent(clientId)}&` +
         `redirect_uri=${encodeURIComponent(redirectUri)}&` +
         `response_type=code&` +
-        `scope=${encodeURIComponent('https://www.googleapis.com/auth/calendar.events')}&` +
+        `scope=${encodeURIComponent(GOOGLE_OAUTH_SCOPES.join(' '))}&` +
+        `code_challenge=${encodeURIComponent(pkce.challenge)}&` +
+        `code_challenge_method=S256&` +
         `access_type=offline&prompt=consent`;
       shell.openExternal(authUrl);
       const timer = setTimeout(() => { server.close(); resolve({ error: '시간 초과' }); }, 120000);
@@ -1256,7 +1299,15 @@ ipcMain.handle('gcal-oauth-start', async (e, clientId, clientSecret) => {
         res.end('<html><body style="font-family:sans-serif;text-align:center;padding:60px"><h2>✅ 연동 완료! 이 창을 닫으세요.</h2></body></html>');
         clearTimeout(timer); server.close();
         if (!code) return resolve({ error: '취소되었습니다.' });
-        const body = new URLSearchParams({ code, client_id: clientId, client_secret: clientSecret, redirect_uri: redirectUri, grant_type: 'authorization_code' }).toString();
+        const tokenPayload = {
+          code,
+          client_id: clientId,
+          redirect_uri: redirectUri,
+          grant_type: 'authorization_code',
+          code_verifier: pkce.verifier
+        };
+        if (clientSecret) tokenPayload.client_secret = clientSecret;
+        const body = new URLSearchParams(tokenPayload).toString();
         const tokenRes = await new Promise((r2) => {
           const req2 = https.request({ hostname: 'oauth2.googleapis.com', path: '/token', method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) }, rejectUnauthorized: false }, (res2) => {
             let d = ''; res2.on('data', c => d += c); res2.on('end', () => { try { r2(JSON.parse(d)); } catch { r2({}); } });
@@ -1269,9 +1320,15 @@ ipcMain.handle('gcal-oauth-start', async (e, clientId, clientSecret) => {
   });
 });
 
-ipcMain.handle('gcal-refresh-token', async (e, clientId, clientSecret, refreshToken) => {
+ipcMain.handle('gcal-refresh-token', async (e, arg1 = '', arg2 = '', arg3 = '') => {
   const https = require('https');
-  const body = new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: 'refresh_token' }).toString();
+  const legacyCall = !!arg3;
+  const refreshToken = legacyCall ? arg3 : arg1;
+  const { clientId, clientSecret } = getGoogleCalendarOAuthConfig(legacyCall ? arg1 : '', legacyCall ? arg2 : '');
+  if (!clientId || !refreshToken) return { error: 'Google 캘린더 연동 정보가 없습니다.' };
+  const tokenPayload = { client_id: clientId, refresh_token: refreshToken, grant_type: 'refresh_token' };
+  if (clientSecret) tokenPayload.client_secret = clientSecret;
+  const body = new URLSearchParams(tokenPayload).toString();
   return new Promise((resolve) => {
     const req = https.request({ hostname: 'oauth2.googleapis.com', path: '/token', method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) }, rejectUnauthorized: false }, (r) => {
       let d = ''; r.on('data', c => d += c); r.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve({ error: '파싱 오류' }); } });
@@ -1289,12 +1346,92 @@ ipcMain.handle('gcal-add-event', async (e, accessToken, event) => {
   });
 });
 
+ipcMain.handle('gcal-update-event', async (e, accessToken, eventId, event) => {
+  const https = require('https');
+  const body = JSON.stringify(event);
+  return new Promise((resolve) => {
+    const req = https.request({ hostname: 'www.googleapis.com', path: `/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`, method: 'PATCH', headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }, rejectUnauthorized: false }, (r) => {
+      let d = ''; r.on('data', c => d += c); r.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve({ error: '파싱 오류' }); } });
+    }); req.on('error', err => resolve({ error: err.message })); req.write(body); req.end();
+  });
+});
+
 ipcMain.handle('gcal-delete-event', async (e, accessToken, eventId) => {
   const https = require('https');
   return new Promise((resolve) => {
-    const req = https.request({ hostname: 'www.googleapis.com', path: `/calendar/v3/calendars/primary/events/${eventId}`, method: 'DELETE', headers: { 'Authorization': `Bearer ${accessToken}` }, rejectUnauthorized: false }, (r) => { resolve({ status: r.statusCode }); });
+    const req = https.request({ hostname: 'www.googleapis.com', path: `/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`, method: 'DELETE', headers: { 'Authorization': `Bearer ${accessToken}` }, rejectUnauthorized: false }, (r) => { resolve({ status: r.statusCode }); });
     req.on('error', err => resolve({ error: err.message })); req.end();
   });
+});
+
+function googleTasksRequest(accessToken, pathName, method = 'GET', payload = null) {
+  const https = require('https');
+  const body = payload ? JSON.stringify(payload) : '';
+  return new Promise((resolve) => {
+    const req = https.request({
+      hostname: 'tasks.googleapis.com',
+      path: pathName,
+      method,
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        ...(payload ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } : {})
+      },
+      rejectUnauthorized: false
+    }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => data += chunk);
+      res.on('end', () => {
+        if (!data && res.statusCode >= 200 && res.statusCode < 300) return resolve({ ok: true, status: res.statusCode });
+        try {
+          const parsed = JSON.parse(data || '{}');
+          if (res.statusCode >= 400 && !parsed.error) parsed.error = { message: `Google Tasks 오류 ${res.statusCode}` };
+          resolve(parsed);
+        } catch {
+          resolve({ error: { message: 'Google Tasks 응답을 읽지 못했습니다.' }, status: res.statusCode });
+        }
+      });
+    });
+    req.on('error', (error) => resolve({ error: { message: error.message } }));
+    if (body) req.write(body);
+    req.end();
+  });
+}
+
+function buildGoogleTaskPayload(task) {
+  const payload = {
+    title: String(task.title || '').trim() || '쌤포트 할일',
+    notes: [
+      task.priority ? `중요도: ${task.priority}` : '',
+      task.category ? `카테고리: ${task.category}` : '',
+      task.source_text ? `원문: ${task.source_text}` : ''
+    ].filter(Boolean).join('\n'),
+    status: task.is_done ? 'completed' : 'needsAction'
+  };
+  if (task.deadline) payload.due = `${task.deadline}T00:00:00.000Z`;
+  if (task.is_done) payload.completed = new Date().toISOString();
+  return payload;
+}
+
+ipcMain.handle('gtasks-add-task', async (e, accessToken, task) => {
+  return googleTasksRequest(accessToken, '/tasks/v1/lists/%40default/tasks', 'POST', buildGoogleTaskPayload(task || {}));
+});
+
+ipcMain.handle('gtasks-update-task', async (e, accessToken, taskId, task) => {
+  if (!taskId) return { error: { message: 'Google Tasks ID가 없습니다.' } };
+  return googleTasksRequest(accessToken, `/tasks/v1/lists/%40default/tasks/${encodeURIComponent(taskId)}`, 'PATCH', buildGoogleTaskPayload(task || {}));
+});
+
+ipcMain.handle('gtasks-set-status', async (e, accessToken, taskId, isDone) => {
+  if (!taskId) return { error: { message: 'Google Tasks ID가 없습니다.' } };
+  const payload = isDone
+    ? { status: 'completed', completed: new Date().toISOString() }
+    : { status: 'needsAction', completed: null };
+  return googleTasksRequest(accessToken, `/tasks/v1/lists/%40default/tasks/${encodeURIComponent(taskId)}`, 'PATCH', payload);
+});
+
+ipcMain.handle('gtasks-delete-task', async (e, accessToken, taskId) => {
+  if (!taskId) return { error: { message: 'Google Tasks ID가 없습니다.' } };
+  return googleTasksRequest(accessToken, `/tasks/v1/lists/%40default/tasks/${encodeURIComponent(taskId)}`, 'DELETE');
 });
 
 ipcMain.handle('get-ddays', () => db.getDdays());

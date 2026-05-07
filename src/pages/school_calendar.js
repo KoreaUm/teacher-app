@@ -36,6 +36,7 @@ function normalizeCustomEvents(items) {
       date: String(item.date),
       name: String(item.name).trim(),
       color: String(item.color || '#3b82f6'),
+      gcal_event_id: String(item.gcal_event_id || ''),
     };
     const dedupeKey = `${normalized.date}__${normalized.name}__${normalized.color}`;
     if (seen.has(dedupeKey)) continue;
@@ -329,6 +330,9 @@ function renderList() {
       const target = customEvents.find((item) => item.id === eventId);
       if (!target) return;
       if (!confirm(`"${target.name}" 일정을 삭제할까요?`)) return;
+      if (target.gcal_event_id && window.deleteGoogleCalendarCustomEvent) {
+        await window.deleteGoogleCalendarCustomEvent(target.gcal_event_id);
+      }
       customEvents = customEvents.filter((item) => item.id !== eventId);
       await saveCustomEvents();
       await renderAll();
@@ -389,12 +393,16 @@ async function openAddEventModal(defaultDate) {
         return;
       }
 
-      customEvents.push({
+      const customEvent = {
         id: createCustomEventId(),
         date: dateValue,
         name: nameValue,
         color: colorValue,
-      });
+      };
+      if (window.addGoogleCalendarCustomEvent) {
+        customEvent.gcal_event_id = await window.addGoogleCalendarCustomEvent(customEvent) || '';
+      }
+      customEvents.push(customEvent);
 
       selectedDate = dateValue;
       year = Number(dateValue.slice(0, 4));

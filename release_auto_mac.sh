@@ -43,7 +43,7 @@ step "package.json / package-lock.json 버전 올리기"
 npm version "$next_version" --no-git-tag-version
 
 step "변경사항 커밋"
-git add --all -- . ':!.claude'
+git add --all -- ':!.claude'
 git commit -m "Release v$next_version"
 
 step "브랜치 푸시"

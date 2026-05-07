@@ -430,6 +430,9 @@ async function deleteDashboardCalendarEvent(eventId){
   const target=customEvents.find((item)=>item.id===eventId);
   if(!target) return;
   if(!confirm(`"${target.name}" 일정을 삭제할까요?`)) return;
+  if(target.gcal_event_id && window.deleteGoogleCalendarCustomEvent){
+    await window.deleteGoogleCalendarCustomEvent(target.gcal_event_id);
+  }
   await saveDashboardCustomEvents(customEvents.filter((item)=>item.id!==eventId));
   await loadNeisCalendar();
 }
@@ -938,8 +941,6 @@ function showTodoModal(ds=''){
     const newId=await api.addTodo({title,deadline,priority,category});
     await syncCloudIfPossible();
     closeModal();refreshTodos();
-    // Google Calendar 자동 연동
-    if(newId) gcalSyncTodo({id:newId,title,deadline,priority,category});
   };
 }
 
@@ -947,11 +948,9 @@ function showTodoModal(ds=''){
 // Google Calendar 연동
 // ─────────────────────────────────────────────────────────
 async function gcalGetToken(){
-  const cid=await api.getSetting('gcal_client_id','');
-  const csec=await api.getSetting('gcal_client_secret','');
   const rt=await api.getSetting('gcal_refresh_token','');
-  if(!cid||!csec||!rt) return null;
-  const res=await api.gcalRefreshToken(cid,csec,rt);
+  if(!rt) return null;
+  const res=await api.gcalRefreshToken(rt);
   return res?.access_token||null;
 }
 
@@ -2054,6 +2053,7 @@ saveDashboardCustomEvents = async function (events) {
     date: String(item.date),
     name: String(item.name).trim(),
     color: String(item.color || '#3b82f6'),
+    gcal_event_id: String(item.gcal_event_id || ''),
   })).filter((item) => {
     const dedupeKey = `${item.date}__${item.name}__${item.color}`;
     if (seen.has(dedupeKey)) return false;
@@ -2136,7 +2136,11 @@ openDashboardCalendarEventPrompt = async function (defaultDate) {
       if (!/^\d{8}$/.test(normalizedDate)) return toast('날짜를 입력해 주세요.', 'error');
       if (!nameValue) return toast('일정 내용을 입력해 주세요.', 'error');
       const customEvents = await loadDashboardCustomEvents();
-      customEvents.push({ id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, date: normalizedDate, name: nameValue, color: colorValue });
+      const customEvent = { id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, date: normalizedDate, name: nameValue, color: colorValue };
+      if (window.addGoogleCalendarCustomEvent) {
+        customEvent.gcal_event_id = await window.addGoogleCalendarCustomEvent(customEvent) || '';
+      }
+      customEvents.push(customEvent);
       await saveDashboardCustomEvents(customEvents);
       const nextYear = Number(normalizedDate.slice(0, 4));
       const nextMonth = Number(normalizedDate.slice(4, 6));

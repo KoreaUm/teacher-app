@@ -155,14 +155,14 @@
     "class_timetable_json",
     "class_timetable_file_name",
     "teacher_timetable_number_colors_enabled",
-    "teacher_timetable_number_colors",
-    "todo_manual_order"
+    "teacher_timetable_number_colors"
   ];
   var CLOUD_BLOCKED_SETTING_KEYS = [
     "custom_calendar_events",
     "gcal_client_id",
     "gcal_client_secret",
-    "gcal_refresh_token"
+    "gcal_refresh_token",
+    "todo_manual_order"
   ];
 
   api.setSetting = function (key, value) {
@@ -176,40 +176,265 @@
   var originalToggleTodo = api.toggleTodo.bind(api);
   var originalDeleteTodo = api.deleteTodo.bind(api);
   var originalSetTodoGcalId = api.setTodoGcalId.bind(api);
+  var originalSetTodoGoogleTaskId = api.setTodoGoogleTaskId ? api.setTodoGoogleTaskId.bind(api) : null;
   var originalSetTimetableCell = api.setTimetableCell.bind(api);
   var originalClearTimetable = api.clearTimetable.bind(api);
   var originalReplaceTimetable = api.replaceTimetable ? api.replaceTimetable.bind(api) : null;
 
+  function getGoogleTasksToken() {
+    if (!api.getSetting || !api.gcalRefreshToken) return Promise.resolve(null);
+    return api.getSetting("gcal_refresh_token", "").then(function (refreshToken) {
+      if (!refreshToken) return null;
+      return api.gcalRefreshToken(refreshToken).then(function (result) {
+        return result && result.access_token ? result.access_token : null;
+      });
+    }).catch(function () {
+      return null;
+    });
+  }
+
+  function addOneDay(dateText) {
+    var date = String(dateText || "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return "";
+    var d = new Date(date + "T00:00:00");
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
+  }
+
+  function normalizeCalendarDate(dateText) {
+    var raw = String(dateText || "").replace(/\D/g, "");
+    if (!/^\d{8}$/.test(raw)) return "";
+    return raw.slice(0, 4) + "-" + raw.slice(4, 6) + "-" + raw.slice(6, 8);
+  }
+
+  function buildTodoCalendarEvent(payload) {
+    var start = normalizeCalendarDate(payload && payload.deadline);
+    if (!start) return null;
+    return {
+      summary: "[할일] " + String(payload.title || "쌤포트 할일"),
+      description: [
+        "쌤포트 할일에서 자동 추가됨",
+        payload && payload.priority ? "중요도: " + payload.priority : "",
+        payload && payload.category ? "카테고리: " + payload.category : ""
+      ].filter(Boolean).join("\n"),
+      start: { date: start },
+      end: { date: addOneDay(start) || start },
+      colorId: payload && payload.priority === "높음" ? "11" : payload && payload.priority === "낮음" ? "2" : "5",
+      reminders: { useDefault: false, overrides: [{ method: "popup", minutes: 480 }] }
+    };
+  }
+
+  function syncTodoCalendarAfterAdd(id, payload) {
+    if (!id || !api.gcalAddEvent || !api.setTodoGcalId) return Promise.resolve(false);
+    var event = buildTodoCalendarEvent(payload);
+    if (!event) return Promise.resolve(false);
+    return getGoogleTasksToken().then(function (token) {
+      if (!token) return false;
+      return api.gcalAddEvent(token, event).then(function (created) {
+        if (created && created.id) return api.setTodoGcalId(id, created.id).then(function () { return true; });
+        if (created && created.error) console.warn("google calendar todo add failed", created.error);
+        return false;
+      });
+    }).catch(function (error) {
+      console.warn("google calendar todo add failed", error);
+      return false;
+    });
+  }
+
+  function syncTodoCalendarAfterUpdate(id, payload) {
+    if (!id || !api.gcalUpdateEvent || !api.getTodoGcalId) return Promise.resolve(false);
+    var event = buildTodoCalendarEvent(payload);
+    return Promise.all([getGoogleTasksToken(), api.getTodoGcalId(id)]).then(function (values) {
+      var token = values[0];
+      var eventId = values[1];
+      if (!token) return false;
+      if (!event && eventId && api.gcalDeleteEvent) {
+        return api.gcalDeleteEvent(token, eventId).then(function () {
+          return api.setTodoGcalId ? api.setTodoGcalId(id, "") : true;
+        });
+      }
+      if (!event) return false;
+      if (!eventId) return syncTodoCalendarAfterAdd(id, payload);
+      return api.gcalUpdateEvent(token, eventId, event).then(function (updated) {
+        if (updated && updated.error) console.warn("google calendar todo update failed", updated.error);
+        return !!(updated && !updated.error);
+      });
+    }).catch(function (error) {
+      console.warn("google calendar todo update failed", error);
+      return false;
+    });
+  }
+
+  function deleteTodoCalendarEvent(id) {
+    if (!id || !api.gcalDeleteEvent || !api.getTodoGcalId) return Promise.resolve(false);
+    return Promise.all([getGoogleTasksToken(), api.getTodoGcalId(id)]).then(function (values) {
+      var token = values[0];
+      var eventId = values[1];
+      if (!token || !eventId) return false;
+      return api.gcalDeleteEvent(token, eventId);
+    }).catch(function (error) {
+      console.warn("google calendar todo delete failed", error);
+      return false;
+    });
+  }
+
+  window.addGoogleCalendarCustomEvent = function (eventItem) {
+    if (!api.gcalAddEvent) return Promise.resolve(null);
+    var start = normalizeCalendarDate(eventItem && eventItem.date);
+    if (!start) return Promise.resolve(null);
+    var event = {
+      summary: String(eventItem.name || "쌤포트 일정"),
+      description: "쌤포트 캘린더에서 추가됨",
+      start: { date: start },
+      end: { date: addOneDay(start) || start },
+      colorId: "7"
+    };
+    return getGoogleTasksToken().then(function (token) {
+      if (!token) return null;
+      return api.gcalAddEvent(token, event).then(function (created) {
+        return created && created.id ? created.id : null;
+      });
+    }).catch(function (error) {
+      console.warn("google calendar custom event add failed", error);
+      return null;
+    });
+  };
+
+  window.deleteGoogleCalendarCustomEvent = function (eventId) {
+    if (!eventId || !api.gcalDeleteEvent) return Promise.resolve(false);
+    return getGoogleTasksToken().then(function (token) {
+      if (!token) return false;
+      return api.gcalDeleteEvent(token, eventId).then(function () { return true; });
+    }).catch(function (error) {
+      console.warn("google calendar custom event delete failed", error);
+      return false;
+    });
+  };
+
+  function buildGoogleTaskFromLocal(id, payload) {
+    return {
+      id: id,
+      title: payload && payload.title ? payload.title : "",
+      deadline: payload && payload.deadline ? payload.deadline : "",
+      priority: payload && payload.priority ? payload.priority : "보통",
+      category: payload && payload.category ? payload.category : "기타",
+      source_text: payload && payload.source_text ? payload.source_text : "",
+      is_done: payload && payload.is_done ? 1 : 0
+    };
+  }
+
+  function syncGoogleTaskAfterAdd(id, payload) {
+    if (!id || !api.googleTasksAddTask || !api.setTodoGoogleTaskId) return Promise.resolve(false);
+    return getGoogleTasksToken().then(function (token) {
+      if (!token) return false;
+      return api.googleTasksAddTask(token, buildGoogleTaskFromLocal(id, payload)).then(function (created) {
+        if (created && created.id) return api.setTodoGoogleTaskId(id, created.id).then(function () { return true; });
+        if (created && created.error) console.warn("google task add failed", created.error);
+        return false;
+      });
+    }).catch(function (error) {
+      console.warn("google task add failed", error);
+      return false;
+    });
+  }
+
+  function syncGoogleTaskAfterUpdate(id, payload) {
+    if (!id || !api.googleTasksUpdateTask || !api.getTodoGoogleTaskId) return Promise.resolve(false);
+    return Promise.all([getGoogleTasksToken(), api.getTodoGoogleTaskId(id)]).then(function (values) {
+      var token = values[0];
+      var taskId = values[1];
+      if (!token) return false;
+      if (!taskId) return syncGoogleTaskAfterAdd(id, payload);
+      return api.googleTasksUpdateTask(token, taskId, buildGoogleTaskFromLocal(id, payload)).then(function (updated) {
+        if (updated && updated.error) console.warn("google task update failed", updated.error);
+        return !!(updated && !updated.error);
+      });
+    }).catch(function (error) {
+      console.warn("google task update failed", error);
+      return false;
+    });
+  }
+
+  function syncGoogleTaskStatus(id, isDone) {
+    if (!id || !api.googleTasksSetStatus || !api.getTodoGoogleTaskId) return Promise.resolve(false);
+    return Promise.all([getGoogleTasksToken(), api.getTodoGoogleTaskId(id)]).then(function (values) {
+      var token = values[0];
+      var taskId = values[1];
+      if (!token || !taskId) return false;
+      return api.googleTasksSetStatus(token, taskId, !!isDone).then(function (updated) {
+        if (updated && updated.error) console.warn("google task status failed", updated.error);
+        return !!(updated && !updated.error);
+      });
+    }).catch(function (error) {
+      console.warn("google task status failed", error);
+      return false;
+    });
+  }
+
+  function deleteGoogleTaskForTodo(id) {
+    if (!id || !api.googleTasksDeleteTask || !api.getTodoGoogleTaskId) return Promise.resolve(false);
+    return Promise.all([getGoogleTasksToken(), api.getTodoGoogleTaskId(id)]).then(function (values) {
+      var token = values[0];
+      var taskId = values[1];
+      if (!token || !taskId) return false;
+      return api.googleTasksDeleteTask(token, taskId).then(function (deleted) {
+        if (deleted && deleted.error) console.warn("google task delete failed", deleted.error);
+        return !!(deleted && !deleted.error);
+      });
+    }).catch(function (error) {
+      console.warn("google task delete failed", error);
+      return false;
+    });
+  }
+
   api.addTodo = function (payload) {
     return Promise.resolve(originalAddTodo(payload)).then(function (result) {
-      if (!isApplyingRemoteData()) pushCloudSharedNow("todos");
+      if (!isApplyingRemoteData()) {
+        syncGoogleTaskAfterAdd(result, payload);
+        syncTodoCalendarAfterAdd(result, payload);
+      }
       return result;
     });
   };
   api.updateTodo = function (id, payload) {
     return Promise.resolve(originalUpdateTodo(id, payload)).then(function (result) {
-      if (!isApplyingRemoteData()) pushCloudSharedNow("todos");
+      if (!isApplyingRemoteData()) {
+        syncGoogleTaskAfterUpdate(id, payload);
+        syncTodoCalendarAfterUpdate(id, payload);
+      }
       return result;
     });
   };
   api.toggleTodo = function (id) {
     return Promise.resolve(originalToggleTodo(id)).then(function (result) {
-      if (!isApplyingRemoteData()) pushCloudSharedNow("todos");
+      if (!isApplyingRemoteData()) {
+        api.getTodos(true).then(function (items) {
+          var todo = (items || []).find(function (item) { return Number(item.id) === Number(id); });
+          if (todo) syncGoogleTaskStatus(id, !!todo.is_done);
+        }).catch(function () {});
+      }
       return result;
     });
   };
   api.deleteTodo = function (id) {
+    var deleteRemoteTask = !isApplyingRemoteData() ? deleteGoogleTaskForTodo(id) : Promise.resolve(false);
+    var deleteRemoteCalendar = !isApplyingRemoteData() ? deleteTodoCalendarEvent(id) : Promise.resolve(false);
     return Promise.resolve(originalDeleteTodo(id)).then(function (result) {
-      if (!isApplyingRemoteData()) pushCloudSharedNow("todos");
+      deleteRemoteTask.catch(function () {});
+      deleteRemoteCalendar.catch(function () {});
       return result;
     });
   };
   api.setTodoGcalId = function (id, gcalId) {
     return Promise.resolve(originalSetTodoGcalId(id, gcalId)).then(function (result) {
-      if (!isApplyingRemoteData()) pushCloudSharedNow("todos");
       return result;
     });
   };
+  if (originalSetTodoGoogleTaskId) {
+    api.setTodoGoogleTaskId = function (id, taskId) {
+      return Promise.resolve(originalSetTodoGoogleTaskId(id, taskId));
+    };
+  }
   api.setTimetableCell = function (payload) {
     return Promise.resolve(originalSetTimetableCell(payload)).then(function (result) {
       if (!isApplyingRemoteData()) pushCloudSharedNow("timetable");
@@ -535,7 +760,6 @@
       CLOUD_SYNC_KEYS.forEach(function (key) {
         tasks.push(originalSetSetting(key, ""));
       });
-      if (api.replaceTodos) tasks.push(api.replaceTodos([]));
       if (api.replaceTimetable) tasks.push(api.replaceTimetable([]));
       try {
         localStorage.removeItem("dashboard_layout_v4");
@@ -1374,15 +1598,6 @@
     }
 
     var tasks = [];
-    if (!kind || kind === "todos") {
-      tasks.push(api.getTodos(true).then(function (items) {
-        return getSharedCollectionDoc("todos").set({
-          items: (items || []).map(sanitizeTodoForCloud),
-          updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
-          updatedBy: normalizeEmail(authUser.email)
-        }, { merge: true });
-      }));
-    }
     if (!kind || kind === "timetable") {
       tasks.push(api.getTimetable().then(function (items) {
         return getSharedCollectionDoc("timetable").set({
@@ -1406,18 +1621,12 @@
       return Promise.resolve(false);
     }
     return Promise.all([
-      getSharedCollectionDoc("todos").get(),
       getSharedCollectionDoc("timetable").get()
     ]).then(function (snapshots) {
-      var todoSnap = snapshots[0];
-      var timetableSnap = snapshots[1];
+      var timetableSnap = snapshots[0];
       var tasks = [];
 
       return withRemoteApply(function () {
-        if (todoSnap.exists) {
-          var todoData = todoSnap.data() || {};
-          tasks.push(api.replaceTodos(Array.isArray(todoData.items) ? todoData.items : []));
-        }
         if (timetableSnap.exists) {
           var timetableData = timetableSnap.data() || {};
           tasks.push(api.replaceTimetable(Array.isArray(timetableData.items) ? timetableData.items : []));
@@ -1435,7 +1644,6 @@
   function applyCloudSharedItems(todoItems, timetableItems) {
     var tasks = [];
     return withRemoteApply(function () {
-      if (Array.isArray(todoItems)) tasks.push(api.replaceTodos(todoItems));
       if (Array.isArray(timetableItems)) tasks.push(api.replaceTimetable(timetableItems));
       return Promise.all(tasks);
     }).then(function () {
@@ -1483,7 +1691,8 @@
 
   function pushCloudSharedNow(kind) {
     if (!authUser || !authProfile || authProfile.active === false) return Promise.resolve(false);
-    if (kind === "todos" || kind === "timetable") {
+    if (kind === "todos") return Promise.resolve(false);
+    if (kind === "timetable") {
       sharedLocalWriteUntil[kind] = Date.now() + 3000;
     }
     return window.syncCloudSharedNow(kind).catch(function (error) {
@@ -1525,20 +1734,6 @@
         });
       }, function (error) {
         console.error("cloud settings snapshot failed", error);
-      })
-    );
-
-    cloudSubscriptions.push(
-      getSharedCollectionDoc("todos").onSnapshot(function (snap) {
-        if (!snap.exists) return;
-        if (snap.metadata && snap.metadata.hasPendingWrites) return;
-        if (Date.now() < sharedLocalWriteUntil.todos) return;
-        var todoData = snap.data() || {};
-        applyCloudSharedItems(Array.isArray(todoData.items) ? todoData.items : [], null).catch(function (error) {
-          console.error("cloud todos subscribe failed", error);
-        });
-      }, function (error) {
-        console.error("cloud todos snapshot failed", error);
       })
     );
 

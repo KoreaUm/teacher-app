@@ -270,6 +270,9 @@ class AppDatabase {
     try {
       this.db.exec('ALTER TABLE todos ADD COLUMN gcal_event_id TEXT');
     } catch (_) {}
+    try {
+      this.db.exec('ALTER TABLE todos ADD COLUMN google_task_id TEXT');
+    } catch (_) {}
   }
 
   _ensureCounselingColumns() {
@@ -870,6 +873,18 @@ class AppDatabase {
     return row ? row.gcal_event_id : null;
   }
 
+  setTodoGoogleTaskId(id, googleTaskId) {
+    this._ensureTodoCalendarColumn();
+    this.db.prepare('UPDATE todos SET google_task_id=? WHERE id=?').run(googleTaskId, id);
+    return true;
+  }
+
+  getTodoGoogleTaskId(id) {
+    this._ensureTodoCalendarColumn();
+    const row = this.db.prepare('SELECT google_task_id FROM todos WHERE id=?').get(id);
+    return row ? row.google_task_id : null;
+  }
+
   toggleTodo(id) {
     this.db.prepare('UPDATE todos SET is_done=CASE WHEN is_done=0 THEN 1 ELSE 0 END WHERE id=?').run(id);
     return true;
@@ -885,7 +900,7 @@ class AppDatabase {
     const replaceAll = this.db.transaction((rows) => {
       this.db.prepare('DELETE FROM todos').run();
       const insert = this.db.prepare(
-        'INSERT INTO todos(id,title,deadline,priority,category,is_done,is_ai_generated,source_text,created_at,gcal_event_id) VALUES(?,?,?,?,?,?,?,?,?,?)'
+        'INSERT INTO todos(id,title,deadline,priority,category,is_done,is_ai_generated,source_text,created_at,gcal_event_id,google_task_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)'
       );
       for (const row of rows) {
         insert.run(
@@ -898,7 +913,8 @@ class AppDatabase {
           row.is_ai_generated ? 1 : 0,
           row.source_text || '',
           row.created_at || '',
-          row.gcal_event_id || ''
+          row.gcal_event_id || '',
+          row.google_task_id || ''
         );
       }
     });
