@@ -10,6 +10,7 @@ const { autoUpdater } = require('electron-updater');
 
 const AppDatabase = require('./src/database.js');
 const SQLiteDatabase = require('better-sqlite3');
+const APP_MANUAL = require('./src/app_manual.js');
 
 let db;
 let mainWindow;
@@ -46,6 +47,11 @@ const AI_MODEL_DOWNLOADS = {
 };
 const AI_RUNTIME_DOWNLOAD_URL = 'https://github.com/ggml-org/llama.cpp/releases/latest';
 const OLLAMA_INSTALLER_URL = 'https://ollama.com/download/OllamaSetup.exe';
+const OLLAMA_DOWNLOAD_URL = process.platform === 'darwin'
+  ? 'https://ollama.com/download/mac'
+  : process.platform === 'win32'
+    ? 'https://ollama.com/download/windows'
+    : 'https://ollama.com/download';
 const OLLAMA_MODELS = {
   local_lite: 'qwen2.5:3b',
   local_basic: 'gemma4:e2b',
@@ -69,6 +75,57 @@ function getAiRuntimeDir() {
   const dir = path.join(app.getPath('userData'), 'ai-runtime');
   fs.mkdirSync(dir, { recursive: true });
   return dir;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function buildManualPdfHtml() {
+  const today = new Date().toLocaleDateString('ko-KR');
+  const sectionHtml = APP_MANUAL.sections.map((section) => `
+    <section class="manual-section">
+      <h2>${escapeHtml(section.title)}</h2>
+      <p class="desc">${escapeHtml(section.description)}</p>
+      <h3>주요 기능</h3>
+      <ul>${(section.features || []).map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>
+      ${(section.tips || []).length ? `<h3>사용 팁</h3><ul>${section.tips.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : ''}
+    </section>
+  `).join('');
+  return `<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>${escapeHtml(APP_MANUAL.title)}</title>
+<style>
+  @page { margin: 18mm 16mm; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; color: #1f2933; line-height: 1.58; font-size: 12px; }
+  h1 { font-size: 28px; margin: 0 0 8px; color: #111827; }
+  h2 { font-size: 18px; margin: 24px 0 6px; color: #0f4c81; page-break-after: avoid; }
+  h3 { font-size: 12px; margin: 12px 0 4px; color: #374151; }
+  ul { margin: 4px 0 0 18px; padding: 0; }
+  li { margin: 3px 0; }
+  .cover { border-bottom: 2px solid #0f4c81; padding-bottom: 14px; margin-bottom: 16px; }
+  .meta { color: #697586; font-size: 11px; }
+  .summary { background: #f4f7fb; border: 1px solid #d8e2ef; padding: 12px 14px; border-radius: 8px; margin: 14px 0 18px; }
+  .manual-section { page-break-inside: avoid; border-bottom: 1px solid #e5e7eb; padding-bottom: 12px; }
+  .desc { margin: 0 0 8px; font-weight: 600; color: #253243; }
+</style>
+</head>
+<body>
+  <div class="cover">
+    <h1>${escapeHtml(APP_MANUAL.title)}</h1>
+    <div class="meta">버전 ${escapeHtml(APP_MANUAL.version)} · 생성일 ${escapeHtml(today)}</div>
+  </div>
+  <div class="summary">${APP_MANUAL.summary.map((item) => `<p>${escapeHtml(item)}</p>`).join('')}</div>
+  ${sectionHtml}
+</body>
+</html>`;
 }
 
 function findAiRuntimePath() {
@@ -101,16 +158,29 @@ function testAiRuntimePath(runtimePath) {
 }
 
 function findOllamaPath() {
-  const candidates = [
-    path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Ollama', 'ollama.exe'),
-    path.join(process.env.ProgramFiles || '', 'Ollama', 'ollama.exe'),
-    path.join(process.env['ProgramFiles(x86)'] || '', 'Ollama', 'ollama.exe')
-  ].filter(Boolean);
+  const candidates = process.platform === 'win32'
+    ? [
+        path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Ollama', 'ollama.exe'),
+        path.join(process.env.ProgramFiles || '', 'Ollama', 'ollama.exe'),
+        path.join(process.env['ProgramFiles(x86)'] || '', 'Ollama', 'ollama.exe')
+      ]
+    : process.platform === 'darwin'
+      ? [
+          '/usr/local/bin/ollama',
+          '/opt/homebrew/bin/ollama',
+          '/Applications/Ollama.app/Contents/Resources/ollama',
+          path.join(os.homedir(), 'Applications', 'Ollama.app', 'Contents/Resources', 'ollama')
+        ]
+      : [
+          '/usr/local/bin/ollama',
+          '/usr/bin/ollama',
+          '/bin/ollama'
+        ];
   for (const candidate of candidates) {
     try { if (fs.existsSync(candidate)) return candidate; } catch {}
   }
   try {
-    const found = execSync('where.exe ollama', {
+    const found = execSync(process.platform === 'win32' ? 'where.exe ollama' : 'which ollama', {
       encoding: 'utf8',
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'ignore']
@@ -140,46 +210,35 @@ function anonymizeSensitiveText(text) {
   return value;
 }
 
+function containsStudentSensitiveText(text) {
+  return /학생|학번|성적|내신|출결|결석|지각|조퇴|상담|관찰|학부모|보호자|위험도|생기부|생활기록부|졸업생|현학생|취업|자격증/.test(String(text || ''));
+}
+
+function blockExternalStudentData() {
+  return {
+    error: '학생 정보가 포함될 수 있는 내용은 외부 AI/클라우드로 전송하지 않습니다. 로컬 AI를 사용해 주세요.',
+    privacyBlocked: true
+  };
+}
+
+function normalizeAssistantAddressing(answer) {
+  let value = String(answer || '')
+    .replace(/안녕하세요,\s*학생[.!?。]*/g, '안녕하세요, 선생님.')
+    .replace(/안녕하세요\s*학생[.!?。]*/g, '안녕하세요, 선생님.')
+    .replace(/학생,\s*오늘/g, '선생님, 오늘')
+    .replace(/무엇을 도와드릴까요,\s*학생/g, '무엇을 도와드릴까요, 선생님')
+    .trim();
+  value = value.replace(/^(안녕하세요[.!?。]?\s*)/g, '선생님, 안녕하세요. ');
+  if (!/^선생님[,\s]/.test(value)) value = `선생님, ${value}`;
+  return value;
+}
+
 function pickContextValue(context, label) {
   const escaped = String(label || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const match = String(context || '').match(new RegExp(`^${escaped}:\\s*(.*)$`, 'm'));
   return match ? match[1].trim() : '';
 }
 
-function buildCounselingFollowUpFromContext(context, question) {
-  const ctx = String(context || '');
-  const q = String(question || '');
-  if (!/상담 페이지 저장 기록|상담기록/.test(ctx)) return '';
-  if (!/후속|조치|다음|어떻게|상담|면담|지도|관리|도와|해야|하나|계획|방안|방법|문제|갈등|관계/.test(q)) return '';
-  const student = pickContextValue(ctx, '학생') || pickContextValue(ctx, '질문 대상 학생') || '해당 학생';
-  const topic = pickContextValue(ctx, '주제') || '확인 필요';
-  const summary = pickContextValue(ctx, '요약') || pickContextValue(ctx, '상담 내용') || '확인 필요';
-  const risk = pickContextValue(ctx, '유형/상태/위험도').split('/').map((s) => s.trim()).pop() || '확인 필요';
-  const follow = pickContextValue(ctx, '기존 후속 조치') || '후속 조치 미기록';
-  const nextAction = pickContextValue(ctx, '다음 조치') || '';
-  const nextDate = pickContextValue(ctx, '후속 예정일') || '미지정';
-  const flags = pickContextValue(ctx, '위험 신호') || '없음';
-  return [
-    `${student} 학생의 현재 상담 기록 기준으로 정리하면 다음과 같습니다.`,
-    '',
-    `- 상담 주제: ${topic}`,
-    `- 핵심 요약: ${summary}`,
-    `- 현재 위험도: ${risk}`,
-    `- 기존 후속 조치: ${follow}`,
-    nextAction ? `- 다음 조치: ${nextAction}` : '- 다음 조치: 확인 필요',
-    `- 후속 예정일: ${nextDate}`,
-    `- 기록된 위험 신호: ${flags || '없음'}`,
-    '',
-    '권장 후속 조치:',
-    '1. 관련 학생을 각각 따로 상담하여 사실관계, 감정 상태, 원하는 해결 방향을 확인합니다.',
-    `2. ${student} 학생에게 2~3일 안에 짧은 재상담 시간을 잡아 관계 변화와 등교·수업 참여 상태를 확인합니다.`,
-    '3. 두 학생을 바로 대면시키기보다, 각각의 입장을 확인한 뒤 필요할 때만 중재 자리를 마련합니다.',
-    '4. 상담 기록에 다음 확인일과 담당 교사의 관찰 포인트를 구체적으로 남깁니다.',
-    '5. 갈등이 반복되거나 결석·정서 변화·폭력 징후가 보이면 보호자 또는 전문상담교사 연계를 검토합니다.',
-    '',
-    '확인 필요: 상담 기록에 없는 성적, 가정 상황, 심리 상태는 추측하지 않았습니다.'
-  ].join('\n');
-}
 
 function containsCjkChinese(text) {
   return /[\u4e00-\u9fff]/.test(String(text || ''));
@@ -487,6 +546,35 @@ function openDatabaseForUser(userId = '', options = {}) {
   return db;
 }
 
+function clearLocalGradeDataEverywhere() {
+  const dbPaths = new Set([AppDatabase.getDefaultPath()]);
+  const userDbDir = AppDatabase.getUserDatabaseDir();
+  if (fs.existsSync(userDbDir)) {
+    for (const fileName of fs.readdirSync(userDbDir)) {
+      if (/\.db$/i.test(fileName)) dbPaths.add(path.join(userDbDir, fileName));
+    }
+  }
+
+  const activePath = db?.getPath?.() || '';
+  const results = [];
+  if (db) results.push(db.clearLocalGradeData());
+
+  for (const dbPath of dbPaths) {
+    if (activePath && path.resolve(dbPath) === path.resolve(activePath)) continue;
+    try {
+      results.push(AppDatabase.clearGradeDataAtPath(dbPath));
+    } catch (error) {
+      results.push({ path: dbPath, error: error?.message || String(error) });
+    }
+  }
+
+  return {
+    success: true,
+    results,
+    total: results.reduce((sum, item) => sum + (Number(item?.total) || 0), 0)
+  };
+}
+
 function showMainWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) {
     createWindow();
@@ -506,7 +594,7 @@ function createTray() {
       ? path.join(__dirname, 'assets/icon.ico')
       : path.join(__dirname, 'assets/app-icon.png');
     tray = new Tray(iconPath);
-    tray.setToolTip('교사 업무 관리');
+    tray.setToolTip('쌤포트');
     tray.setContextMenu(Menu.buildFromTemplate([
       {
         label: '열기',
@@ -751,6 +839,51 @@ ipcMain.handle('get-app-meta', () => {
   }
 });
 
+ipcMain.handle('get-public-company-rules', () => {
+  try {
+    const filePath = path.join(__dirname, 'public_company_highschool_certificate_bonus.json');
+    const rows = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    return Array.isArray(rows) ? rows : [];
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle('export-app-manual-pdf', async () => {
+  let pdfWindow = null;
+  try {
+    const defaultPath = path.join(app.getPath('documents'), '교사_업무_관리_기능_설명서.pdf');
+    const saveResult = await dialog.showSaveDialog(mainWindow, {
+      title: '기능 설명서 PDF 저장',
+      defaultPath,
+      filters: [{ name: 'PDF 문서', extensions: ['pdf'] }]
+    });
+    if (saveResult.canceled || !saveResult.filePath) return { canceled: true };
+
+    pdfWindow = new BrowserWindow({
+      show: false,
+      width: 900,
+      height: 1200,
+      webPreferences: {
+        sandbox: true,
+        contextIsolation: true
+      }
+    });
+    await pdfWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(buildManualPdfHtml())}`);
+    const pdf = await pdfWindow.webContents.printToPDF({
+      printBackground: true,
+      preferCSSPageSize: true
+    });
+    fs.writeFileSync(saveResult.filePath, pdf);
+    shell.showItemInFolder(saveResult.filePath);
+    return { success: true, path: saveResult.filePath };
+  } catch (err) {
+    return { success: false, error: err.message };
+  } finally {
+    if (pdfWindow && !pdfWindow.isDestroyed()) pdfWindow.close();
+  }
+});
+
 ipcMain.on('window-widget-mode', (e, active) => {
   isWidgetMode = active;
   if (active) {
@@ -853,21 +986,28 @@ ipcMain.handle('install-ollama-ai', async (e, engine = 'local_lite') => {
     let ollamaPath = findOllamaPath();
 
     if (!ollamaPath) {
-      const installerPath = path.join(app.getPath('temp'), 'OllamaSetup.exe');
-      sendProgress({ step: 'download-installer', percent: 10, message: 'Ollama 설치 파일을 다운로드하는 중입니다.' });
-      await downloadFile(OLLAMA_INSTALLER_URL, installerPath, (progress) => {
-        sendProgress({
-          step: 'download-installer',
-          percent: Math.max(10, Math.min(35, Math.round(10 + (progress.percent * 0.25)))),
-          message: `Ollama 설치 파일 다운로드 중... ${progress.percent}%`
+      if (process.platform === 'win32') {
+        const installerPath = path.join(app.getPath('temp'), 'OllamaSetup.exe');
+        sendProgress({ step: 'download-installer', percent: 10, message: 'Ollama 설치 파일을 다운로드하는 중입니다.' });
+        await downloadFile(OLLAMA_INSTALLER_URL, installerPath, (progress) => {
+          sendProgress({
+            step: 'download-installer',
+            percent: Math.max(10, Math.min(35, Math.round(10 + (progress.percent * 0.25)))),
+            message: `Ollama 설치 파일 다운로드 중... ${progress.percent}%`
+          });
         });
-      });
-      sendProgress({ step: 'run-installer', percent: 40, message: 'Ollama 설치 파일을 실행했습니다. 설치 창을 완료해 주세요.' });
-      shell.openPath(installerPath);
+        sendProgress({ step: 'run-installer', percent: 40, message: 'Ollama 설치 파일을 실행했습니다. 설치 창을 완료해 주세요.' });
+        shell.openPath(installerPath);
+      } else {
+        sendProgress({ step: 'open-download', percent: 15, message: 'Ollama 다운로드 페이지를 열었습니다. 설치를 완료해 주세요.' });
+        shell.openExternal(OLLAMA_DOWNLOAD_URL);
+      }
       return {
         success: false,
         needsUserAction: true,
-        message: 'Ollama 설치 파일을 실행했습니다. 설치 창에서 설치를 완료한 뒤 다시 "로컬 AI 자동 설치/확인"을 눌러 주세요.'
+        message: process.platform === 'win32'
+          ? 'Ollama 설치 파일을 실행했습니다. 설치 창에서 설치를 완료한 뒤 다시 "로컬 AI 자동 설치/확인"을 눌러 주세요.'
+          : 'Ollama 다운로드 페이지를 열었습니다. 설치를 완료한 뒤 다시 "로컬 AI 자동 설치/확인"을 눌러 주세요.'
       };
     }
 
@@ -876,7 +1016,9 @@ ipcMain.handle('install-ollama-ai', async (e, engine = 'local_lite') => {
     if (!serverReady) {
       return {
         success: false,
-        message: 'Ollama를 실행하지 못했습니다. Windows 트레이에서 Ollama가 실행 중인지 확인한 뒤 다시 시도해 주세요.'
+        message: process.platform === 'win32'
+          ? 'Ollama를 실행하지 못했습니다. Windows 트레이에서 Ollama가 실행 중인지 확인한 뒤 다시 시도해 주세요.'
+          : 'Ollama를 실행하지 못했습니다. Ollama 앱 또는 `ollama serve`가 실행 중인지 확인한 뒤 다시 시도해 주세요.'
       };
     }
 
@@ -1035,6 +1177,16 @@ ipcMain.handle('add-student', (e, data) => db.addStudent(data));
 ipcMain.handle('update-student', (e, id, data) => db.updateStudent(id, data));
 ipcMain.handle('delete-student', (e, id) => db.deleteStudent(id));
 ipcMain.handle('import-students-csv', (e, rows) => db.importStudentsCSV(rows));
+
+ipcMain.handle('get-career-records', () => db.getCareerRecords());
+ipcMain.handle('save-career-record', (e, record) => db.saveCareerRecord(record));
+ipcMain.handle('delete-career-record', (e, id) => db.deleteCareerRecord(id));
+ipcMain.handle('clear-career-records', () => db.clearCareerRecords());
+ipcMain.handle('get-grade-columns-local', () => db.getGradeColumns());
+ipcMain.handle('save-grade-columns-local', (e, columns) => db.saveGradeColumns(columns));
+ipcMain.handle('get-grade-scores-local', () => db.getGradeScores());
+ipcMain.handle('set-grade-score-local', (e, payload) => db.setGradeScore(payload));
+ipcMain.handle('clear-local-grade-data', () => clearLocalGradeDataEverywhere());
 
 ipcMain.handle('get-attendance', (e, date) => db.getAttendance(date));
 ipcMain.handle('get-attendance-range', (e, start, end) => db.getAttendanceRange(start, end));
@@ -1287,6 +1439,10 @@ ipcMain.handle('neis-get-weather', async (e, region) => {
 
 ipcMain.handle('ai-extract-todos', async (e, apiKey, model, provider, text) => {
   try {
+    if (provider === 'local_lite' || provider === 'local') {
+      return await runLocalTodoExtraction(text);
+    }
+    if (containsStudentSensitiveText(text)) return blockExternalStudentData();
     if (provider === 'gemini') {
       return await runGemini(apiKey, model, text, {
         system: "교사의 카카오톡, 문자, 공문에서 할일만 추출하세요. 한 줄에 하나씩 '- [ ] 할일내용 (기한: YYYY-MM-DD)' 형식으로 출력하세요. 기한이 없으면 날짜를 생략하고 설명은 쓰지 마세요.",
@@ -1301,6 +1457,68 @@ ipcMain.handle('ai-extract-todos', async (e, apiKey, model, provider, text) => {
     return { error: err.message };
   }
 });
+
+async function runLocalTodoExtraction(text) {
+  const input = String(text || '').trim();
+  if (!input) return { error: '추출할 텍스트가 비어 있습니다.' };
+  const engine = db.getSetting('ai_engine', 'local_lite');
+  const model = getOllamaModelForEngine(engine);
+  const status = await getOllamaStatus(engine);
+  if (!status.ready) return { error: status.message || '로컬 AI가 아직 준비되지 않았습니다.' };
+
+  const today = new Date().toISOString().slice(0, 10);
+  const prompt = [
+    '당신은 교사용 업무 문장에서 할일만 추출하는 로컬 AI입니다.',
+    '입력 내용은 이 PC 안에서만 처리됩니다.',
+    '반드시 한국어로 답하세요.',
+    '출력은 설명 없이 한 줄에 하나씩만 작성하세요.',
+    "형식: - [ ] 할일내용 (기한: YYYY-MM-DD)",
+    '기한이 명확하지 않으면 (기한: ...) 부분을 쓰지 마세요.',
+    '해야 할 행동이 아닌 단순 인사, 잡담, 배경 설명은 제외하세요.',
+    '원문에 없는 학생 정보나 업무를 만들지 마세요.',
+    `오늘 날짜: ${today}`,
+    '',
+    '추출할 원문:',
+    input
+  ].join('\n');
+
+  const result = await requestOllamaJson('/api/generate', {
+    model,
+    stream: false,
+    prompt,
+    options: {
+      temperature: 0.1,
+      num_predict: 520
+    }
+  }, 90000);
+  if (!result.ok) return { error: result.error || result.raw || 'Ollama 호출에 실패했습니다.' };
+  const output = String(result.data?.response || '').trim();
+  return { result: normalizeTodoExtractionOutput(output) };
+}
+
+function normalizeTodoExtractionOutput(output) {
+  return String(output || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      let value = line
+        .replace(/^```(?:[a-z]+)?/i, '')
+        .replace(/```$/i, '')
+        .replace(/^\d+[.)]\s*/, '')
+        .replace(/^[-*•]\s*/, '')
+        .replace(/^\[[ xX]?\]\s*/, '')
+        .trim();
+      if (!value) return '';
+      if (!/\(기한:\s*\d{4}-\d{2}-\d{2}\)/.test(value)) {
+        const date = value.match(/\d{4}-\d{2}-\d{2}/)?.[0];
+        if (date) value = value.replace(/\d{4}-\d{2}-\d{2}/, '').trim() + ` (기한: ${date})`;
+      }
+      return value ? `- [ ] ${value}` : '';
+    })
+    .filter(Boolean)
+    .join('\n');
+}
 
 ipcMain.handle('ai-extract-timetable', async (e, apiKey, model, provider, text) => {
   try {
@@ -1428,24 +1646,33 @@ ipcMain.handle('ai-assistant-chat', async (e, payload = {}) => {
     const model = String(payload.model || '');
     const page = String(payload.page || '현재 페이지');
     const sensitive = !!payload.sensitive || isStudentSensitivePage(page);
+    if (sensitive) return blockExternalStudentData();
     const question = sensitive ? anonymizeSensitiveText(payload.question || '') : String(payload.question || '');
     const context = sensitive ? anonymizeSensitiveText(payload.context || '') : String(payload.context || '');
     if (!apiKey || !question) return { error: 'AI 설정 또는 질문이 비어 있습니다.' };
-    const directCounselingAnswer = buildCounselingFollowUpFromContext(context, question);
-    if (directCounselingAnswer) return { result: directCounselingAnswer };
+    if (/^(안녕|안녕하세요|하이|hello|hi)$/i.test(String(payload.question || '').trim())) {
+      return { result: '선생님, 안녕하세요. 오늘 쌤포트에서 어떤 업무를 도와드릴까요?' };
+    }
     const options = {
       system: [
-        '당신은 교사 업무 관리 앱 안의 AI 도우미입니다.',
-        '사용자는 교사이며, 학생 상담/공문/시간표/할일/학사 업무를 빠르게 처리하려고 합니다.',
+        '당신은 쌤포트 앱 안의 AI 도우미입니다.',
+        '모든 답변은 반드시 "선생님,"으로 시작하세요.',
+        '사용자는 학생이 아니라 교사입니다. 사용자를 "학생"이라고 부르지 말고 "선생님"이라고 부르세요.',
+        '사용자는 학생 상담/공문/시간표/할일/학사 업무를 빠르게 처리하려고 합니다.',
         sensitive ? '입력 내용은 외부 전송 전 익명화되었습니다. 실제 이름, 번호, 연락처를 추정하거나 복원하지 마세요.' : '',
         '학생 상담과 개인정보는 매우 민감하므로 단정적 진단, 의료적 판단, 낙인 표현을 피하고 학교 절차와 교사의 최종 판단을 존중하세요.',
-        '한국어로 짧고 실무적으로 답하세요.'
+        '고정 안내문처럼 답하지 말고, 사용자의 질문과 현재 페이지 맥락을 반영해 구체적으로 답하세요.',
+        '가능하면 바로 쓸 수 있는 문장, 확인할 항목, 다음 행동을 포함하세요.',
+        '한국어로 실무적으로 답하세요. 내용이 복잡하면 3~5개의 구체 항목으로 정리하세요.'
       ].filter(Boolean).join('\n'),
       userPrompt: `현재 페이지: ${page}\n\n${context ? `앱에 저장된 관련 맥락:\n${context}\n\n` : ''}사용자 질문:\n${question}`,
       maxTokens: 1200
     };
-    if (provider === 'gemini') return await runGemini(apiKey, model || 'gemini-2.5-flash', '', options);
-    return await runClaude(apiKey, model || 'claude-haiku-4-5', '', options);
+    const result = provider === 'gemini'
+      ? await runGemini(apiKey, model || 'gemini-2.5-flash', '', options)
+      : await runClaude(apiKey, model || 'claude-haiku-4-5', '', options);
+    if (result?.result) result.result = normalizeAssistantAddressing(result.result);
+    return result;
   } catch (err) {
     return { error: err.message };
   }
@@ -1459,17 +1686,22 @@ ipcMain.handle('ai-local-chat', async (e, payload = {}) => {
     const context = String(payload.context || '').trim();
     const page = String(payload.page || '현재 페이지');
     if (!question) return { error: '질문이 비어 있습니다.' };
-    const directCounselingAnswer = buildCounselingFollowUpFromContext(context, question);
-    if (directCounselingAnswer) return { result: directCounselingAnswer };
+    if (/^(안녕|안녕하세요|하이|hello|hi)$/i.test(question)) {
+      return { result: '선생님, 안녕하세요. 오늘 쌤포트에서 어떤 업무를 도와드릴까요?' };
+    }
     const status = await getOllamaStatus(engine);
     if (!status.ready) return { error: status.message || '로컬 AI가 아직 준비되지 않았습니다.' };
     const buildPrompt = (retryText = '') => [
-        '당신은 교사 업무 관리 앱 안의 로컬 AI 도우미입니다.',
+        '당신은 쌤포트 앱 안의 로컬 AI 도우미입니다.',
+        '모든 답변은 반드시 "선생님,"으로 시작하세요.',
+        '사용자는 학생이 아니라 교사입니다. 사용자를 "학생"이라고 부르지 말고 "선생님"이라고 부르세요.',
         '반드시 한국어로만 답하세요. 중국어, 일본어, 영어 문장을 섞지 마세요.',
-        '학생을 부를 때는 "同学" 같은 중국어 표현을 절대 쓰지 말고 "학생" 또는 "해당 학생"이라고 쓰세요.',
+        '상담 대상 학생을 언급해야 할 때만 "학생" 또는 "해당 학생"이라고 쓰세요.',
         '학생 상담, 성적, 개인정보는 민감하므로 외부 전송 없이 로컬에서만 답합니다.',
         context ? '아래 앱 저장 기록을 최우선 근거로 사용하세요. 기록에 없는 사실은 만들지 마세요.' : '',
-        '짧고 빠르게 답하세요. 기본 답변은 500자 이내로 제한합니다.',
+        '고정 안내문처럼 답하지 말고, 질문의 의도와 현재 페이지 맥락에 맞춰 구체적으로 답하세요.',
+        '가능하면 바로 쓸 수 있는 문장, 확인할 항목, 다음 행동을 포함하세요.',
+        '기본 답변은 700자 안팎으로 하되, 필요한 경우 3~5개의 구체 항목으로 정리하세요.',
         '의학적 진단, 낙인 표현, 단정적 판단을 피하고 교사가 활용할 수 있는 실무 문장으로 도와주세요.',
         `현재 페이지: ${page}`,
         '',
@@ -1481,8 +1713,8 @@ ipcMain.handle('ai-local-chat', async (e, payload = {}) => {
       stream: false,
       prompt,
       options: {
-        temperature: 0.2,
-        num_predict: context ? 760 : 420
+        temperature: 0.35,
+        num_predict: context ? 900 : 620
       }
     }, 120000);
     let result = await runLocal(buildPrompt());
@@ -1492,7 +1724,7 @@ ipcMain.handle('ai-local-chat', async (e, payload = {}) => {
       const retry = await runLocal(buildPrompt(`질문: ${question}\n\n금지: 중국어 한자 표현, 同学, 您, 请, 成绩报告 같은 중국어 표현`));
       if (retry.ok && retry.data?.response) answer = retry.data.response;
     }
-    return { result: answer };
+    return { result: normalizeAssistantAddressing(answer) };
   } catch (err) {
     return { error: err.message };
   }

@@ -305,45 +305,7 @@
     return { student, rows };
   }
 
-  function buildSafeFollowUpAnswer(question) {
-    const q = String(question || "");
-    const asksCareAdvice = /후속|조치|어떻게|다음|상담|면담|지도|관리|도와|해야|하나|계획|방안|방법|문제|갈등|관계/.test(q);
-    if (!asksCareAdvice) return "";
-    const found = findCounselingRowsForQuestion(question);
-    if (!found.rows.length) {
-      return [
-        "현재 상담 기록에서 해당 학생의 상담 내용을 찾지 못했습니다.",
-        "",
-        "먼저 학생 이름이 정확한지 확인하고, 상담 기록의 요약·상담 내용·기존 후속 조치를 확인한 뒤 다시 질문해 주세요."
-      ].join("\n");
-    }
-    const row = found.rows[0];
-    const studentName = studentLabel(row);
-    const risk = row.risk_level || "낮음";
-    const flags = String(row.risk_flags || "").split(",").filter(Boolean);
-    const base = [
-      `${studentName} 학생의 현재 상담 기록 기준으로 정리하면 다음과 같습니다.`,
-      "",
-      `- 상담 주제: ${row.topic || "확인 필요"}`,
-      `- 핵심 요약: ${row.summary || row.content || "확인 필요"}`,
-      `- 현재 위험도: ${risk}`,
-      `- 기존 후속 조치: ${row.next_action || row.follow_up || "후속 조치 미기록"}`,
-      `- 후속 예정일: ${row.next_date || "미지정"}`,
-      flags.length ? `- 기록된 위험 신호: ${flags.join(", ")}` : "- 기록된 위험 신호: 없음",
-      "",
-      "권장 후속 조치:",
-      "1. 관련 학생을 각각 따로 상담하여 사실관계, 감정 상태, 원하는 해결 방향을 확인합니다.",
-      `2. ${studentName} 학생에게 2~3일 안에 짧은 재상담 시간을 잡아 관계 변화와 등교·수업 참여 상태를 확인합니다.`,
-      "3. 두 학생을 바로 대면시키기보다, 각각의 입장을 확인한 뒤 필요할 때만 중재 자리를 마련합니다.",
-      "4. 상담 기록에 다음 확인일과 담당 교사의 관찰 포인트를 구체적으로 남깁니다.",
-      "5. 갈등이 반복되거나 결석·정서 변화·폭력 징후가 보이면 보호자 또는 전문상담교사 연계를 검토합니다."
-    ];
-    return base.join("\n");
-  }
-
-  window.appGetAiDirectAnswer = function (question) {
-    return buildSafeFollowUpAnswer(question);
-  };
+  window.appGetAiDirectAnswer = null;
 
   function renderMetrics(rows) {
     const monthPrefix = todayStr().slice(0, 7);

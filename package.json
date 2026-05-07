@@ -1,7 +1,7 @@
 {
   "name": "teacher-app",
-  "version": "2.0.50",
-  "description": "교사 업무 관리 Electron 앱",
+  "version": "2.0.51",
+  "description": "쌤포트 Electron 앱",
   "author": "충상",
   "main": "main.js",
   "scripts": {
@@ -9,7 +9,8 @@
     "build": "electron-builder",
     "build:win": "electron-builder --win nsis",
     "build:patch": "powershell -ExecutionPolicy Bypass -File ./패키지만들기.ps1",
-    "release:win": "electron-builder --win nsis --publish always"
+    "release:win": "electron-builder --win nsis --publish always",
+    "release:mac": "./release_auto_mac.sh"
   },
   "dependencies": {
     "@xmldom/xmldom": "*",
@@ -25,7 +26,7 @@
   },
   "build": {
     "appId": "com.teacher.app",
-    "productName": "교사 업무 관리",
+    "productName": "쌤포트",
     "directories": {
       "output": "dist"
     },
@@ -44,7 +45,7 @@
     "win": {
       "target": "nsis",
       "artifactName": "teacher-app-setup-${version}.${ext}",
-      "executableName": "교사 업무 관리",
+      "executableName": "쌤포트",
       "signAndEditExecutable": false,
       "icon": "assets/icon.ico"
     },
@@ -53,7 +54,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
-      "shortcutName": "교사 업무 관리",
+      "shortcutName": "쌤포트",
       "deleteAppDataOnUninstall": false
     },
     "publish": {

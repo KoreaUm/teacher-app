@@ -1,3 +1,45 @@
+/* ── iOS 스타일 토글 스위치 ─────────────────────────────── */
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+  gap: 12px;
+}
+.toggle-row:last-child { border-bottom: none; }
+.toggle-label { font-size: 14px; color: var(--text); }
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 51px;
+  height: 31px;
+  flex-shrink: 0;
+}
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-track {
+  position: absolute;
+  inset: 0;
+  border-radius: 31px;
+  background: #e0e0e0;
+  transition: background 0.2s;
+  cursor: pointer;
+}
+.toggle-switch input:checked + .toggle-track { background: var(--accent); }
+.toggle-track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 27px;
+  height: 27px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+  transition: transform 0.2s;
+}
+.toggle-switch input:checked + .toggle-track::after { transform: translateX(20px); }
+
 /* ── 디자인 토큰 ───────────────────────────────────────── */
 :root {
   /* Notion 팔레트 */
@@ -77,9 +119,20 @@ a { color: var(--accent); text-decoration: none; }
   padding-left: 18px;
 }
 #app-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   font-size: 12px;
-  color: var(--sidebar-text2);
-  font-weight: 600;
+  color: var(--sidebar-text);
+  font-weight: 800;
+  letter-spacing: 0;
+}
+#app-title img {
+  width: 20px;
+  height: 20px;
+  display: block;
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.12);
 }
 #titlebar-btns {
   display: flex;
@@ -1463,6 +1516,12 @@ tbody tr:hover { background: var(--hover); }
   box-shadow: 0 32px 80px rgba(0, 0, 0, .52), inset 0 1px 0 rgba(255,255,255,.06);
   overflow: hidden;
 }
+.grades-hero-copy {
+  flex: 1 1 680px;
+  min-width: 320px;
+  position: relative;
+  z-index: 1;
+}
 .grades-hero::before {
   content: '';
   position: absolute;
@@ -1515,7 +1574,9 @@ tbody tr:hover { background: var(--hover); }
   color: rgba(148, 163, 184, .90);
   font-size: 13px;
   line-height: 1.65;
-  max-width: 500px;
+  max-width: 860px;
+  word-break: keep-all;
+  overflow-wrap: normal;
 }
 .grades-hero-actions {
   position: relative;
@@ -1720,6 +1781,67 @@ tbody tr:hover { background: var(--hover); }
   font-size: 12px;
   color: #64748b;
   line-height: 1.45;
+}
+
+.grades-public-box {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid rgba(45, 212, 191, .16);
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(8, 47, 73, .48), rgba(15, 23, 42, .72));
+}
+.grades-public-title {
+  color: #ccfbf1;
+  font-weight: 900;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+.grades-public-card {
+  padding: 13px 15px;
+  border: 1px solid rgba(45, 212, 191, .16);
+  border-radius: 13px;
+  background: rgba(4, 18, 31, .72);
+}
+.grades-public-card.muted {
+  opacity: .72;
+  border-style: dashed;
+}
+.grades-rule-status {
+  font-size: 11px;
+  font-weight: 800;
+  border-radius: 20px;
+  padding: 2px 10px;
+  white-space: nowrap;
+}
+.grades-rule-status.verified {
+  color: #86efac;
+  background: rgba(22, 163, 74, .16);
+  border: 1px solid rgba(22, 163, 74, .30);
+}
+.grades-rule-status.partial {
+  color: #fde68a;
+  background: rgba(217, 119, 6, .16);
+  border: 1px solid rgba(217, 119, 6, .30);
+}
+.grades-rule-status.expired {
+  color: #cbd5e1;
+  background: rgba(100, 116, 139, .16);
+  border: 1px solid rgba(100, 116, 139, .30);
+}
+.grades-source-quote {
+  margin-top: 7px;
+  color: #99f6e4;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.grades-public-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  color: #94a3b8;
+  font-size: 11.5px;
 }
 
 /* 분석 카드 제목 */

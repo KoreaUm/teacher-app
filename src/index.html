@@ -3,20 +3,21 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>교사 업무 관리</title>
+<title>쌤포트</title>
 <link rel="stylesheet" href="styles.css">
 <script src="../node_modules/firebase/firebase-app-compat.js"></script>
 <script src="../node_modules/firebase/firebase-auth-compat.js"></script>
 <script src="../node_modules/firebase/firebase-firestore-compat.js"></script>
 <script src="../node_modules/firebase/firebase-functions-compat.js"></script>
 <script src="firebase/config.js"></script>
+<script src="app_manual.js"></script>
 <script src="official_document_rules.js"></script>
 <script src="sv_document_templates.js"></script>
 </head>
 <body>
 <div id="titlebar">
   <div id="titlebar-drag">
-    <span id="app-title">교사 업무 관리</span>
+    <span id="app-title"><img src="../assets/ssamport-logo.svg" alt="">쌤포트</span>
   </div>
   <div id="titlebar-btns">
     <button id="min-btn" title="최소화">─</button>
@@ -40,6 +41,7 @@
       </div>
       <div id="topbar-right">
         <button id="update-btn" class="topbar-btn" style="display:none">업데이트 확인</button>
+        <button id="manual-btn" class="topbar-btn" title="기능 설명서">설명서</button>
         <button id="edit-layout-btn" class="topbar-btn" style="display:none">배열 편집</button>
         <button id="widget-mode-btn" class="topbar-btn" style="display:none">위젯 모드</button>
         <div style="position:relative">
@@ -48,6 +50,31 @@
             <span style="font-size:12px;color:var(--text2)">투명도</span>
             <input id="opacity-slider" type="range" min="20" max="100" value="100" style="flex:1;accent-color:var(--accent)">
             <span id="opacity-lbl" style="font-size:12px;font-weight:600;color:var(--accent);width:34px;text-align:right">100%</span>
+          </div>
+        </div>
+        <div style="position:relative">
+          <button id="ai-settings-btn" class="topbar-btn" title="AI 설정">⚙️ AI</button>
+          <div id="ai-settings-panel" style="display:none;position:absolute;right:0;top:38px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px 18px 14px;box-shadow:var(--shadow-md);z-index:9999;min-width:300px;max-width:340px">
+            <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:12px">AI 엔진 선택</div>
+            <div id="ai-quick-engine-list" style="display:grid;gap:6px;margin-bottom:14px"></div>
+            <div id="ai-quick-external" style="display:none;gap:8px;flex-direction:column;margin-bottom:8px">
+              <div>
+                <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px">외부 AI 제공업체</div>
+                <select id="ai-quick-provider" class="input" style="width:100%;font-size:13px">
+                  <option value="claude">Claude (Anthropic)</option>
+                  <option value="gemini">Gemini (Google)</option>
+                </select>
+              </div>
+              <div>
+                <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px">API 키</div>
+                <input id="ai-quick-key" class="input" type="password" placeholder="API 키 입력" style="width:100%;font-size:13px;box-sizing:border-box">
+              </div>
+              <div>
+                <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px">모델</div>
+                <select id="ai-quick-model" class="input" style="width:100%;font-size:13px"></select>
+              </div>
+            </div>
+            <button id="ai-quick-save" class="btn btn-primary btn-sm" style="width:100%">저장</button>
           </div>
         </div>
         <button id="ai-helper-btn" class="topbar-btn ai-helper-open" title="AI 도우미">AI 도우미</button>
@@ -74,6 +101,7 @@
     <button data-ai-prompt="현재 페이지에서 무엇을 도와줄 수 있어?">이 페이지 도움</button>
     <button data-ai-prompt="상담 기록을 더 전문적으로 쓰는 방법을 알려줘.">상담 기록 팁</button>
     <button data-ai-prompt="후속 조치 문장을 예시로 만들어줘.">후속 조치 예시</button>
+    <button id="ai-helper-manual-pdf" type="button">설명서 PDF</button>
   </div>
   <div class="ai-helper-input-row">
     <textarea id="ai-helper-input" placeholder="무엇이든 물어보세요. 예: 이 상담 내용을 요약해줘"></textarea>
@@ -119,8 +147,8 @@
     "weather_region",
     "edu_office_code",
     "school_code",
-    "menu_groups_config",
     "quick_links_config",
+    "menu_groups_config",
     "dashboard_layout_v4",
     "hidden_widgets",
     "class_timetable_subject_colors",
@@ -128,11 +156,13 @@
     "class_timetable_file_name",
     "teacher_timetable_number_colors_enabled",
     "teacher_timetable_number_colors",
+    "todo_manual_order"
+  ];
+  var CLOUD_BLOCKED_SETTING_KEYS = [
     "custom_calendar_events",
     "gcal_client_id",
     "gcal_client_secret",
-    "gcal_refresh_token",
-    "todo_manual_order"
+    "gcal_refresh_token"
   ];
 
   api.setSetting = function (key, value) {
@@ -216,6 +246,7 @@
     { key: "meal", label: "급식 메뉴" },
     { key: "school_calendar", label: "학사 일정" },
     { key: "calculator", label: "계산기" },
+    { key: "lesson_materials", label: "수업자료제작" },
     { key: "official_document", label: "공문서 작성" },
     { key: "todos", label: "할일 목록" },
     { key: "settings", label: "설정" }
@@ -226,7 +257,7 @@
     { key: "class", label: "학급 관리", items: ["students", "attendance", "daily_memo", "timetable"] },
     { key: "records", label: "기록", items: ["counseling", "observations", "lessons"] },
     { key: "evaluation", label: "평가", items: ["assessments", "submissions", "statistics", "ai_analysis"] },
-    { key: "tools", label: "도구", items: ["meal", "school_calendar", "calculator", "official_document", "settings"] }
+    { key: "tools", label: "도구", items: ["meal", "school_calendar", "calculator", "lesson_materials", "official_document", "settings"] }
   ];
 
   var menuGroups = cloneMenuGroups(DEFAULT_MENU_GROUPS);
@@ -285,6 +316,7 @@
         meal: "급식 식단 메뉴 밥",
         school_calendar: "캘린더 일정 행사 학사일정",
         calculator: "계산기 계산 점수",
+        lesson_materials: "수업자료 제작 수업 콘텐츠 생성기 제미나이 gemini 캔버스 canvas 프롬프트 슬라이드 지도안 학습지 요약노트",
         official_document: "공문 공문서 행정문서 작성 협조요청 통보 회신 보고 알림 검토 붙임 끝",
         todos: "할일 할 일 todo 업무 체크 완료",
         settings: "설정 환경설정 학교 날씨 메뉴 바로가기",
@@ -533,6 +565,26 @@
   function getSharedCollectionDoc(name) {
     if (!authUser) return null;
     return getUserDoc(authUser.uid).collection("shared").doc(name);
+  }
+
+  function purgeCloudSensitiveData() {
+    if (!authUser || !authProfile || authProfile.active === false) return Promise.resolve(false);
+    var deletes = {};
+    CLOUD_BLOCKED_SETTING_KEYS.forEach(function (key) {
+      deletes[key] = window.firebase.firestore.FieldValue.delete();
+    });
+    deletes.updatedAt = window.firebase.firestore.FieldValue.serverTimestamp();
+    deletes.updatedBy = normalizeEmail(authUser.email);
+    return getUserDoc(authUser.uid).collection("settings").doc("app").set(deletes, { merge: true }).then(function () {
+      return true;
+    }).catch(function (error) {
+      console.error("cloud sensitive purge failed", error);
+      return false;
+    });
+  }
+
+  function cloudTextLooksStudentSensitive(text) {
+    return /학생|학번|성적|내신|출결|결석|지각|조퇴|상담|관찰|학부모|보호자|위험도|생기부|생활기록부|졸업생|현학생|취업|자격증/.test(String(text || ""));
   }
 
   function getLocalDeviceId() {
@@ -956,10 +1008,9 @@
   window.appGradesGetColumns = function () {
     if (!canUseGrades()) return Promise.reject(new Error("성적관리 권한이 없습니다."));
     return requireGradeSession().then(function () {
-      return getGradesBookDoc().get();
-    }).then(function (snap) {
-      var data = snap.exists ? (snap.data() || {}) : {};
-      var columns = Array.isArray(data.columns) ? data.columns : [];
+      return api.getGradeColumnsLocal();
+    }).then(function (columns) {
+      columns = Array.isArray(columns) ? columns : [];
       return columns.slice().sort(function (a, b) {
         return (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0);
       });
@@ -969,24 +1020,14 @@
   window.appGradesSaveColumns = function (columns) {
     if (!canUseGrades()) return Promise.reject(new Error("성적관리 권한이 없습니다."));
     return requireGradeSession().then(function () {
-      return getGradesBookDoc().set({
-      columns: Array.isArray(columns) ? columns : [],
-      updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
-      updatedBy: normalizeEmail(authUser && authUser.email)
-      }, { merge: true });
+      return api.saveGradeColumnsLocal(Array.isArray(columns) ? columns : []);
     });
   };
 
   window.appGradesGetScores = function () {
     if (!canUseGrades()) return Promise.reject(new Error("성적관리 권한이 없습니다."));
     return requireGradeSession().then(function () {
-      return getGradesBookDoc().collection("scores").get();
-    }).then(function (snap) {
-      var rows = [];
-      snap.forEach(function (doc) {
-        rows.push(Object.assign({ id: doc.id }, doc.data() || {}));
-      });
-      return rows;
+      return api.getGradeScoresLocal();
     });
   };
 
@@ -995,46 +1036,32 @@
     var columnId = String((payload && payload.column_id) || "");
     var studentKey = String((payload && payload.student_key) || "");
     if (!columnId || !studentKey) return Promise.reject(new Error("성적 정보가 올바르지 않습니다."));
-    var docId = encodeURIComponent(studentKey) + "_" + encodeURIComponent(columnId);
-    var docRef = getGradesBookDoc().collection("scores").doc(docId);
     var rawScore = payload.score;
-    if (rawScore === null || rawScore === undefined || rawScore === "") {
-      return requireGradeSession().then(function () {
-        return docRef.delete();
-      });
-    }
     var score = Number(rawScore);
-    if (!Number.isFinite(score) || score < 0) {
+    if (rawScore !== null && rawScore !== undefined && rawScore !== "" && (!Number.isFinite(score) || score < 0)) {
       return Promise.reject(new Error("점수는 0 이상의 숫자여야 합니다."));
     }
     return requireGradeSession().then(function () {
-      return getGradesBookDoc().get();
-    }).then(function (snap) {
-      var data = snap.exists ? (snap.data() || {}) : {};
-      var columns = Array.isArray(data.columns) ? data.columns : [];
+      return api.getGradeColumnsLocal();
+    }).then(function (columns) {
       var column = columns.find(function (item) { return String(item.id) === columnId; });
       var maxScore = column ? Number(column.max_score) || 100 : 100;
-      if (score > maxScore) throw new Error("점수는 만점을 넘을 수 없습니다.");
-      return docRef.set({
+      if (rawScore !== null && rawScore !== undefined && rawScore !== "" && score > maxScore) throw new Error("점수는 만점을 넘을 수 없습니다.");
+      return api.setGradeScoreLocal({
         column_id: columnId,
         student_key: studentKey,
         student_number: Number(payload.student_number) || 0,
         student_name: String(payload.student_name || ""),
-        score: score,
-        updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
-        updatedBy: normalizeEmail(authUser && authUser.email)
-      }, { merge: true });
+        score: rawScore
+      });
     });
   };
 
   window.appCareerListRecords = function () {
     return requireGradeSession().then(function () {
-      return getGradesBookDoc().collection("careerStudents").get();
-    }).then(function (snap) {
-      var rows = [];
-      snap.forEach(function (doc) {
-        rows.push(Object.assign({ id: doc.id }, doc.data() || {}));
-      });
+      return api.getCareerRecords();
+    }).then(function (rows) {
+      rows = Array.isArray(rows) ? rows : [];
       rows.sort(function (a, b) {
         return (Number(b.graduationYear) || 0) - (Number(a.graduationYear) || 0) ||
           String(a.name || "").localeCompare(String(b.name || ""), "ko");
@@ -1046,34 +1073,33 @@
   window.appCareerSaveRecord = function (record) {
     return requireGradeSession().then(function () {
       var data = Object.assign({}, record || {});
-      var id = String(data.id || "").trim() || getGradesBookDoc().collection("careerStudents").doc().id;
+      var id = String(data.id || "").trim();
       delete data.id;
       data.recordType = data.recordType === "graduate" ? "graduate" : "current";
       data.recordTypeLabel = data.recordType === "graduate" ? "졸업생" : "현학생";
       data.graduationYear = Number(data.graduationYear) || new Date().getFullYear();
       data.gradeAverage = Number(data.gradeAverage) || 0;
       data.certificates = Array.isArray(data.certificates) ? data.certificates.map(String).filter(Boolean) : [];
-      data.updatedAt = window.firebase.firestore.FieldValue.serverTimestamp();
-      data.updatedBy = normalizeEmail(authUser && authUser.email);
-      return getGradesBookDoc().collection("careerStudents").doc(id).set(data, { merge: true }).then(function () {
-        return id;
-      });
+      if (id) data.id = id;
+      return api.saveCareerRecord(data);
     });
   };
 
   window.appCareerDeleteRecord = function (id) {
     return requireGradeSession().then(function () {
-      return getGradesBookDoc().collection("careerStudents").doc(String(id || "")).delete();
+      return api.deleteCareerRecord(String(id || ""));
     });
   };
 
-  window.appCareerDeleteAllRecords = function () {
+  window.appGradesClearLocalData = function () {
     return requireGradeSession().then(function () {
-      return getGradesBookDoc().collection("careerStudents").get();
-    }).then(function (snap) {
-      var batch = window.firebase.firestore().batch();
-      snap.forEach(function (doc) { batch.delete(doc.ref); });
-      return batch.commit();
+      return api.clearLocalGradeData();
+    });
+  };
+
+  window.appCareerClearAllRecords = function () {
+    return requireGradeSession().then(function () {
+      return api.clearCareerRecords();
     });
   };
 
@@ -1103,6 +1129,9 @@
       data.note = String(data.note || "").trim();
       data.sortOrder = Number(data.sortOrder) || Date.now();
       if (!data.title || !data.url) throw new Error("링크 이름과 주소를 입력해 주세요.");
+      if (cloudTextLooksStudentSensitive([data.title, data.note].join(" "))) {
+        throw new Error("학생 정보가 포함될 수 있는 바로가기 이름/메모는 클라우드에 저장하지 않습니다.");
+      }
       if (!/^https?:\/\//i.test(data.url)) throw new Error("주소는 http:// 또는 https:// 로 시작해야 합니다.");
       data.updatedAt = window.firebase.firestore.FieldValue.serverTimestamp();
       data.updatedBy = normalizeEmail(authUser && authUser.email);
@@ -1346,15 +1375,14 @@
 
     var tasks = [];
     if (!kind || kind === "todos") {
-      tasks.push(api.getTodos(true).then(function (todos) {
+      tasks.push(api.getTodos(true).then(function (items) {
         return getSharedCollectionDoc("todos").set({
-          items: (todos || []).map(sanitizeTodoForCloud),
+          items: (items || []).map(sanitizeTodoForCloud),
           updatedAt: window.firebase.firestore.FieldValue.serverTimestamp(),
           updatedBy: normalizeEmail(authUser.email)
         }, { merge: true });
       }));
     }
-
     if (!kind || kind === "timetable") {
       tasks.push(api.getTimetable().then(function (items) {
         return getSharedCollectionDoc("timetable").set({
@@ -1390,7 +1418,6 @@
           var todoData = todoSnap.data() || {};
           tasks.push(api.replaceTodos(Array.isArray(todoData.items) ? todoData.items : []));
         }
-
         if (timetableSnap.exists) {
           var timetableData = timetableSnap.data() || {};
           tasks.push(api.replaceTimetable(Array.isArray(timetableData.items) ? timetableData.items : []));
@@ -1425,7 +1452,9 @@
     if (!authUser || !authProfile || authProfile.active === false) {
       return Promise.resolve(false);
     }
-    return api.getAllSettings().then(function (settings) {
+    return purgeCloudSensitiveData().then(function () {
+      return api.getAllSettings();
+    }).then(function (settings) {
       var payload = buildCloudSettingsPayload(settings || {});
       payload.updatedAt = window.firebase.firestore.FieldValue.serverTimestamp();
       payload.updatedBy = normalizeEmail(authUser.email);
@@ -1485,6 +1514,7 @@
     ensureFirebase();
     clearCloudSubscriptions();
     if (!authUser || !authProfile || authProfile.active === false) return;
+    purgeCloudSensitiveData();
 
     cloudSubscriptions.push(
       getUserDoc(authUser.uid).collection("settings").doc("app").onSnapshot(function (snap) {
@@ -1575,7 +1605,7 @@
     overlay.innerHTML =
       '<div class="auth-overlay-backdrop"></div>' +
       '<section class="auth-card">' +
-        '<div class="auth-brand">교사 업무 관리</div>' +
+        '<div class="auth-brand">쌤포트</div>' +
         '<h2 class="auth-title">계정 확인</h2>' +
         '<div class="auth-note">가입 후 바로 사용할 수 있으며, 관리자가 필요한 경우 사용을 제한할 수 있습니다.</div>' +
         modeTabs +
@@ -2139,6 +2169,37 @@
     });
   }
 
+  function initManualButton() {
+    var btn = document.getElementById("manual-btn");
+    if (!btn) return;
+    btn.addEventListener("click", function () {
+      showModal(
+        '<div class="modal-header">' +
+          '<span class="modal-title">기능 설명서</span>' +
+          '<button class="modal-close" data-close>×</button>' +
+        '</div>' +
+        '<div class="modal-body" style="display:grid;gap:12px">' +
+          '<div class="settings-note">앱 전체 기능 설명서를 PDF로 저장하거나, AI 도우미에게 사용법을 바로 물어볼 수 있습니다.</div>' +
+          '<div class="settings-note">AI 도우미는 이 설명서 내용을 참고해 현재 페이지와 관련된 질문에 답합니다.</div>' +
+        '</div>' +
+        '<div class="modal-footer">' +
+          '<button class="btn btn-secondary" data-close>닫기</button>' +
+          '<button class="btn btn-secondary" id="manual-ask-ai">AI 도우미에게 물어보기</button>' +
+          '<button class="btn btn-primary" id="manual-download-pdf">PDF 저장</button>' +
+        '</div>'
+      );
+      setTimeout(function () {
+        var askBtn = document.getElementById("manual-ask-ai");
+        var pdfBtn = document.getElementById("manual-download-pdf");
+        if (askBtn) askBtn.onclick = function () {
+          closeModal();
+          openAiHelper("이 앱의 전체 기능 설명서를 바탕으로 사용법을 알려줘.");
+        };
+        if (pdfBtn) pdfBtn.onclick = exportManualPdf;
+      }, 0);
+    });
+  }
+
   function initHomeButton() {
     document.getElementById("home-btn").addEventListener("click", function () {
       navigateTo("dashboard");
@@ -2197,6 +2258,115 @@
     }).catch(function () {});
   }
 
+  var AI_QUICK_MODELS = {
+    claude: [
+      { value: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
+      { value: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
+      { value: 'claude-opus-4-5', label: 'Claude Opus 4.5' }
+    ],
+    gemini: [
+      { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+      { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+      { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' }
+    ]
+  };
+
+  var AI_ENGINE_OPTIONS = [
+    { value: 'local_lite',  label: 'Local AI Lite',  desc: 'qwen2.5:3b · 빠름, 외부 전송 없음', external: false },
+    { value: 'local_basic', label: 'Local AI Basic', desc: 'Gemma 4 E2B · 8GB RAM 이상 권장', external: false },
+    { value: 'local_pro',   label: 'Local AI Pro',   desc: 'Gemma 4 E4B · 16GB RAM 이상 권장', external: false },
+    { value: 'claude',      label: 'Claude 외부 AI', desc: 'Anthropic · API 키 필요', external: true },
+    { value: 'gemini',      label: 'Gemini 외부 AI', desc: 'Google · API 키 필요', external: true }
+  ];
+
+  function initAiSettingsPanel() {
+    var btn = document.getElementById('ai-settings-btn');
+    var panel = document.getElementById('ai-settings-panel');
+    var externalSection = document.getElementById('ai-quick-external');
+    var providerSelect = document.getElementById('ai-quick-provider');
+    var modelSelect = document.getElementById('ai-quick-model');
+    var keyInput = document.getElementById('ai-quick-key');
+    var saveBtn = document.getElementById('ai-quick-save');
+    var engineList = document.getElementById('ai-quick-engine-list');
+
+    function updateModelOptions(provider) {
+      var models = AI_QUICK_MODELS[provider] || [];
+      modelSelect.innerHTML = models.map(function (m) {
+        return '<option value="' + m.value + '">' + m.label + '</option>';
+      }).join('');
+    }
+
+    function renderEngineList(currentEngine) {
+      engineList.innerHTML = AI_ENGINE_OPTIONS.map(function (opt) {
+        var checked = currentEngine === opt.value ? 'checked' : '';
+        var danger = opt.external ? 'color:var(--danger)' : '';
+        return '<label style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer;border:1px solid ' + (checked ? 'var(--accent)' : 'var(--border)') + ';background:' + (checked ? 'var(--accent-l)' : 'transparent') + '">' +
+          '<input type="radio" name="ai-quick-engine" value="' + opt.value + '" ' + checked + ' style="accent-color:var(--accent)">' +
+          '<div><div style="font-size:13px;font-weight:600;' + danger + '">' + opt.label + '</div>' +
+          '<div style="font-size:11px;color:var(--text2)">' + opt.desc + '</div></div>' +
+          '</label>';
+      }).join('');
+
+      engineList.querySelectorAll('input[name="ai-quick-engine"]').forEach(function (radio) {
+        radio.addEventListener('change', function () {
+          var isExt = AI_ENGINE_OPTIONS.find(function (o) { return o.value === radio.value; })?.external;
+          externalSection.style.display = isExt ? 'flex' : 'none';
+          if (isExt) updateModelOptions(providerSelect.value);
+          renderEngineList(radio.value);
+        });
+      });
+    }
+
+    function openPanel() {
+      api.getAllSettings().then(function (s) {
+        var savedEngine = s.ai_engine || 'local_lite';
+        var engine = savedEngine === 'cloud' ? (s.ai_provider || 'claude') : (savedEngine === 'rule' ? 'local_lite' : savedEngine);
+        var isExt = engine === 'claude' || engine === 'gemini';
+        renderEngineList(engine);
+        providerSelect.value = isExt ? engine : (s.ai_provider || 'claude');
+        keyInput.value = s.ai_api_key || '';
+        updateModelOptions(providerSelect.value);
+        if (s.ai_model) modelSelect.value = s.ai_model;
+        externalSection.style.display = isExt ? 'flex' : 'none';
+      }).catch(function () {});
+    }
+
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var isOpen = panel.style.display === 'block';
+      panel.style.display = isOpen ? 'none' : 'block';
+      if (!isOpen) openPanel();
+    });
+
+    document.addEventListener('click', function () { panel.style.display = 'none'; });
+    panel.addEventListener('click', function (e) { e.stopPropagation(); });
+
+    providerSelect.addEventListener('change', function () { updateModelOptions(providerSelect.value); });
+
+    saveBtn.addEventListener('click', function () {
+      var engine = (panel.querySelector('input[name="ai-quick-engine"]:checked') || {}).value || 'local_lite';
+      var isExt = engine === 'claude' || engine === 'gemini';
+      var saves = [
+        api.setSetting('ai_engine', engine)
+      ];
+      if (isExt) {
+        saves.push(api.setSetting('ai_provider', providerSelect.value));
+        saves.push(api.setSetting('ai_api_key', keyInput.value.trim()));
+        saves.push(api.setSetting('ai_model', modelSelect.value));
+        saves.push(api.setSetting('ai_external_consent_provider', providerSelect.value));
+        saves.push(api.setSetting('ai_external_consent_at', new Date().toISOString()));
+      }
+      Promise.all(saves).then(function () {
+        panel.style.display = 'none';
+        var toast = document.createElement('div');
+        toast.textContent = 'AI 설정을 저장했습니다.';
+        toast.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#333;color:#fff;padding:10px 20px;border-radius:8px;font-size:13px;z-index:99999;pointer-events:none';
+        document.body.appendChild(toast);
+        setTimeout(function () { toast.remove(); }, 2000);
+      }).catch(function (err) { alert('저장 실패: ' + (err && err.message || err)); });
+    });
+  }
+
   function getCurrentPageLabel() {
     if (currentPage === "dashboard") return "대시보드";
     var page = getMenuPageOptions().find(function (item) { return item.key === currentPage; });
@@ -2212,30 +2382,93 @@
       .replace(/'/g, "&#39;");
   }
 
-  function buildRuleBasedAiReply(question, settings) {
-    var page = getCurrentPageLabel();
+  function buildManualAiContext(question) {
+    if (!window.APP_MANUAL || typeof window.APP_MANUAL.buildAiContext !== "function") return "";
+    return window.APP_MANUAL.buildAiContext(question, currentPage);
+  }
+
+  function buildAiHelperGreetingReply() {
+    var section = null;
+    if (window.APP_MANUAL && Array.isArray(window.APP_MANUAL.sections)) {
+      section = window.APP_MANUAL.sections.find(function (item) { return item.key === currentPage; });
+    }
+    var pageLabel = getCurrentPageLabel();
+    var title = section ? section.title : pageLabel;
+    var description = section ? section.description : "현재 페이지에서 필요한 업무를 빠르게 도와드릴 수 있습니다.";
+    var features = section && section.features ? section.features.slice(0, 3) : [
+      "페이지 사용법을 안내할 수 있습니다.",
+      "기록 문장이나 업무 문구를 다듬을 수 있습니다.",
+      "체크리스트와 다음 조치 예시를 만들 수 있습니다."
+    ];
+    return [
+      "선생님, 안녕하세요. 쌤포트 로컬 AI 도우미입니다.",
+      "",
+      "현재 '" + pageLabel + "' 페이지에 계시네요. " + description,
+      "",
+      "어떤 부분을 확인하고 싶으신가요?",
+      "",
+      features.map(function (item) { return "* **" + title + ":** " + item; }).join("\n"),
+      "",
+      "궁금한 기능이나 필요한 설정이 있다면 말씀해주세요. 학생 상담 기록 등 민감한 정보는 로컬 AI 사용을 우선 권장합니다."
+    ].join("\n");
+  }
+
+  function isGreetingQuestion(question) {
+    return /^(안녕|안녕하세요|하이|hello|hi)$/i.test(String(question || "").trim());
+  }
+
+  function buildManualDirectReply(question) {
+    if (!window.APP_MANUAL || typeof window.APP_MANUAL.findRelevantSections !== "function") return "";
     var q = String(question || "");
-    if (/상담|학생|후속|위기/.test(q) || currentPage === "counseling") {
+    var isManualQuestion = /사용법|설명서|도움말|기능|어떻게|어디|뭐.*할 수|무엇.*할 수|pdf|PDF|다운로드|내려받/.test(q);
+    if (!isManualQuestion) return "";
+    if (/pdf|PDF|다운로드|내려받|저장/.test(q) && /설명서|도움말|기능/.test(q)) {
+      return "선생님, 기능 설명서 PDF는 상단의 '설명서' 버튼을 누른 뒤 'PDF 저장'을 선택하면 내려받을 수 있습니다. AI 도우미 안에서는 '설명서 PDF' 버튼으로도 저장할 수 있습니다.";
+    }
+    var sections = window.APP_MANUAL.findRelevantSections(q, currentPage, 2);
+    if (!sections.length) return "";
+    return sections.map(function (section) {
       return [
-        "현재 " + page + " 맥락에서는 상담 기록을 이렇게 도와드릴 수 있습니다.",
+        "선생님, " + section.title + " 기능 안내",
+        section.description,
         "",
-        "1. 학생 발화, 교사 관찰, 합의한 행동, 후속 확인일로 나누어 적어 보세요.",
-        "2. 위험 신호가 있으면 앱 기록만으로 끝내지 말고 학교 절차에 따라 관리자/전문상담교사/보호자 연계를 검토해야 합니다.",
-        "3. 후속 조치는 '언제, 누가, 무엇을 확인할지'가 보이게 쓰는 것이 좋습니다.",
-        "",
-        "예시: 다음 주 금요일까지 수업 참여 변화와 과제 제출 여부를 확인하고, 변화가 없을 경우 보호자 상담을 진행한다."
-      ].join("\n");
+        "주요 기능",
+        (section.features || []).map(function (item) { return "- " + item; }).join("\n"),
+        (section.tips || []).length ? "\n사용 팁\n" + section.tips.map(function (item) { return "- " + item; }).join("\n") : ""
+      ].filter(Boolean).join("\n");
+    }).join("\n\n");
+  }
+
+  function exportManualPdf() {
+    if (!api.exportAppManualPdf) {
+      toast("설명서 PDF 기능을 사용할 수 없습니다.", "error");
+      return;
     }
-    if (/공문|문서|제목|붙임/.test(q) || currentPage === "official_document") {
-      return "공문은 제목을 먼저 간결하게 잡고, 본문은 '관련', '주요 내용', '협조/보고/제출 사항', '붙임' 순서로 정리하면 안정적입니다.";
+    toast("설명서 PDF를 준비하고 있습니다.", "default", 1800);
+    api.exportAppManualPdf().then(function (result) {
+      if (!result || result.canceled) return;
+      if (result.success) toast("설명서 PDF를 저장했습니다.", "success", 3500);
+      else toast(result.error || "설명서 PDF 저장에 실패했습니다.", "error", 4500);
+    }).catch(function (error) {
+      toast(error.message || "설명서 PDF 저장에 실패했습니다.", "error", 4500);
+    });
+  }
+
+  function buildRuleBasedAiReply(question, settings) {
+    var manualReply = buildManualDirectReply(question);
+    if (manualReply) return manualReply;
+    var engine = settings.ai_engine || "local_lite";
+    if (engine === "local_lite" || engine === "local_basic" || engine === "local_pro" || engine === "rule") {
+      return "선생님, 지금은 로컬 AI(" + engine + ") 연결이 완료되지 않아 구체 답변을 만들 수 없습니다.\n\n1. 설정 → AI 설정에서 '로컬 AI 자동 설치/확인'을 눌러 주세요.\n2. Ollama가 실행 중인지 확인해 주세요.\n3. 모델 연결이 끝나면 같은 질문을 다시 보내시면 현재 페이지 맥락을 반영해 답변하겠습니다.";
     }
-    if (/시간표|할일|캘린더|일정/.test(q)) {
-      return "시간표·할일·캘린더는 반복 업무를 줄이는 쪽으로 도와드릴 수 있습니다. 날짜, 대상, 기한, 반복 여부가 빠졌는지 먼저 확인해 보세요.";
-    }
-    if (settings.ai_engine === "local_lite" || settings.ai_engine === "local_basic" || settings.ai_engine === "local_pro" || settings.ai_engine === "rule") {
-      return "로컬 AI가 선택되어 있습니다. 로컬 AI는 내 PC에서만 실행되므로 외부 전송이 없습니다. 모델과 실행 엔진 연결이 완료되면 이 자리에서 답변을 생성합니다.";
-    }
-    return "현재 페이지는 " + page + "입니다. 페이지 사용법 안내, 기록 문장 다듬기, 체크리스트 만들기, 후속 조치 예시를 도와드릴 수 있습니다.";
+    return "선생님, AI 연결 정보가 없어 답변을 생성하지 못했습니다. 상단 AI 설정에서 로컬 AI를 선택하거나, 외부 AI를 쓸 경우 API 키를 저장해 주세요.";
+  }
+
+  function normalizeAiHelperAnswer(answer) {
+    var text = String(answer || "").trim();
+    text = text.replace(/^안녕하세요[.!?。]?\s*/g, "선생님, 안녕하세요. ");
+    if (!/^선생님[,\s]/.test(text)) text = "선생님, " + text;
+    return text;
   }
 
   function addAiMessage(role, text) {
@@ -2292,6 +2525,12 @@
     if (backdrop) backdrop.classList.remove("open");
   }
 
+  var aiHelperInputComposing = false;
+
+  function isAiHelperImeEnter(event) {
+    return aiHelperInputComposing || event.isComposing;
+  }
+
   function sendAiHelperMessage() {
     var input = document.getElementById("ai-helper-input");
     if (!input) return;
@@ -2303,25 +2542,30 @@
     var box = document.getElementById("ai-helper-messages");
     var pending = box ? box.lastElementChild : null;
     var pageContext = "";
+    var manualContext = "";
     var directAnswer = "";
     try {
+      if (isGreetingQuestion(question)) {
+        directAnswer = buildAiHelperGreetingReply();
+      }
       if (typeof window.appGetAiPageContext === "function") {
         pageContext = window.appGetAiPageContext(question) || "";
       }
-      if (typeof window.appGetAiDirectAnswer === "function") {
-        directAnswer = window.appGetAiDirectAnswer(question) || "";
-      }
+      manualContext = buildManualAiContext(question);
     } catch (error) {
       pageContext = "";
       directAnswer = "";
     }
     if (directAnswer) {
-      if (pending) pending.querySelector("div").innerHTML = escapeAiHtml(directAnswer).replace(/\n/g, "<br>");
+      if (pending) pending.querySelector("div").innerHTML = escapeAiHtml(normalizeAiHelperAnswer(directAnswer)).replace(/\n/g, "<br>");
       return;
+    }
+    if (manualContext) {
+      pageContext = [pageContext, manualContext].filter(Boolean).join("\n\n");
     }
     api.getAllSettings().then(function (settings) {
       var externalProvider = settings.ai_engine === "gemini" ? "gemini" : ((settings.ai_engine === "claude" || settings.ai_engine === "cloud") ? "claude" : "");
-      var sensitivePage = /학생|상담|성적|출석|관찰|수업|AI 분석/.test(getCurrentPageLabel() || "") || currentPage === "counseling" || currentPage === "students" || currentPage === "grades";
+      var sensitivePage = /학생|상담|성적|출석|관찰|수업|AI 분석/.test(getCurrentPageLabel() || "") || currentPage === "counseling" || currentPage === "students" || currentPage === "grades" || currentPage === "ai_analysis";
       var localEngine = (settings.ai_engine === "local_lite" || settings.ai_engine === "local_basic" || settings.ai_engine === "local_pro") ? settings.ai_engine : "";
       if (sensitivePage && !localEngine) localEngine = "local_lite";
       if (localEngine && api.aiLocalChat) {
@@ -2333,7 +2577,7 @@
         }).then(function (result) {
           return result && result.result ? result.result : buildRuleBasedAiReply(question, settings);
         }).catch(function () {
-          return "로컬 AI 호출에 실패했습니다. 로컬 안내 문장으로 대신 안내합니다.\n\n" + buildRuleBasedAiReply(question, settings);
+          return buildRuleBasedAiReply(question, settings);
         });
       }
       if (externalProvider && settings.ai_api_key && api.aiAssistantChat) {
@@ -2348,12 +2592,12 @@
         }).then(function (result) {
           return result && result.result ? result.result : buildRuleBasedAiReply(question, settings);
         }).catch(function () {
-          return "외부 AI 호출에 실패했습니다. 로컬 안내 문장으로 대신 안내합니다.\n\n" + buildRuleBasedAiReply(question, settings);
+          return buildRuleBasedAiReply(question, settings);
         });
       }
       return buildRuleBasedAiReply(question, settings);
     }).then(function (answer) {
-      if (pending) pending.querySelector("div").innerHTML = escapeAiHtml(answer).replace(/\n/g, "<br>");
+      if (pending) pending.querySelector("div").innerHTML = escapeAiHtml(normalizeAiHelperAnswer(answer)).replace(/\n/g, "<br>");
     });
   }
 
@@ -2362,14 +2606,23 @@
     var closeBtn = document.getElementById("ai-helper-close");
     var backdrop = document.getElementById("ai-helper-backdrop");
     var sendBtn = document.getElementById("ai-helper-send");
+    var manualPdfBtn = document.getElementById("ai-helper-manual-pdf");
     var input = document.getElementById("ai-helper-input");
     if (openBtn) openBtn.addEventListener("click", function () { openAiHelper(); });
     if (closeBtn) closeBtn.addEventListener("click", closeAiHelper);
     if (backdrop) backdrop.addEventListener("click", closeAiHelper);
     if (sendBtn) sendBtn.addEventListener("click", sendAiHelperMessage);
+    if (manualPdfBtn) manualPdfBtn.addEventListener("click", exportManualPdf);
     if (input) {
+      input.addEventListener("compositionstart", function () {
+        aiHelperInputComposing = true;
+      });
+      input.addEventListener("compositionend", function () {
+        aiHelperInputComposing = false;
+      });
       input.addEventListener("keydown", function (event) {
         if (event.key === "Enter" && !event.shiftKey) {
+          if (isAiHelperImeEnter(event)) return;
           event.preventDefault();
           sendAiHelperMessage();
         }
@@ -2552,9 +2805,11 @@
       initGlobalSearch();
       initHomeButton();
       initUpdateButton();
+      initManualButton();
       initWidgetButton();
       initEditButton();
       initOpacityPanel();
+      initAiSettingsPanel();
       initAiHelper();
       updateDate();
       setInterval(updateDate, 60000);

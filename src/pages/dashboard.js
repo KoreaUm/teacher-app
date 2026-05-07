@@ -167,7 +167,10 @@ async function render(c){
     <div class="card-header">
       <span class="card-title">🗓️ 개인 시간표</span>
       <div style="display:flex;align-items:center;gap:4px">
-        <button class="btn btn-secondary btn-xs" id="tt-number-color-toggle" title="같은 번호는 같은 색으로 표시">번호색</button>
+        <label class="toggle-switch" title="같은 번호는 같은 색으로 표시" style="width:36px;height:22px">
+          <input type="checkbox" id="tt-number-color-toggle">
+          <span class="toggle-track" style="border-radius:22px"></span>
+        </label>
         <button class="btn-icon-flat" onclick="navigateTo('timetable')" title="편집">✏️</button>
       </div>
     </div>
@@ -259,7 +262,7 @@ async function init(){
   document.getElementById('dday-add-btn').onclick = showDdayModal;
   document.getElementById('teacher-q').oninput = e => refreshTeachers(e.target.value);
   document.getElementById('student-q').oninput = e => refreshStudents(e.target.value);
-  document.getElementById('tt-number-color-toggle')?.addEventListener('click', toggleTeacherTimetableNumberColors);
+  document.getElementById('tt-number-color-toggle')?.addEventListener('change', toggleTeacherTimetableNumberColors);
   buildMealDateSel();
   document.getElementById('meal-date-sel').onchange = e => loadMeal(e.target.value);
   buildNeisSelects();
@@ -1133,11 +1136,7 @@ async function refreshTimetable(){
   const tt=await api.getTimetable();
   const numberSettings=await loadTeacherTimetableNumberColorSettings();
   const toggle=document.getElementById('tt-number-color-toggle');
-  if(toggle){
-    toggle.textContent=numberSettings.enabled?'번호색 켜짐':'번호색 꺼짐';
-    toggle.classList.toggle('btn-primary',numberSettings.enabled);
-    toggle.classList.toggle('btn-secondary',!numberSettings.enabled);
-  }
+  if(toggle) toggle.checked = !!numberSettings.enabled;
   const map={};
   for(const e of tt) map[`${e.day_of_week}_${e.period}`]=e;
   let html='<div class="tt-grid"><div></div>';
@@ -1324,13 +1323,15 @@ async function renderSchoolTT(){
 async function runAI(){
   const text=document.getElementById('ai-input').value.trim();
   if(!text){toast('텍스트를 입력하세요','error');return;}
-  const apiKey=await api.getSetting('ai_api_key','');
-  if(!apiKey){toast('설정에서 AI API 키를 입력하세요','error');return;}
+  const engine=await api.getSetting('ai_engine','local_lite');
   const model=await api.getSetting('ai_model','claude-opus-4-5');
   const provider=await api.getSetting('ai_provider','claude');
+  const useLocal=engine==='local_lite';
+  const apiKey=useLocal?'':await api.getSetting('ai_api_key','');
+  if(!useLocal&&!apiKey){toast('설정에서 AI API 키를 입력하세요','error');return;}
   const btn=document.getElementById('ai-run-btn'),res=document.getElementById('ai-result');
   btn.disabled=true;btn.textContent='분석 중...';res.style.display='block';res.textContent='AI가 분석 중입니다...';
-  const result=await api.aiExtractTodos(apiKey,model,provider,text);
+  const result=await api.aiExtractTodos(apiKey,model,useLocal?'local_lite':provider,text);
   const parsedTodos=parseAITodoLines(result?.result||'');
   btn.disabled=false;btn.textContent='🤖 AI 추출';
   if(result?.error){res.style.color='var(--danger)';res.textContent=`오류: ${result.error}`;return;}

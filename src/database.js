@@ -15,6 +15,24 @@ function getDbPathForUser(userId = '') {
   return path.join(USER_DB_DIR, `teacher_app_${sanitizeUserId(userId)}.db`);
 }
 
+function parseJsonArray(value) {
+  try {
+    const parsed = JSON.parse(String(value || '[]'));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function parseJsonObject(value) {
+  try {
+    const parsed = JSON.parse(String(value || '{}'));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
 class AppDatabase {
   constructor(options = {}) {
     this.userId = options.userId || '';
@@ -32,6 +50,43 @@ class AppDatabase {
 
   static getPathForUser(userId = '') {
     return getDbPathForUser(userId);
+  }
+
+  static getUserDatabaseDir() {
+    return USER_DB_DIR;
+  }
+
+  static clearGradeDataAtPath(dbPath) {
+    if (!dbPath || !fs.existsSync(dbPath)) return { path: dbPath, changes: {} };
+    const externalDb = new Database(dbPath);
+    try {
+      externalDb.pragma('foreign_keys = ON');
+      return AppDatabase._clearGradeTables(externalDb, dbPath);
+    } finally {
+      try { externalDb.close(); } catch (_) {}
+    }
+  }
+
+  static _clearGradeTables(sqliteDb, dbPath = '') {
+    const tables = ['grade_scores', 'grade_columns', 'career_records'];
+    const changes = {};
+    const tableExists = sqliteDb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?");
+    const clearAll = sqliteDb.transaction(() => {
+      for (const table of tables) {
+        if (!tableExists.get(table)) {
+          changes[table] = 0;
+          continue;
+        }
+        changes[table] = sqliteDb.prepare(`DELETE FROM ${table}`).run().changes || 0;
+      }
+    });
+    clearAll();
+    try { sqliteDb.pragma('wal_checkpoint(TRUNCATE)'); } catch (_) {}
+    return {
+      path: dbPath,
+      changes,
+      total: Object.values(changes).reduce((sum, count) => sum + (Number(count) || 0), 0)
+    };
   }
 
   _init() {
@@ -166,6 +221,46 @@ class AppDatabase {
         content TEXT DEFAULT '',
         updated_at TEXT DEFAULT (datetime('now'))
       );
+      CREATE TABLE IF NOT EXISTS career_records (
+        id TEXT PRIMARY KEY,
+        record_type TEXT DEFAULT 'current',
+        record_type_label TEXT DEFAULT '현학생',
+        graduation_year INTEGER DEFAULT 0,
+        name TEXT DEFAULT '',
+        grade_level TEXT DEFAULT '',
+        class_group TEXT DEFAULT '',
+        school_number TEXT DEFAULT '',
+        class_name TEXT DEFAULT '',
+        grade_average REAL DEFAULT 0,
+        attendance TEXT DEFAULT '',
+        certificates TEXT DEFAULT '[]',
+        desired_company TEXT DEFAULT '',
+        desired_role TEXT DEFAULT '',
+        employment_company TEXT DEFAULT '',
+        employment_role TEXT DEFAULT '',
+        region TEXT DEFAULT '',
+        note TEXT DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS grade_columns (
+        id TEXT PRIMARY KEY,
+        name TEXT DEFAULT '',
+        max_score REAL DEFAULT 100,
+        sort_order INTEGER DEFAULT 0,
+        payload TEXT DEFAULT '{}',
+        updated_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS grade_scores (
+        id TEXT PRIMARY KEY,
+        column_id TEXT NOT NULL,
+        student_key TEXT NOT NULL,
+        student_number INTEGER DEFAULT 0,
+        student_name TEXT DEFAULT '',
+        score REAL DEFAULT 0,
+        updated_at TEXT DEFAULT (datetime('now')),
+        UNIQUE(column_id, student_key)
+      );
     `);
     this._ensureTodoCalendarColumn();
     this._ensureCounselingColumns();
@@ -229,6 +324,169 @@ class AppDatabase {
 
   getStudents() {
     return this.db.prepare('SELECT * FROM students ORDER BY number').all();
+  }
+
+  getCareerRecords() {
+    const rows = this.db.prepare(`
+      SELECT * FROM career_records
+      ORDER BY graduation_year DESC, name COLLATE NOCASE
+    `).all();
+    return rows.map((row) => ({
+      id: row.id,
+      recordType: row.record_type || 'current',
+      recordTypeLabel: row.record_type_label || (row.record_type === 'graduate' ? '졸업생' : '현학생'),
+      graduationYear: row.graduation_year || '',
+      name: row.name || '',
+      gradeLevel: row.grade_level || '',
+      classGroup: row.class_group || '',
+      schoolNumber: row.school_number || '',
+      className: row.class_name || '',
+      gradeAverage: row.grade_average || 0,
+      attendance: row.attendance || '',
+      certificates: parseJsonArray(row.certificates),
+      desiredCompany: row.desired_company || '',
+      desiredRole: row.desired_role || '',
+      employmentCompany: row.employment_company || '',
+      employmentRole: row.employment_role || '',
+      region: row.region || '',
+      note: row.note || '',
+      createdAt: row.created_at || '',
+      updatedAt: row.updated_at || ''
+    }));
+  }
+
+  getGradeColumns() {
+    return this.db.prepare('SELECT * FROM grade_columns ORDER BY sort_order, name').all().map((row) => {
+      const payload = parseJsonObject(row.payload);
+      return Object.assign({}, payload, {
+        id: row.id,
+        name: row.name || payload.name || '',
+        max_score: row.max_score || payload.max_score || 100,
+        sort_order: row.sort_order || payload.sort_order || 0
+      });
+    });
+  }
+
+  saveGradeColumns(columns = []) {
+    const replaceAll = this.db.transaction((items) => {
+      this.db.prepare('DELETE FROM grade_columns').run();
+      const insert = this.db.prepare(
+        'INSERT INTO grade_columns(id,name,max_score,sort_order,payload,updated_at) VALUES(?,?,?,?,?,datetime("now"))'
+      );
+      (Array.isArray(items) ? items : []).forEach((item, index) => {
+        const id = String(item.id || `grade_col_${Date.now()}_${index}`);
+        insert.run(
+          id,
+          item.name || item.title || '',
+          Number(item.max_score) || 100,
+          Number(item.sort_order) || index,
+          JSON.stringify(Object.assign({}, item, { id }))
+        );
+      });
+    });
+    replaceAll(columns);
+    return true;
+  }
+
+  getGradeScores() {
+    return this.db.prepare('SELECT * FROM grade_scores ORDER BY student_number, student_name').all().map((row) => ({
+      id: row.id,
+      column_id: row.column_id,
+      student_key: row.student_key,
+      student_number: row.student_number,
+      student_name: row.student_name,
+      score: row.score,
+      updatedAt: row.updated_at
+    }));
+  }
+
+  setGradeScore(payload = {}) {
+    const columnId = String(payload.column_id || '');
+    const studentKey = String(payload.student_key || '');
+    if (!columnId || !studentKey) throw new Error('성적 정보가 올바르지 않습니다.');
+    const id = `${encodeURIComponent(studentKey)}_${encodeURIComponent(columnId)}`;
+    if (payload.score === null || payload.score === undefined || payload.score === '') {
+      this.db.prepare('DELETE FROM grade_scores WHERE id=?').run(id);
+      return true;
+    }
+    const score = Number(payload.score);
+    if (!Number.isFinite(score) || score < 0) throw new Error('점수는 0 이상의 숫자여야 합니다.');
+    this.db.prepare(`
+      INSERT INTO grade_scores(id,column_id,student_key,student_number,student_name,score,updated_at)
+      VALUES(?,?,?,?,?,?,datetime('now'))
+      ON CONFLICT(id) DO UPDATE SET
+        student_number=excluded.student_number,
+        student_name=excluded.student_name,
+        score=excluded.score,
+        updated_at=datetime('now')
+    `).run(id, columnId, studentKey, Number(payload.student_number) || 0, payload.student_name || '', score);
+    return true;
+  }
+
+  saveCareerRecord(record = {}) {
+    const id = String(record.id || `career_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
+    const recordType = record.recordType === 'graduate' ? 'graduate' : 'current';
+    const certificates = Array.isArray(record.certificates) ? record.certificates.map(String).filter(Boolean) : [];
+    this.db.prepare(`
+      INSERT INTO career_records(
+        id, record_type, record_type_label, graduation_year, name, grade_level, class_group,
+        school_number, class_name, grade_average, attendance, certificates, desired_company,
+        desired_role, employment_company, employment_role, region, note, updated_at
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+      ON CONFLICT(id) DO UPDATE SET
+        record_type=excluded.record_type,
+        record_type_label=excluded.record_type_label,
+        graduation_year=excluded.graduation_year,
+        name=excluded.name,
+        grade_level=excluded.grade_level,
+        class_group=excluded.class_group,
+        school_number=excluded.school_number,
+        class_name=excluded.class_name,
+        grade_average=excluded.grade_average,
+        attendance=excluded.attendance,
+        certificates=excluded.certificates,
+        desired_company=excluded.desired_company,
+        desired_role=excluded.desired_role,
+        employment_company=excluded.employment_company,
+        employment_role=excluded.employment_role,
+        region=excluded.region,
+        note=excluded.note,
+        updated_at=datetime('now')
+    `).run(
+      id,
+      recordType,
+      recordType === 'graduate' ? '졸업생' : '현학생',
+      Number(record.graduationYear) || new Date().getFullYear(),
+      record.name || '',
+      record.gradeLevel || '',
+      record.classGroup || '',
+      record.schoolNumber || '',
+      record.className || '',
+      Number(record.gradeAverage) || 0,
+      record.attendance || '',
+      JSON.stringify(certificates),
+      record.desiredCompany || '',
+      record.desiredRole || '',
+      record.employmentCompany || '',
+      record.employmentRole || '',
+      record.region || '',
+      record.note || ''
+    );
+    return id;
+  }
+
+  deleteCareerRecord(id) {
+    this.db.prepare('DELETE FROM career_records WHERE id=?').run(String(id || ''));
+    return true;
+  }
+
+  clearCareerRecords() {
+    this.db.prepare('DELETE FROM career_records').run();
+    return true;
+  }
+
+  clearLocalGradeData() {
+    return AppDatabase._clearGradeTables(this.db, this.dbPath);
   }
 
   addStudent(data) {

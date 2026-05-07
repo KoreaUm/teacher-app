@@ -28,6 +28,7 @@ const MENU_PAGE_OPTIONS = [
   { key: 'meal', label: '\uAE09\uC2DD \uBA54\uB274' },
   { key: 'school_calendar', label: '\uD559\uC0AC \uC77C\uC815' },
   { key: 'calculator', label: '\uACC4\uC0B0\uAE30' },
+  { key: 'lesson_materials', label: '\uC218\uC5C5\uC790\uB8CC\uC81C\uC791' },
   { key: 'settings', label: '\uC124\uC815' },
 ];
 
@@ -35,7 +36,7 @@ const DEFAULT_MENU_GROUPS = [
   { key: 'class', label: '\uD559\uAE09 \uAD00\uB9AC', items: ['students', 'attendance', 'daily_memo', 'timetable'] },
   { key: 'records', label: '\uAE30\uB85D', items: ['counseling', 'observations', 'lessons'] },
   { key: 'evaluation', label: '\uD3C9\uAC00', items: ['assessments', 'submissions', 'statistics', 'ai_analysis'] },
-  { key: 'tools', label: '\uB3C4\uAD6C', items: ['meal', 'school_calendar', 'calculator', 'settings'] },
+  { key: 'tools', label: '\uB3C4\uAD6C', items: ['meal', 'school_calendar', 'calculator', 'lesson_materials', 'settings'] },
 ];
 
 const DEFAULT_SHORTCUTS = [
@@ -99,8 +100,8 @@ async function render(container) {
             </div>
           </div>
           <div class="settings-actions">
-            <button class="btn btn-secondary btn-sm" id="cloud-pull-btn">클라우드 전체 불러오기</button>
-            <button class="btn btn-secondary btn-sm" id="cloud-push-btn">지금 전체 동기화</button>
+            <button class="btn btn-secondary btn-sm" id="cloud-pull-btn">설정/시간표 불러오기</button>
+            <button class="btn btn-secondary btn-sm" id="cloud-push-btn">설정/시간표 동기화</button>
             ${authState?.isAdmin ? '<button class="btn btn-secondary btn-sm" id="open-user-management-btn">회원 관리</button>' : ''}
             <button class="btn btn-primary btn-sm" id="auth-logout-btn">로그아웃</button>
           </div>
@@ -556,7 +557,7 @@ async function init() {
   document.getElementById('cloud-pull-btn')?.addEventListener('click', async () => {
     if (!window.pullCloudNow) return;
     const ok = await window.pullCloudNow();
-    toast(ok ? '클라우드 내용을 불러왔습니다.' : '불러올 클라우드 내용이 없습니다.', ok ? 'success' : 'warning');
+    toast(ok ? '학생 정보 제외 항목만 클라우드에서 불러왔습니다.' : '불러올 클라우드 내용이 없습니다.', ok ? 'success' : 'warning');
     if (ok && window.navigateTo) {
       await window.navigateTo('settings');
       return;
@@ -567,7 +568,7 @@ async function init() {
   document.getElementById('cloud-push-btn')?.addEventListener('click', async () => {
     if (!window.syncCloudNow) return;
     const ok = await window.syncCloudNow();
-    toast(ok ? '현재 내용을 클라우드와 동기화했습니다.' : '동기화할 수 있는 로그인 상태가 아닙니다.', ok ? 'success' : 'warning');
+    toast(ok ? '학생 정보 제외 항목만 클라우드와 동기화했습니다.' : '동기화할 수 있는 로그인 상태가 아닙니다.', ok ? 'success' : 'warning');
   });
 
   document.getElementById('auth-logout-btn')?.addEventListener('click', async () => {
