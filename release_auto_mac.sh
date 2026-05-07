@@ -19,6 +19,11 @@ command -v git >/dev/null 2>&1 || fail "git이 필요합니다."
 current_branch="$(git branch --show-current)"
 [ -n "$current_branch" ] || fail "현재 git 브랜치를 확인할 수 없습니다."
 
+step "GitHub 푸시 인증 확인"
+if ! GIT_TERMINAL_PROMPT=0 git push --dry-run origin "$current_branch" >/dev/null 2>&1; then
+  fail "GitHub 푸시 인증이 필요합니다. 먼저 터미널에서 git push origin $current_branch 를 한 번 실행해 GitHub 아이디와 Personal Access Token을 저장하거나, SSH remote를 설정해 주세요."
+fi
+
 step "현재 버전 확인"
 current_version="$(node -p "require('./package.json').version")"
 next_version="$(node - <<'NODE'
@@ -38,7 +43,7 @@ step "package.json / package-lock.json 버전 올리기"
 npm version "$next_version" --no-git-tag-version
 
 step "변경사항 커밋"
-git add .
+git add --all -- . ':!.claude'
 git commit -m "Release v$next_version"
 
 step "브랜치 푸시"
