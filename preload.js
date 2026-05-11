@@ -118,6 +118,7 @@ contextBridge.exposeInMainWorld('api', {
   gcalAddEvent: (token, event) => ipcRenderer.invoke('gcal-add-event', token, event),
   gcalUpdateEvent: (token, eventId, event) => ipcRenderer.invoke('gcal-update-event', token, eventId, event),
   gcalDeleteEvent: (token, eventId) => ipcRenderer.invoke('gcal-delete-event', token, eventId),
+  googleTasksListTasks: (token) => ipcRenderer.invoke('gtasks-list-tasks', token),
   googleTasksAddTask: (token, task) => ipcRenderer.invoke('gtasks-add-task', token, task),
   googleTasksUpdateTask: (token, taskId, task) => ipcRenderer.invoke('gtasks-update-task', token, taskId, task),
   googleTasksSetStatus: (token, taskId, isDone) => ipcRenderer.invoke('gtasks-set-status', token, taskId, isDone),

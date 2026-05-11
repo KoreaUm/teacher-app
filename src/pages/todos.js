@@ -27,6 +27,8 @@ function render(container) {
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px">
         <button class="btn btn-primary btn-sm" id="todos-add-btn">+ 할일 추가</button>
         <button class="btn btn-secondary btn-sm" id="todos-reset-order-btn">정렬 초기화</button>
+        <button class="btn btn-secondary btn-sm" id="todos-sync-btn" title="Google Tasks와 동기화">🔄 동기화</button>
+        <span id="todos-sync-status" style="font-size:11px;color:var(--text3)"></span>
         <div style="display:flex;gap:4px;margin-left:auto;flex-wrap:wrap;align-items:center">
           <div style="display:flex;gap:2px">
             <button class="btn btn-sm todos-filter-btn active" data-filter="all">전체</button>
@@ -52,6 +54,27 @@ function render(container) {
   `;
 }
 
+async function runGoogleSync(showStatus = true) {
+  if (!window.syncWithGoogleTasks) return;
+  const statusEl = document.getElementById('todos-sync-status');
+  const syncBtn = document.getElementById('todos-sync-btn');
+  if (syncBtn) syncBtn.disabled = true;
+  if (showStatus && statusEl) statusEl.textContent = '동기화 중…';
+  try {
+    const result = await window.syncWithGoogleTasks();
+    if (result && result.ok) {
+      if (showStatus && statusEl) {
+        const now = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+        statusEl.textContent = `마지막 동기화 ${now}`;
+      }
+      await refreshList();
+    } else if (result && result.skipped) {
+      if (showStatus && statusEl) statusEl.textContent = '';
+    }
+  } catch (_) {}
+  if (syncBtn) syncBtn.disabled = false;
+}
+
 async function init() {
   document.getElementById('todos-add-btn').onclick = () => openEditModal(null);
   document.getElementById('todos-reset-order-btn').onclick = async () => {
@@ -60,6 +83,11 @@ async function init() {
     await syncCloudIfPossible();
     await refreshList();
   };
+
+  document.getElementById('todos-sync-btn').onclick = () => runGoogleSync(true);
+
+  // 페이지 진입 시 백그라운드 동기화 (목록 먼저 표시 후)
+  refreshList().then(() => runGoogleSync(true));
 
   document.querySelectorAll('.todos-filter-btn').forEach((button) => {
     button.onclick = () => {
@@ -79,8 +107,6 @@ async function init() {
     currentCategory = event.target.value;
     refreshList();
   };
-
-  await refreshList();
 }
 
 async function refreshList() {
@@ -337,6 +363,38 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function extractDateFromTitle(title) {
+  const now = new Date();
+  const year = now.getFullYear();
+  const curMonth = now.getMonth() + 1;
+
+  // 2026-05-15 또는 2026.05.15
+  const isoMatch = title.match(/(\d{4})[-.](\d{1,2})[-.](\d{1,2})/);
+  if (isoMatch) {
+    return `${isoMatch[1]}-${isoMatch[2].padStart(2,'0')}-${isoMatch[3].padStart(2,'0')}`;
+  }
+  // 5월 15일 / 5월15일 / 5.15
+  const korMatch = title.match(/(\d{1,2})월\s*(\d{1,2})일?/);
+  if (korMatch) {
+    const m = parseInt(korMatch[1]);
+    const d = korMatch[2].padStart(2, '0');
+    // 이미 지난 달이면 내년으로
+    const useYear = m < curMonth ? year + 1 : year;
+    return `${useYear}-${String(m).padStart(2,'0')}-${d}`;
+  }
+  // 5/15 또는 5-15
+  const slashMatch = title.match(/(\d{1,2})[\/\-](\d{1,2})(?!\d)/);
+  if (slashMatch) {
+    const m = parseInt(slashMatch[1]);
+    const d = slashMatch[2].padStart(2, '0');
+    if (m >= 1 && m <= 12) {
+      const useYear = m < curMonth ? year + 1 : year;
+      return `${useYear}-${String(m).padStart(2,'0')}-${d}`;
+    }
+  }
+  return null;
+}
+
 function openEditModal(todo) {
   const isNew = !todo;
   const todayStr = today();
@@ -392,6 +450,19 @@ function openEditModal(todo) {
 
   setTimeout(() => {
     document.getElementById('todo-modal-cancel').onclick = closeModalHelper;
+
+    // 제목에서 날짜 자동 감지 → 마감일 자동 입력
+    const titleInput = document.getElementById('todo-modal-title');
+    const deadlineInput = document.getElementById('todo-modal-deadline');
+    let deadlineManuallyChanged = !isNew; // 수정 모드면 이미 설정된 날짜 유지
+
+    deadlineInput.addEventListener('change', () => { deadlineManuallyChanged = true; });
+
+    titleInput.addEventListener('input', () => {
+      if (deadlineManuallyChanged) return;
+      const detected = extractDateFromTitle(titleInput.value);
+      if (detected) deadlineInput.value = detected;
+    });
 
     document.getElementById('todo-modal-save').onclick = async () => {
       const title = document.getElementById('todo-modal-title').value.trim();

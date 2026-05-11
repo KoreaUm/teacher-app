@@ -1,6 +1,6 @@
 {
   "name": "teacher-app",
-  "version": "2.0.53",
+  "version": "2.0.54",
   "description": "쌤포트 Electron 앱",
   "author": "충상",
   "main": "main.js",
@@ -13,12 +13,12 @@
     "release:mac": "./release_auto_mac.sh"
   },
   "dependencies": {
-    "@xmldom/xmldom": "*",
+    "@xmldom/xmldom": "^0.9.10",
     "better-sqlite3": "^9.4.3",
     "electron-updater": "^6.8.3",
     "firebase": "^12.12.1",
     "xlsx": "^0.18.5",
-    "yauzl": "*"
+    "yauzl": "^3.3.0"
   },
   "devDependencies": {
     "electron": "^29.4.6",
@@ -39,7 +39,14 @@
       "node_modules/**/*",
       "!node_modules/.cache/**/*",
       "!node_modules/electron/**/*",
-      "!node_modules/electron-builder/**/*"
+      "!node_modules/electron-builder/**/*",
+      "!node_modules/**/test/**/*",
+      "!node_modules/**/tests/**/*",
+      "!node_modules/**/*.md",
+      "!node_modules/**/*.map",
+      "!node_modules/**/.eslintrc*",
+      "!node_modules/**/CHANGELOG*",
+      "!node_modules/**/LICENSE*"
     ],
     "asar": false,
     "win": {

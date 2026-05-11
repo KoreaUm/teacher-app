@@ -262,17 +262,25 @@ class AppDatabase {
         UNIQUE(column_id, student_key)
       );
     `);
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_attendance_date     ON attendance(date);
+      CREATE INDEX IF NOT EXISTS idx_attendance_student  ON attendance(student_id);
+      CREATE INDEX IF NOT EXISTS idx_counseling_student  ON counseling(student_id);
+      CREATE INDEX IF NOT EXISTS idx_counseling_date     ON counseling(date);
+      CREATE INDEX IF NOT EXISTS idx_observations_student ON observations(student_id);
+      CREATE INDEX IF NOT EXISTS idx_lessons_date        ON lessons(date);
+      CREATE INDEX IF NOT EXISTS idx_todos_is_done       ON todos(is_done);
+      CREATE INDEX IF NOT EXISTS idx_daily_memo_date     ON daily_memo(date);
+      CREATE INDEX IF NOT EXISTS idx_grade_scores_column ON grade_scores(column_id);
+    `);
     this._ensureTodoCalendarColumn();
     this._ensureCounselingColumns();
   }
 
   _ensureTodoCalendarColumn() {
-    try {
-      this.db.exec('ALTER TABLE todos ADD COLUMN gcal_event_id TEXT');
-    } catch (_) {}
-    try {
-      this.db.exec('ALTER TABLE todos ADD COLUMN google_task_id TEXT');
-    } catch (_) {}
+    try { this.db.exec('ALTER TABLE todos ADD COLUMN gcal_event_id TEXT'); } catch (_) {}
+    try { this.db.exec('ALTER TABLE todos ADD COLUMN google_task_id TEXT'); } catch (_) {}
+    try { this.db.exec("ALTER TABLE todos ADD COLUMN updated_at TEXT DEFAULT ''"); } catch (_) {}
   }
 
   _ensureCounselingColumns() {
@@ -599,7 +607,6 @@ class AppDatabase {
   }
 
   getCounseling(filter = {}) {
-    this._ensureCounselingColumns();
     let query = 'SELECT c.*, s.name, s.number FROM counseling c LEFT JOIN students s ON c.student_id=s.id WHERE 1=1';
     const params = [];
     if (filter.student_id) {
@@ -640,7 +647,6 @@ class AppDatabase {
   }
 
   addCounseling(data) {
-    this._ensureCounselingColumns();
     const result = this.db.prepare(
       `INSERT INTO counseling(
         student_id,date,type,teacher_role,domain,topic,summary,content,result,follow_up,mood,risk_level,risk_flags,next_action,next_date,status,confidential_note,updated_at
@@ -668,7 +674,6 @@ class AppDatabase {
   }
 
   updateCounseling(id, data) {
-    this._ensureCounselingColumns();
     this.db.prepare(
       `UPDATE counseling SET
         student_id=?,date=?,type=?,teacher_role=?,domain=?,topic=?,summary=?,content=?,result=?,follow_up=?,
@@ -839,54 +844,49 @@ class AppDatabase {
   }
 
   getTodos(includeDone = false) {
-    this._ensureTodoCalendarColumn();
     return includeDone
       ? this.db.prepare('SELECT * FROM todos ORDER BY is_done, created_at DESC').all()
       : this.db.prepare('SELECT * FROM todos WHERE is_done=0 ORDER BY created_at DESC').all();
   }
 
   addTodo(data) {
-    this._ensureTodoCalendarColumn();
     const result = this.db.prepare(
-      'INSERT INTO todos(title,deadline,priority,category,is_ai_generated,source_text) VALUES(?,?,?,?,?,?)'
+      "INSERT INTO todos(title,deadline,priority,category,is_ai_generated,source_text,updated_at) VALUES(?,?,?,?,?,?,datetime('now'))"
     ).run(data.title, data.deadline || '', data.priority || '보통', data.category || '기타', data.is_ai_generated ? 1 : 0, data.source_text || '');
     return result.lastInsertRowid;
   }
 
   updateTodo(id, data) {
-    this._ensureTodoCalendarColumn();
     this.db.prepare(
-      'UPDATE todos SET title=?,deadline=?,priority=?,category=? WHERE id=?'
+      "UPDATE todos SET title=?,deadline=?,priority=?,category=?,updated_at=datetime('now') WHERE id=?"
     ).run(data.title, data.deadline || '', data.priority || '보통', data.category || '기타', id);
     return true;
   }
 
   setTodoGcalId(id, gcalEventId) {
-    this._ensureTodoCalendarColumn();
     this.db.prepare('UPDATE todos SET gcal_event_id=? WHERE id=?').run(gcalEventId, id);
     return true;
   }
 
   getTodoGcalId(id) {
-    this._ensureTodoCalendarColumn();
     const row = this.db.prepare('SELECT gcal_event_id FROM todos WHERE id=?').get(id);
     return row ? row.gcal_event_id : null;
   }
 
   setTodoGoogleTaskId(id, googleTaskId) {
-    this._ensureTodoCalendarColumn();
     this.db.prepare('UPDATE todos SET google_task_id=? WHERE id=?').run(googleTaskId, id);
     return true;
   }
 
   getTodoGoogleTaskId(id) {
-    this._ensureTodoCalendarColumn();
     const row = this.db.prepare('SELECT google_task_id FROM todos WHERE id=?').get(id);
     return row ? row.google_task_id : null;
   }
 
   toggleTodo(id) {
-    this.db.prepare('UPDATE todos SET is_done=CASE WHEN is_done=0 THEN 1 ELSE 0 END WHERE id=?').run(id);
+    this.db.prepare(
+      "UPDATE todos SET is_done=CASE WHEN is_done=0 THEN 1 ELSE 0 END, updated_at=datetime('now') WHERE id=?"
+    ).run(id);
     return true;
   }
 
@@ -896,7 +896,6 @@ class AppDatabase {
   }
 
   replaceTodos(items = []) {
-    this._ensureTodoCalendarColumn();
     const replaceAll = this.db.transaction((rows) => {
       this.db.prepare('DELETE FROM todos').run();
       const insert = this.db.prepare(

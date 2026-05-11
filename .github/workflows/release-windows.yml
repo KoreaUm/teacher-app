@@ -29,6 +29,8 @@ jobs:
         run: npm run release:win
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SSAMPORT_GOOGLE_CLIENT_ID: ${{ secrets.SSAMPORT_GOOGLE_CLIENT_ID }}
+          SSAMPORT_GOOGLE_CLIENT_SECRET: ${{ secrets.SSAMPORT_GOOGLE_CLIENT_SECRET }}
 
       - name: Publish draft release
         shell: pwsh

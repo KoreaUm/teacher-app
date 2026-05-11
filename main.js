@@ -4,9 +4,11 @@ const fs = require('fs');
 const { spawn, spawnSync, execSync } = require('child_process');
 const os = require('os');
 const http = require('http');
+const https = require('https');
 const net = require('net');
 const crypto = require('crypto');
 const { autoUpdater } = require('electron-updater');
+const neisApi = require('./src/neis-api.js');
 
 const AppDatabase = require('./src/database.js');
 const SQLiteDatabase = require('better-sqlite3');
@@ -57,9 +59,7 @@ const OLLAMA_MODELS = {
   local_basic: 'gemma4:e2b',
   local_pro: 'gemma4:e4b'
 };
-const GOOGLE_CALENDAR_CLIENT_ID =
-  process.env.SSAMPORT_GOOGLE_CLIENT_ID ||
-  '780135122795-ldmauftdqlfksb4tfgrmro09b1mguh4f.apps.googleusercontent.com';
+const GOOGLE_CALENDAR_CLIENT_ID = process.env.SSAMPORT_GOOGLE_CLIENT_ID || '';
 const GOOGLE_CALENDAR_CLIENT_SECRET = process.env.SSAMPORT_GOOGLE_CLIENT_SECRET || '';
 const GOOGLE_OAUTH_SCOPES = [
   'https://www.googleapis.com/auth/calendar.events',
@@ -113,10 +113,9 @@ function getGoogleCalendarOAuthConfig(fallbackClientId = '', fallbackClientSecre
     String(GOOGLE_CALENDAR_CLIENT_ID || '').trim() ||
     String(fallbackClientId || '').trim() ||
     String(db?.getSetting?.('gcal_client_id', '') || '').trim();
-  const clientSecret =
-    String(GOOGLE_CALENDAR_CLIENT_SECRET || '').trim() ||
-    String(fallbackClientSecret || '').trim() ||
-    String(db?.getSetting?.('gcal_client_secret', '') || '').trim();
+  // Desktop 앱 + PKCE 방식은 client_secret 불필요.
+  // DB에 남아있는 잘못된 값이 Google 토큰 교환을 막으므로 환경변수만 허용.
+  const clientSecret = String(GOOGLE_CALENDAR_CLIENT_SECRET || '').trim();
   return { clientId, clientSecret };
 }
 
@@ -385,7 +384,8 @@ function downloadFile(url, destination, onProgress) {
 }
 
 function httpsGet(url, callback) {
-  return require(url.startsWith('https:') ? 'https' : 'http').get(url, callback);
+  if (!url.startsWith('https:')) return http.get(url, callback);
+  return https.get(url, { rejectUnauthorized: false }, callback);
 }
 
 function runCommand(command, args, options = {}) {
@@ -455,35 +455,6 @@ async function getAiEngineStatus(engine) {
     runtimeDir,
     message: ollamaStatus.message
   };
-/*
-  const configuredPath = db.getSetting(meta.settingKey, '');
-  const candidates = [
-    configuredPath,
-    path.join(modelDir, meta.recommendedFile)
-  ].filter(Boolean);
-  const foundPath = candidates.find((candidate) => {
-    try { return fs.existsSync(candidate) && fs.statSync(candidate).isFile(); } catch { return false; }
-  }) || '';
-  const runtimePath = findAiRuntimePath();
-  let message = `${meta.recommendedFile} 모델 파일을 선택하거나 ai-models 폴더에 넣어 주세요.`;
-  if (foundPath && !runtimePath) {
-    message = `모델 파일은 준비됐지만 실행 엔진(llama.cpp)이 아직 없습니다. ai-runtime 폴더에 llama-server.exe 또는 llama-cli.exe를 넣어 주세요.`;
-  } else if (foundPath && runtimePath) {
-    message = `모델과 실행 엔진이 준비되어 있습니다: ${path.basename(foundPath)} / ${path.basename(runtimePath)}`;
-  }
-  return {
-    engine: selectedEngine,
-    ready: !!foundPath && !!runtimePath,
-    label: meta.label,
-    modelPath: foundPath || configuredPath,
-    runtimePath,
-    modelDir,
-    runtimeDir,
-    downloadUrl: meta.downloadUrl,
-    runtimeDownloadUrl: AI_RUNTIME_DOWNLOAD_URL,
-    message
-  };
-*/
 }
 
 function setUpdateState(next) {
@@ -1269,9 +1240,6 @@ ipcMain.handle('get-todo-google-task-id', (e, id) => db.getTodoGoogleTaskId(id))
 
 // ── Google Calendar OAuth ─────────────────────────────────
 ipcMain.handle('gcal-oauth-start', async (e, legacyClientId = '', legacyClientSecret = '') => {
-  const http = require('http');
-  const https = require('https');
-  const { URL } = require('url');
   const { clientId, clientSecret } = getGoogleCalendarOAuthConfig(legacyClientId, legacyClientSecret);
   if (!clientId) {
     return { error: 'Google 연동 설정이 아직 앱에 포함되지 않았습니다. 개발자에게 문의해 주세요.' };
@@ -1295,10 +1263,23 @@ ipcMain.handle('gcal-oauth-start', async (e, legacyClientId = '', legacyClientSe
       server.on('request', async (req, res) => {
         const url = new URL(req.url, `http://127.0.0.1:${port}`);
         const code = url.searchParams.get('code');
+        const oauthError = url.searchParams.get('error');
+        const oauthErrorDescription = url.searchParams.get('error_description');
+
+        // favicon.ico 등 OAuth 콜백이 아닌 요청은 무시하고 계속 대기
+        if (!code && !oauthError) {
+          res.writeHead(200, { 'Content-Type': 'text/html' });
+          res.end('');
+          return;
+        }
+
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end('<html><body style="font-family:sans-serif;text-align:center;padding:60px"><h2>✅ 연동 완료! 이 창을 닫으세요.</h2></body></html>');
+        res.end(`<html><body style="font-family:sans-serif;text-align:center;padding:60px"><h2>${code ? '✅ 연동 완료!' : '⚠️ 연동이 완료되지 않았습니다.'}</h2><p>이 창을 닫고 쌤포트로 돌아가세요.</p></body></html>`);
         clearTimeout(timer); server.close();
-        if (!code) return resolve({ error: '취소되었습니다.' });
+        if (!code) {
+          const detail = oauthErrorDescription || oauthError || 'Google 로그인 또는 권한 동의가 완료되지 않았습니다.';
+          return resolve({ error: `Google 연동 실패: ${detail}` });
+        }
         const tokenPayload = {
           code,
           client_id: clientId,
@@ -1306,6 +1287,7 @@ ipcMain.handle('gcal-oauth-start', async (e, legacyClientId = '', legacyClientSe
           grant_type: 'authorization_code',
           code_verifier: pkce.verifier
         };
+        // Desktop 앱 PKCE: client_secret은 환경변수로 명시된 경우에만 포함
         if (clientSecret) tokenPayload.client_secret = clientSecret;
         const body = new URLSearchParams(tokenPayload).toString();
         const tokenRes = await new Promise((r2) => {
@@ -1321,13 +1303,12 @@ ipcMain.handle('gcal-oauth-start', async (e, legacyClientId = '', legacyClientSe
 });
 
 ipcMain.handle('gcal-refresh-token', async (e, arg1 = '', arg2 = '', arg3 = '') => {
-  const https = require('https');
   const legacyCall = !!arg3;
   const refreshToken = legacyCall ? arg3 : arg1;
   const { clientId, clientSecret } = getGoogleCalendarOAuthConfig(legacyCall ? arg1 : '', legacyCall ? arg2 : '');
   if (!clientId || !refreshToken) return { error: 'Google 캘린더 연동 정보가 없습니다.' };
   const tokenPayload = { client_id: clientId, refresh_token: refreshToken, grant_type: 'refresh_token' };
-  if (clientSecret) tokenPayload.client_secret = clientSecret;
+  if (clientSecret) tokenPayload.client_secret = clientSecret; // 환경변수 설정 시에만 포함
   const body = new URLSearchParams(tokenPayload).toString();
   return new Promise((resolve) => {
     const req = https.request({ hostname: 'oauth2.googleapis.com', path: '/token', method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) }, rejectUnauthorized: false }, (r) => {
@@ -1336,36 +1317,53 @@ ipcMain.handle('gcal-refresh-token', async (e, arg1 = '', arg2 = '', arg3 = '') 
   });
 });
 
-ipcMain.handle('gcal-add-event', async (e, accessToken, event) => {
-  const https = require('https');
-  const body = JSON.stringify(event);
+function googleCalendarRequest(accessToken, pathName, method = 'GET', payload = null) {
+  const body = payload ? JSON.stringify(payload) : '';
   return new Promise((resolve) => {
-    const req = https.request({ hostname: 'www.googleapis.com', path: '/calendar/v3/calendars/primary/events', method: 'POST', headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }, rejectUnauthorized: false }, (r) => {
-      let d = ''; r.on('data', c => d += c); r.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve({ error: '파싱 오류' }); } });
-    }); req.on('error', err => resolve({ error: err.message })); req.write(body); req.end();
+    const req = https.request({
+      hostname: 'www.googleapis.com',
+      path: pathName,
+      method,
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        ...(payload ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } : {})
+      },
+      rejectUnauthorized: false
+    }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        if (!data && res.statusCode >= 200 && res.statusCode < 300) return resolve({ ok: true, status: res.statusCode });
+        try {
+          const parsed = JSON.parse(data || '{}');
+          if (res.statusCode >= 400 && !parsed.error) parsed.error = { message: `Google Calendar 오류 ${res.statusCode}` };
+          resolve(parsed);
+        } catch {
+          resolve({ error: 'Google Calendar 응답을 읽지 못했습니다.', status: res.statusCode });
+        }
+      });
+    });
+    req.on('error', (err) => resolve({ error: err.message }));
+    if (body) req.write(body);
+    req.end();
   });
+}
+
+ipcMain.handle('gcal-add-event', async (e, accessToken, event) => {
+  return googleCalendarRequest(accessToken, '/calendar/v3/calendars/primary/events', 'POST', event);
 });
 
 ipcMain.handle('gcal-update-event', async (e, accessToken, eventId, event) => {
-  const https = require('https');
-  const body = JSON.stringify(event);
-  return new Promise((resolve) => {
-    const req = https.request({ hostname: 'www.googleapis.com', path: `/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`, method: 'PATCH', headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }, rejectUnauthorized: false }, (r) => {
-      let d = ''; r.on('data', c => d += c); r.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve({ error: '파싱 오류' }); } });
-    }); req.on('error', err => resolve({ error: err.message })); req.write(body); req.end();
-  });
+  if (!eventId) return { error: 'Google Calendar 이벤트 ID가 없습니다.' };
+  return googleCalendarRequest(accessToken, `/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`, 'PATCH', event);
 });
 
 ipcMain.handle('gcal-delete-event', async (e, accessToken, eventId) => {
-  const https = require('https');
-  return new Promise((resolve) => {
-    const req = https.request({ hostname: 'www.googleapis.com', path: `/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`, method: 'DELETE', headers: { 'Authorization': `Bearer ${accessToken}` }, rejectUnauthorized: false }, (r) => { resolve({ status: r.statusCode }); });
-    req.on('error', err => resolve({ error: err.message })); req.end();
-  });
+  if (!eventId) return { error: 'Google Calendar 이벤트 ID가 없습니다.' };
+  return googleCalendarRequest(accessToken, `/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`, 'DELETE');
 });
 
 function googleTasksRequest(accessToken, pathName, method = 'GET', payload = null) {
-  const https = require('https');
   const body = payload ? JSON.stringify(payload) : '';
   return new Promise((resolve) => {
     const req = https.request({
@@ -1411,6 +1409,30 @@ function buildGoogleTaskPayload(task) {
   if (task.is_done) payload.completed = new Date().toISOString();
   return payload;
 }
+
+// 전체 목록 조회 (페이지네이션 처리, 완료·숨김 포함)
+ipcMain.handle('gtasks-list-tasks', async (e, accessToken) => {
+  if (!accessToken) return { error: 'Google 계정이 연결되지 않았습니다.' };
+  let allTasks = [];
+  let pageToken = null;
+  do {
+    const params = new URLSearchParams({
+      showCompleted: 'true',
+      showHidden: 'true',
+      maxResults: '100',
+    });
+    if (pageToken) params.set('pageToken', pageToken);
+    const result = await googleTasksRequest(
+      accessToken,
+      `/tasks/v1/lists/%40default/tasks?${params}`,
+      'GET'
+    );
+    if (result.error) return result;
+    allTasks = allTasks.concat(Array.isArray(result.items) ? result.items : []);
+    pageToken = result.nextPageToken || null;
+  } while (pageToken);
+  return { items: allTasks };
+});
 
 ipcMain.handle('gtasks-add-task', async (e, accessToken, task) => {
   return googleTasksRequest(accessToken, '/tasks/v1/lists/%40default/tasks', 'POST', buildGoogleTaskPayload(task || {}));
@@ -1539,39 +1561,19 @@ exit 1
 });
 
 ipcMain.handle('neis-get-meal', async (e, eduCode, schoolCode, date) => {
-  try {
-    const api = require('./src/neis-api.js');
-    return await api.getMeal(eduCode, schoolCode, date);
-  } catch (err) {
-    return { error: err.message };
-  }
+  try { return await neisApi.getMeal(eduCode, schoolCode, date); } catch (err) { return { error: err.message }; }
 });
 
 ipcMain.handle('neis-get-calendar', async (e, eduCode, schoolCode, yearMonth) => {
-  try {
-    const api = require('./src/neis-api.js');
-    return await api.getCalendar(eduCode, schoolCode, yearMonth);
-  } catch (err) {
-    return [];
-  }
+  try { return await neisApi.getCalendar(eduCode, schoolCode, yearMonth); } catch (err) { return []; }
 });
 
 ipcMain.handle('neis-search-schools', async (e, keyword) => {
-  try {
-    const api = require('./src/neis-api.js');
-    return await api.searchSchools(keyword);
-  } catch (err) {
-    return [];
-  }
+  try { return await neisApi.searchSchools(keyword); } catch (err) { return []; }
 });
 
 ipcMain.handle('neis-get-weather', async (e, region) => {
-  try {
-    const api = require('./src/neis-api.js');
-    return await api.getWeather(region);
-  } catch (err) {
-    return { error: err.message };
-  }
+  try { return await neisApi.getWeather(region); } catch (err) { return { error: err.message }; }
 });
 
 ipcMain.handle('ai-extract-todos', async (e, apiKey, model, provider, text) => {
@@ -1580,14 +1582,16 @@ ipcMain.handle('ai-extract-todos', async (e, apiKey, model, provider, text) => {
       return await runLocalTodoExtraction(text);
     }
     if (containsStudentSensitiveText(text)) return blockExternalStudentData();
+    const today = new Date().toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\. /g, '-').replace('.', '');
+    const system = `교사의 카카오톡, 문자, 공문에서 할일만 추출하세요. 한 줄에 하나씩 '- [ ] 할일내용 (기한: YYYY-MM-DD)' 형식으로 출력하세요. 기한이 없으면 날짜를 생략하고 설명은 쓰지 마세요. 오늘 날짜는 ${today}입니다. "이번 주", "다음 주", "내일" 등 상대적 표현은 오늘 날짜 기준으로 계산하세요.`;
     if (provider === 'gemini') {
       return await runGemini(apiKey, model, text, {
-        system: "교사의 카카오톡, 문자, 공문에서 할일만 추출하세요. 한 줄에 하나씩 '- [ ] 할일내용 (기한: YYYY-MM-DD)' 형식으로 출력하세요. 기한이 없으면 날짜를 생략하고 설명은 쓰지 마세요.",
+        system,
         userPrompt: `다음 텍스트에서 할일을 추출해 주세요:\n\n${text}`,
       });
     }
     return await runClaude(apiKey, model, text, {
-      system: "교사의 카카오톡, 문자, 공문에서 할일만 추출하세요. 한 줄에 하나씩 '- [ ] 할일내용 (기한: YYYY-MM-DD)' 형식으로 출력하세요. 기한이 없으면 날짜를 생략하고 설명은 쓰지 마세요.",
+      system,
       userPrompt: `다음 텍스트에서 할일을 추출해 주세요:\n\n${text}`,
     });
   } catch (err) {
@@ -1657,39 +1661,6 @@ function normalizeTodoExtractionOutput(output) {
     .join('\n');
 }
 
-ipcMain.handle('ai-extract-timetable', async (e, apiKey, model, provider, text) => {
-  try {
-    const options = {
-      system: '교사의 시간표 메모를 읽고 JSON 배열만 출력하세요. 각 원소는 {"day_of_week":0-4,"period":1-7,"subject":"과목명","is_my_class":true|false} 형식입니다. 월=0, 화=1, 수=2, 목=3, 금=4 입니다. 빈칸은 출력하지 마세요. 설명, 코드블록, 마크다운 없이 JSON만 출력하세요.',
-      userPrompt: `다음 메모에서 시간표를 구조화해 주세요:\n\n${text}`,
-    };
-    if (provider === 'gemini') {
-      return await runGemini(apiKey, model, text, options);
-    }
-    return await runClaude(apiKey, model, text, options);
-  } catch (err) {
-    return { error: err.message };
-  }
-});
-
-ipcMain.handle('ai-extract-timetable-image', async (e, apiKey, model, provider, image) => {
-  try {
-    if (!image || !image.data || !image.mimeType) {
-      return { error: '이미지 정보가 올바르지 않습니다.' };
-    }
-    const options = {
-      system: '시간표 사진을 보고 JSON 배열만 출력하세요. 각 요소는 {"day_of_week":0-4,"period":1-7,"subject":"과목명","is_my_class":true|false} 형식입니다. 월0, 화1, 수2, 목3, 금4 입니다. 빈칸은 출력하지 말고, 설명이나 코드블록 없이 JSON만 출력하세요. 본인 수업 여부가 확실하지 않으면 false로 두세요.',
-      userPrompt: '첨부된 시간표 이미지를 읽고 주간 시간표를 JSON 배열로 구조화하세요.',
-      image,
-    };
-    if (provider === 'gemini') {
-      return await runGemini(apiKey, model, '', options);
-    }
-    return await runClaude(apiKey, model, '', options);
-  } catch (err) {
-    return { error: err.message };
-  }
-});
 
 ipcMain.handle('ai-extract-estimate-image', async (e, apiKey, model, provider, file) => {
   try {
@@ -1882,7 +1853,6 @@ ipcMain.handle('import-class-timetable-excel', async (e, payload) => {
 });
 
 async function runClaude(apiKey, model, text, options = {}) {
-  const https = require('https');
   const content = [];
   if (options.userPrompt || text) {
     content.push({ type: 'text', text: options.userPrompt || text });
@@ -1948,7 +1918,6 @@ async function runClaude(apiKey, model, text, options = {}) {
 }
 
 async function runGemini(apiKey, model, text, options = {}) {
-  const https = require('https');
   const parts = [];
 
   // 이미지가 있으면 먼저(Gemini는 이미지→텍스트 순서 권장)
@@ -2181,74 +2150,6 @@ function columnRefToIndex(ref) {
 }
 
 function matrixToClassTimetable(rows) {
-  const weekdayMap = { '월': 0, '화': 1, '수': 2, '목': 3, '금': 4 };
-  let headerRowIndex = 0;
-  let dayColumns = [];
-
-  // ① 헤더 행 탐지: 월/화/수/목/금 이 가장 많이 포함된 행
-  for (const [rowIndex, rowMap] of rows.entries()) {
-    const matches = [];
-    for (const [colIndex, value] of rowMap.entries()) {
-      const label = normalizeCellText(value);
-      const weekday = Object.keys(weekdayMap).find((key) => label.startsWith(key) || label.includes(key + '요일'));
-      if (weekday !== undefined) matches.push({ colIndex, day: weekdayMap[weekday] });
-    }
-    if (matches.length > dayColumns.length) {
-      headerRowIndex = rowIndex;
-      // 월~금(0~4)만 사용, 토·일 제외
-      dayColumns = matches.filter(m => m.day <= 4).sort((a, b) => a.colIndex - b.colIndex);
-    }
-  }
-
-  if (dayColumns.length < 3) {
-    dayColumns = [2, 3, 4, 5, 6].map((colIndex, idx) => ({ colIndex, day: idx }));
-  }
-
-  const entries = [];
-  let pendingPeriod = null; // "N교시" 행에서 저장해 둔 교시 번호
-
-  const sortedRows = Array.from(rows.entries())
-    .filter(([rowIndex]) => rowIndex > headerRowIndex)
-    .sort((a, b) => a[0] - b[0]);
-
-  for (const [, rowMap] of sortedRows) {
-    const colAval = normalizeCellText(rowMap.get(1) || ''); // 열 A = colIndex 1
-
-    // ② "N교시" 패턴 감지 (NEIS 형식) 또는 순수 숫자
-    const periodFromKorean = colAval.match(/^(\d{1,2})\s*교시/);
-    const periodFromDigit   = /^\d{1,2}$/.test(colAval) ? Number(colAval) : null;
-    const detectedPeriod    = periodFromKorean ? Number(periodFromKorean[1]) : periodFromDigit;
-
-    if (detectedPeriod && detectedPeriod >= 1 && detectedPeriod <= 12) {
-      // 교시 마커 행 → 다음 줄의 과목을 위해 저장 후 스킵
-      pendingPeriod = detectedPeriod;
-      continue;
-    }
-
-    // ③ 과목 행: pendingPeriod 가 있으면 과목 추출
-    const usePeriod = pendingPeriod;
-    pendingPeriod = null;
-    if (!usePeriod) continue;
-
-    dayColumns.forEach(({ colIndex, day }) => {
-      let subject = normalizeCellText(rowMap.get(colIndex) || '');
-      // 교사명 괄호 제거: "회계 원리(송대섭)" → "회계 원리"
-      subject = subject.replace(/\s*\([^)]*\)\s*$/, '').trim();
-      subject = subject.replace(/^\-+$/, '').replace(/^\s*없음\s*$/i, '');
-      // "N학년 …" 형태의 반 이름 행은 건너뜀
-      if (!subject || /^\d+학년/.test(subject)) return;
-      entries.push({ day_of_week: day, period: usePeriod, subject, is_my_class: false });
-    });
-  }
-
-  const deduped = new Map();
-  entries.forEach((entry) => deduped.set(`${entry.day_of_week}_${entry.period}`, entry));
-  return Array.from(deduped.values()).sort((a, b) =>
-    a.period !== b.period ? a.period - b.period : a.day_of_week - b.day_of_week
-  );
-}
-
-function matrixToClassTimetable(rows) {
   const weekdayMap = {
     '월': 0,
     '화': 1,
@@ -2275,7 +2176,8 @@ function matrixToClassTimetable(rows) {
   }
 
   if (dayColumns.length < 3) {
-    dayColumns = [2, 4, 5, 6, 12].map((colIndex, idx) => ({ colIndex, day: idx }));
+    // 헤더 감지 실패 시 NEIS 기본 컬럼 레이아웃(열 B~F) 사용
+    dayColumns = [2, 3, 4, 5, 6].map((colIndex, idx) => ({ colIndex, day: idx }));
   }
 
   const entries = [];
@@ -2331,7 +2233,6 @@ function parseClassTimetableCell(value) {
   };
 }
 
-ipcMain.removeHandler('ai-extract-timetable');
 ipcMain.handle('ai-extract-timetable', async (e, apiKey, model, provider, text) => {
   try {
     const options = {
@@ -2347,7 +2248,6 @@ ipcMain.handle('ai-extract-timetable', async (e, apiKey, model, provider, text) 
   }
 });
 
-ipcMain.removeHandler('ai-extract-timetable-image');
 ipcMain.handle('ai-extract-timetable-image', async (e, apiKey, model, provider, image) => {
   try {
     if (!image || !image.data || !image.mimeType) {
@@ -2475,7 +2375,6 @@ function findBrowserPath() {
 // ── IPC 핸들러 ────────────────────────────────────────────────────────────────
 
 // 에듀파인 탭 감지
-ipcMain.removeHandler('macro-cdp-check');
 ipcMain.handle('macro-cdp-check', async () => {
   try {
     const tabs = await cdpHttpGet('http://localhost:9222/json/list');
@@ -2494,7 +2393,6 @@ ipcMain.handle('macro-cdp-check', async () => {
 });
 
 // 브라우저를 디버그 모드로 실행 (전용 프로필 — 로그인 유지됨)
-ipcMain.removeHandler('macro-launch-debug-browser');
 ipcMain.handle('macro-launch-debug-browser', () => {
   const browserPath = findBrowserPath();
   if (!browserPath) return { error: 'Chrome 또는 Edge를 찾을 수 없습니다.' };
@@ -2512,7 +2410,6 @@ ipcMain.handle('macro-launch-debug-browser', () => {
 });
 
 // 데스크탑 바로가기 생성 (다음부터 로그인 상태 유지)
-ipcMain.removeHandler('macro-create-shortcut');
 ipcMain.handle('macro-create-shortcut', () => {
   const browserPath = findBrowserPath();
   if (!browserPath) return { error: 'Chrome 또는 Edge를 찾을 수 없습니다.' };
@@ -2540,7 +2437,6 @@ $sc.Save()
 });
 
 // 중지 신호 전달
-ipcMain.removeHandler('macro-stop');
 ipcMain.handle('macro-stop', async () => {
   if (_macroStopWsUrl) {
     try { await cdpEval(_macroStopWsUrl, 'window.__macroStop=true;', 3000); } catch (_) {}
@@ -2550,7 +2446,6 @@ ipcMain.handle('macro-stop', async () => {
 
 // CDP로 에듀파인 자동 입력
 // 에듀파인 페이지 구조 진단
-ipcMain.removeHandler('macro-diagnose');
 ipcMain.handle('macro-diagnose', async (e, wsUrl) => {
   const diagScript = `(function() {
     function collectDoc(doc, depth) {
@@ -2591,7 +2486,6 @@ ipcMain.handle('macro-diagnose', async (e, wsUrl) => {
   } catch (e) { return { error: e.message }; }
 });
 
-ipcMain.removeHandler('macro-fill-edufine-cdp');
 ipcMain.handle('macro-fill-edufine-cdp', async (e, { wsUrl, items }) => {
   _macroStopWsUrl = wsUrl;
 

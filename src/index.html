@@ -37,7 +37,6 @@
           <input id="global-search-input" class="global-search-input" placeholder="기능 검색... 예: 출석, 급식, 공지" autocomplete="off">
           <div id="global-search-results" class="global-search-results" style="display:none"></div>
         </div>
-        <nav id="page-tabs"></nav>
       </div>
       <div id="topbar-right">
         <button id="update-btn" class="topbar-btn" style="display:none">업데이트 확인</button>
@@ -82,6 +81,7 @@
         <span id="header-date"></span>
       </div>
     </header>
+    <nav id="page-tabs"></nav>
 
     <main id="page-content"></main>
   </div>
@@ -232,11 +232,14 @@
       if (!token) return false;
       return api.gcalAddEvent(token, event).then(function (created) {
         if (created && created.id) return api.setTodoGcalId(id, created.id).then(function () { return true; });
-        if (created && created.error) console.warn("google calendar todo add failed", created.error);
+        if (created && created.error) {
+          var msg = (created.error && created.error.message) || JSON.stringify(created.error);
+          toast('📅 Google 캘린더 저장 실패: ' + msg, 'error', 6000);
+        }
         return false;
       });
     }).catch(function (error) {
-      console.warn("google calendar todo add failed", error);
+      toast('📅 Google 캘린더 저장 실패: ' + String(error), 'error', 6000);
       return false;
     });
   }
@@ -386,6 +389,121 @@
       return false;
     });
   }
+
+  // ── Google Tasks 양방향 동기화 ───────────────────────────────────────────────
+  var _gtasksSyncing = false;
+
+  function syncWithGoogleTasks() {
+    if (_gtasksSyncing) return Promise.resolve({ skipped: true });
+    if (!api.googleTasksListTasks) return Promise.resolve({ skipped: true });
+    _gtasksSyncing = true;
+
+    return getGoogleTasksToken().then(function (token) {
+      if (!token) { _gtasksSyncing = false; return { skipped: true }; }
+
+      return api.googleTasksListTasks(token).then(function (remote) {
+        if (!remote || remote.error) { _gtasksSyncing = false; return { skipped: true }; }
+
+        // 삭제된 항목 제외
+        var remoteItems = (remote.items || []).filter(function (t) { return !t.deleted; });
+        var remoteMap = {};
+        remoteItems.forEach(function (t) { remoteMap[t.id] = t; });
+
+        return api.getTodos(true).then(function (localTodos) {
+          var localByGTaskId = {};
+          localTodos.forEach(function (todo) {
+            if (todo.google_task_id) localByGTaskId[todo.google_task_id] = todo;
+          });
+
+          var ops = [];
+
+          // ── Phase 1: 원격 → 로컬 (새 항목 추가 / 변경 항목 업데이트) ───
+          remoteItems.forEach(function (rt) {
+            var remoteTitle    = (rt.title || '').trim() || '(제목 없음)';
+            var remoteDone     = rt.status === 'completed';
+            var remoteDeadline = rt.due ? rt.due.slice(0, 10) : '';
+            var remoteUpdated  = rt.updated || '';
+
+            var lt = localByGTaskId[rt.id];
+            if (lt) {
+              // 이미 로컬에 있음 — 원격 updated가 로컬 updated_at보다 최신이면 덮어씀
+              var localTs = lt.updated_at || lt.created_at || '';
+              // Google Tasks는 UTC ISO8601, DB는 'YYYY-MM-DD HH:MM:SS' (UTC)
+              // 문자열 대소비교로 충분 (ISO8601 ↔ SQLite datetime 모두 사전순 = 시간순)
+              var remoteIsNewer = !localTs || (remoteUpdated && remoteUpdated > localTs.replace(' ', 'T') + 'Z');
+              if (remoteIsNewer) {
+                if (lt.title !== remoteTitle || lt.deadline !== remoteDeadline) {
+                  ops.push(
+                    originalUpdateTodo(lt.id, {
+                      title: remoteTitle,
+                      deadline: remoteDeadline,
+                      priority: lt.priority || '보통',
+                      category: lt.category || '기타'
+                    })
+                  );
+                }
+                if ((!!lt.is_done) !== remoteDone) {
+                  ops.push(originalToggleTodo(lt.id));
+                }
+              }
+            } else {
+              // 로컬에 없음 — 원격에서 새로 추가
+              ops.push(
+                originalAddTodo({
+                  title: remoteTitle,
+                  deadline: remoteDeadline,
+                  priority: '보통',
+                  category: '기타',
+                  is_ai_generated: 0,
+                  source_text: ''
+                }).then(function (newId) {
+                  if (!newId) return;
+                  var p1 = originalSetTodoGoogleTaskId
+                    ? originalSetTodoGoogleTaskId(newId, rt.id)
+                    : Promise.resolve();
+                  // 완료 상태도 반영
+                  var p2 = remoteDone ? originalToggleTodo(newId) : Promise.resolve();
+                  return Promise.all([p1, p2]);
+                })
+              );
+            }
+          });
+
+          // ── Phase 2: 원격에서 삭제된 항목 → 로컬에서도 삭제 ────────────
+          localTodos.forEach(function (lt) {
+            if (lt.google_task_id && !remoteMap[lt.google_task_id]) {
+              ops.push(originalDeleteTodo(lt.id));
+            }
+          });
+
+          // ── Phase 3: 아직 원격에 없는 로컬 항목 → 원격으로 푸시 ─────────
+          localTodos.forEach(function (lt) {
+            if (!lt.google_task_id) {
+              ops.push(
+                api.googleTasksAddTask(token, buildGoogleTaskFromLocal(lt.id, lt))
+                  .then(function (created) {
+                    if (created && created.id && originalSetTodoGoogleTaskId) {
+                      return originalSetTodoGoogleTaskId(lt.id, created.id);
+                    }
+                  }).catch(function () {})
+              );
+            }
+          });
+
+          return Promise.all(ops).then(function () {
+            _gtasksSyncing = false;
+            return { ok: true };
+          });
+        });
+      });
+    }).catch(function (err) {
+      _gtasksSyncing = false;
+      console.warn('syncWithGoogleTasks failed', err);
+      return { error: String(err && err.message ? err.message : err) };
+    });
+  }
+
+  window.syncWithGoogleTasks = syncWithGoogleTasks;
 
   api.addTodo = function (payload) {
     return Promise.resolve(originalAddTodo(payload)).then(function (result) {
@@ -2082,6 +2200,14 @@
     });
   }
 
+  function positionTabDropdown(section) {
+    var items = section.querySelector(".tab-group-items");
+    if (!items) return;
+    var rect = section.getBoundingClientRect();
+    items.style.top = (rect.bottom - 1) + "px";
+    items.style.left = rect.left + "px";
+  }
+
   function syncActiveTabs() {
     var homeBtn = document.getElementById("home-btn");
     if (homeBtn) homeBtn.classList.toggle("active", currentPage === "dashboard");
@@ -2122,6 +2248,7 @@
           closeGroupTimer = null;
         }
         openGroupKey = group.key;
+        positionTabDropdown(section);
         syncActiveTabs();
       });
       section.addEventListener("mouseleave", function () {
@@ -2161,6 +2288,7 @@
       label.appendChild(labelValue);
       label.addEventListener("click", function () {
         openGroupKey = openGroupKey === group.key ? "" : group.key;
+        if (openGroupKey === group.key) positionTabDropdown(section);
         syncActiveTabs();
       });
       section.appendChild(label);
@@ -2312,6 +2440,11 @@
         .filter(function (item) { return item.score > 0; })
         .sort(function (a, b) { return b.score - a.score; })
         .slice(0, 8);
+
+      var inputRect = input.getBoundingClientRect();
+      results.style.top = (inputRect.bottom + 4) + "px";
+      results.style.left = inputRect.left + "px";
+      results.style.width = Math.max(inputRect.width, 280) + "px";
 
       if (!currentMatches.length) {
         results.innerHTML = '<div class="global-search-empty">관련 기능을 찾지 못했습니다.</div>';

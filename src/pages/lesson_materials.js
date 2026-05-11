@@ -88,18 +88,18 @@
   ];
 
   const designPrompts = {
-    "배민": "배민 스타일: 민트 그린, 둥근 한글 타이포, 위트 있는 스티커형 카드, 친근한 일러스트를 사용합니다.",
-    "토스": "토스 스타일: 깨끗한 흰 배경, 파란 포인트, 넓은 여백, 금융 앱처럼 정돈된 카드형 정보 구조를 사용합니다.",
-    "쿠팡": "쿠팡 스타일: 강한 레드/블루, 큰 배너, 빠른 스캔이 가능한 강조 박스와 프로모션형 리듬을 사용합니다.",
-    "당근": "당근 스타일: 따뜻한 오렌지, 지역 커뮤니티 느낌, 부드러운 카드와 친근한 문장 흐름을 사용합니다.",
-    "네이버": "네이버 스타일: 초록 포인트, 검색 포털처럼 정돈된 정보 구조, 깔끔한 서비스 화면 느낌을 사용합니다.",
-    "넷플릭스": "넷플릭스 스타일: 블랙 배경, 강한 레드 포인트, 시네마틱 히어로 화면과 포스터형 카드 구성을 사용합니다.",
-    "애플": "애플 스타일: 큰 여백, 절제된 색, 고급스러운 히어로 구성, 정교한 제품 발표형 레이아웃을 사용합니다.",
-    "스포티파이": "스포티파이 스타일: 다크 UI, 초록 포인트, 플레이리스트/앨범 카드형 리듬과 젊은 에너지를 사용합니다.",
-    "노션": "노션 스타일: 문서형 블록, 콜아웃, 체크리스트, 표 구조를 활용해 지식 베이스처럼 정리합니다.",
-    "오픈AI": "오픈AI 스타일: 차분한 오프화이트, 그래파이트, 연구 설명 카드, 미래적인 시스템 다이어그램을 사용합니다.",
-    "유튜브": "유튜브 스타일: 썸네일형 강조, 영상 카드, 재생 버튼 모티프, 크리에이터 콘텐츠 흐름을 사용합니다.",
-    "클래식": "클래식 스타일: 칠판, 아이보리, 노트, 전통 교실 느낌의 안정적인 학습자료 디자인을 사용합니다."
+    "배민": "Baemin style — mint green palette, rounded playful Korean typography, witty sticker-style cards, friendly hand-drawn illustrations throughout.",
+    "토스": "Toss style — crisp white background, bold blue accent color, generous whitespace, clean card-based layout as precise as a fintech app.",
+    "쿠팡": "Coupang style — strong red and navy, large hero banners, high-contrast highlight boxes, fast-scan promotional rhythm on every slide.",
+    "당근": "Karrot style — warm orange accent, neighborhood community feel, soft rounded cards, conversational and approachable text flow.",
+    "네이버": "Naver style — green accent, structured portal-like information hierarchy, clean service-UI aesthetic with clearly delineated content zones.",
+    "넷플릭스": "Netflix style — pure black background, bold red accent, cinematic full-bleed hero images, poster-style card grids, high drama contrast.",
+    "애플": "Apple style — expansive whitespace, restrained neutral palette, oversized hero typography, premium product-keynote layout with surgical precision.",
+    "스포티파이": "Spotify style — dark UI with deep charcoal backgrounds, vibrant green accent, playlist/album card rhythm, youthful and energetic visual beats.",
+    "노션": "Notion style — document-block layout, callout boxes, checklists, table structures; organized like a knowledge base with calm off-white tones.",
+    "오픈AI": "OpenAI style — soft off-white and graphite tones, research-report cards, minimalist system diagrams, futuristic yet understated aesthetic.",
+    "유튜브": "YouTube style — thumbnail-first visual hierarchy, video card grids, play-button motifs, creator-content rhythm with bold title overlays.",
+    "클래식": "Classic style — chalkboard green, ivory and kraft-paper tones, notebook textures, timeless classroom material design with stable readability."
   };
 
   const tonePrompts = {
@@ -162,7 +162,10 @@
       `        <li>Canvas 선택</li>`,
       `        <li>복사한 프롬프트 붙여넣기</li>`,
       `      </ol>`,
-      `      <button type="button" class="btn btn-secondary btn-sm" id="lm-open-gemini">Gemini 열기</button>`,
+      `      <div class="lm-hero-actions">`,
+      `        <button type="button" class="btn btn-secondary btn-sm" id="lm-open-gemini">Gemini 열기</button>`,
+      `        <button type="button" class="lm-reset-btn" id="lm-reset">초기화</button>`,
+      `      </div>`,
       `    </div>`,
       `  </section>`,
       `  <div class="lm-tabs">`,
@@ -297,6 +300,9 @@
 
     const copy = document.getElementById("lm-copy");
     if (copy) copy.addEventListener("click", generateAndCopy);
+
+    const reset = document.getElementById("lm-reset");
+    if (reset) reset.addEventListener("click", resetState);
 
     updateUI();
   }
@@ -523,9 +529,25 @@
       "문제": "해결해야 할 문제 상황을 제시하는 도입"
     };
 
-    let prompt = `[INSTRUCTION: 교육 콘텐츠 생성]
+    let prompt = `[INSTRUCTION: 교육 콘텐츠 생성]`;
 
-사용 순서: Gemini 로그인 → Canvas 선택 → PDF 수업자료가 있으면 먼저 첨부 → 이 프롬프트 붙여넣기
+    if (state.design.length) {
+      prompt += `
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[DESIGN SYSTEM — MANDATORY, NON-NEGOTIABLE]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Brand: ${state.design[0]}
+${designPrompts[state.design[0]]}
+
+This is NOT a suggestion — it is a strict rule.
+Apply this brand's visual language consistently across EVERY slide, section, card, and background:
+colors, typography, spacing ratios, card shapes, image direction, and accent colors.
+Reverting to a generic white background or neutral default style is a violation of this instruction.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    }
+
+    prompt += `
 
 주제:
 ${topic}
@@ -550,14 +572,6 @@ ${state.pedagogy.join(", ") || "기본 강의식 + 학생 참여형 질문"}`;
 도입: ${state.intro[0] ? `${introGuide[state.intro[0]]} + 학습목표 제시` : "주제에 맞는 자연스러운 도입과 학습목표 제시"}
 전개: 개념 설명, 활동, 사례, 적용, 피드백이 단계적으로 이어지도록 구성
 정리: 핵심 내용 정리, 형성평가 또는 회고, 다음 학습과의 연결`;
-    }
-
-    if (state.design.length) {
-      prompt += `
-
-디자인 가이드:
-${designPrompts[state.design[0]]}
-선택한 브랜드 감성이 색상, 타이포그래피, 여백, 카드 모양, 이미지 방향, 정보 배치에 분명히 드러나야 합니다.`;
     }
 
     if (state.tone.length) {
@@ -624,6 +638,33 @@ PDF 분석 기준:
     return prompt;
   }
 
+  function resetState() {
+    state.school = [];
+    state.grade = [];
+    state.level = [];
+    state.subject = [];
+    state.curriculum = [];
+    state.output = [];
+    state.period = [];
+    state.intro = [];
+    state.slidecnt = [];
+    state.pedagogy = [];
+    state.visualization = [];
+    state.design = ["노션"];
+    state.tone = [];
+    state.youtubes = [];
+    state.youtubeOptions = {};
+    state.pdfMaterials = [];
+    state.pdfUseMode = ["core_source"];
+    const topic = document.getElementById("lm-topic");
+    if (topic) topic.value = "";
+    const pdfInput = document.getElementById("lm-pdf-input");
+    if (pdfInput) pdfInput.value = "";
+    syncTagState();
+    updateUI();
+    toast("초기화되었습니다.", "info");
+  }
+
   function generateAndCopy() {
     const topic = (document.getElementById("lm-topic") || {}).value.trim();
     const cfg = getOutputCfg();
@@ -659,6 +700,9 @@ PDF 분석 기준:
       .lm-guide-card{min-width:270px;background:#fff;border:1px solid rgba(55,53,47,.12);border-radius:12px;padding:16px;box-shadow:0 1px 2px rgba(15,15,15,.04)}
       .lm-guide-card b{display:block;color:#37352f;margin-bottom:8px}
       .lm-guide-card ol{margin:0 0 12px 18px;color:#787774;line-height:1.7;font-size:13px}
+      .lm-hero-actions{display:flex;flex-direction:column;gap:8px;align-items:stretch}
+      .lm-reset-btn{border:1px solid rgba(200,50,50,.25);background:#fff5f5;color:#c0392b;border-radius:8px;padding:7px 14px;font-size:13px;font-weight:900;cursor:pointer;transition:.15s}
+      .lm-reset-btn:hover{background:#fee2e2;border-color:#e03e3e}
       .lm-tabs{display:flex;gap:8px;margin-bottom:16px}
       .lm-tab{border:1px solid rgba(55,53,47,.12);background:#fff;color:#787774;border-radius:8px;padding:9px 15px;font-weight:900}
       .lm-tab.active{background:#37352f;color:#fff;border-color:#37352f;box-shadow:none}
