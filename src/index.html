@@ -592,6 +592,7 @@
     { key: "lesson_materials", label: "수업자료제작" },
     { key: "official_document", label: "공문서 작성" },
     { key: "todos", label: "할일 목록" },
+    { key: "sticky_notes", label: "스티커 메모" },
     { key: "settings", label: "설정" }
   ];
   var ADMIN_MENU_PAGE = { key: "user_management", label: "회원 관리" };
@@ -600,7 +601,7 @@
     { key: "class", label: "학급 관리", items: ["students", "attendance", "daily_memo", "timetable"] },
     { key: "records", label: "기록", items: ["counseling", "observations", "lessons"] },
     { key: "evaluation", label: "평가", items: ["assessments", "submissions", "statistics", "ai_analysis"] },
-    { key: "tools", label: "도구", items: ["meal", "school_calendar", "calculator", "lesson_materials", "official_document", "settings"] }
+    { key: "tools", label: "도구", items: ["meal", "school_calendar", "calculator", "lesson_materials", "official_document", "sticky_notes", "settings"] }
   ];
 
   var menuGroups = cloneMenuGroups(DEFAULT_MENU_GROUPS);
@@ -662,6 +663,7 @@
         lesson_materials: "수업자료 제작 수업 콘텐츠 생성기 제미나이 gemini 캔버스 canvas 프롬프트 슬라이드 지도안 학습지 요약노트",
         official_document: "공문 공문서 행정문서 작성 협조요청 통보 회신 보고 알림 검토 붙임 끝",
         todos: "할일 할 일 todo 업무 체크 완료",
+        sticky_notes: "스티커 메모 포스트잇 노트 메모장 붙임",
         settings: "설정 환경설정 학교 날씨 메뉴 바로가기",
         user_management: "회원 관리 사용자 계정 승인 차단 삭제 공지사항 공지 배포"
       };

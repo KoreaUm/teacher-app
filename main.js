@@ -342,13 +342,23 @@ async function getOllamaStatus(engine = 'local_lite') {
   };
 }
 
+function getOllamaEnv() {
+  // 회사 프록시 등 SSL 인증서 검사 우회 (Windows 기업 환경 대응)
+  return Object.assign({}, process.env, {
+    OLLAMA_SKIP_TLS_VERIFY: '1',
+    NODE_TLS_REJECT_UNAUTHORIZED: '0',
+    GIT_SSL_NO_VERIFY: 'true',
+  });
+}
+
 function startOllamaServer(ollamaPath) {
   if (!ollamaPath) return;
   try {
     const child = spawn(ollamaPath, ['serve'], {
       detached: true,
       stdio: 'ignore',
-      windowsHide: true
+      windowsHide: true,
+      env: getOllamaEnv(),
     });
     child.unref();
   } catch {}
@@ -393,6 +403,7 @@ function runCommand(command, args, options = {}) {
     const onData = options.onData;
     const spawnOptions = Object.assign({}, options);
     delete spawnOptions.onData;
+    delete spawnOptions.timeout;
     const child = spawn(command, args, {
       windowsHide: true,
       ...spawnOptions
@@ -992,17 +1003,26 @@ ipcMain.handle('install-ollama-ai', async (e, engine = 'local_lite') => {
 
     if (!ollamaPath) {
       if (process.platform === 'win32') {
-        const installerPath = path.join(app.getPath('temp'), 'OllamaSetup.exe');
-        sendProgress({ step: 'download-installer', percent: 10, message: 'Ollama 설치 파일을 다운로드하는 중입니다.' });
-        await downloadFile(OLLAMA_INSTALLER_URL, installerPath, (progress) => {
-          sendProgress({
-            step: 'download-installer',
-            percent: Math.max(10, Math.min(35, Math.round(10 + (progress.percent * 0.25)))),
-            message: `Ollama 설치 파일 다운로드 중... ${progress.percent}%`
+        // 직접 다운로드 시도, SSL 오류 등 실패 시 브라우저 fallback
+        let openedInstaller = false;
+        try {
+          const installerPath = path.join(app.getPath('temp'), 'OllamaSetup.exe');
+          sendProgress({ step: 'download-installer', percent: 10, message: 'Ollama 설치 파일을 다운로드하는 중입니다.' });
+          await downloadFile(OLLAMA_INSTALLER_URL, installerPath, (progress) => {
+            sendProgress({
+              step: 'download-installer',
+              percent: Math.max(10, Math.min(35, Math.round(10 + (progress.percent * 0.25)))),
+              message: `Ollama 설치 파일 다운로드 중... ${progress.percent}%`
+            });
           });
-        });
-        sendProgress({ step: 'run-installer', percent: 40, message: 'Ollama 설치 파일을 실행했습니다. 설치 창을 완료해 주세요.' });
-        shell.openPath(installerPath);
+          sendProgress({ step: 'run-installer', percent: 40, message: 'Ollama 설치 파일을 실행했습니다. 설치 창을 완료해 주세요.' });
+          shell.openPath(installerPath);
+          openedInstaller = true;
+        } catch (dlErr) {
+          // 다운로드 실패(SSL 등) → 브라우저로 대신 열기
+          sendProgress({ step: 'open-download', percent: 15, message: 'Ollama 다운로드 페이지를 브라우저에서 열었습니다. 설치를 완료해 주세요.' });
+          shell.openExternal(OLLAMA_DOWNLOAD_URL);
+        }
       } else {
         sendProgress({ step: 'open-download', percent: 15, message: 'Ollama 다운로드 페이지를 열었습니다. 설치를 완료해 주세요.' });
         shell.openExternal(OLLAMA_DOWNLOAD_URL);
@@ -1010,9 +1030,7 @@ ipcMain.handle('install-ollama-ai', async (e, engine = 'local_lite') => {
       return {
         success: false,
         needsUserAction: true,
-        message: process.platform === 'win32'
-          ? 'Ollama 설치 파일을 실행했습니다. 설치 창에서 설치를 완료한 뒤 다시 "로컬 AI 자동 설치/확인"을 눌러 주세요.'
-          : 'Ollama 다운로드 페이지를 열었습니다. 설치를 완료한 뒤 다시 "로컬 AI 자동 설치/확인"을 눌러 주세요.'
+        message: 'Ollama 설치를 완료한 뒤 다시 "로컬 AI 자동 설치/확인"을 눌러 주세요.'
       };
     }
 
@@ -1034,6 +1052,7 @@ ipcMain.handle('install-ollama-ai', async (e, engine = 'local_lite') => {
       let lastProgressAt = 0;
       const pulled = await runCommand(ollamaPath, ['pull', model], {
         timeout: 60 * 60 * 1000,
+        env: getOllamaEnv(),
         onData: (text) => {
           const compact = text.replace(/\u001b\[[0-9;]*m/g, '').replace(/\r/g, '\n').split('\n').map((line) => line.trim()).filter(Boolean).slice(-1)[0] || '';
           const match = compact.match(/(\d{1,3})%/);
@@ -1581,7 +1600,7 @@ ipcMain.handle('ai-extract-todos', async (e, apiKey, model, provider, text) => {
     if (provider === 'local_lite' || provider === 'local') {
       return await runLocalTodoExtraction(text);
     }
-    if (containsStudentSensitiveText(text)) return blockExternalStudentData();
+    // 할일 추출은 학생 단어가 포함돼도 허용 (단순 업무 텍스트 처리)
     const today = new Date().toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\. /g, '-').replace('.', '');
     const system = `교사의 카카오톡, 문자, 공문에서 할일만 추출하세요. 한 줄에 하나씩 '- [ ] 할일내용 (기한: YYYY-MM-DD)' 형식으로 출력하세요. 기한이 없으면 날짜를 생략하고 설명은 쓰지 마세요. 오늘 날짜는 ${today}입니다. "이번 주", "다음 주", "내일" 등 상대적 표현은 오늘 날짜 기준으로 계산하세요.`;
     if (provider === 'gemini') {

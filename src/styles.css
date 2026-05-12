@@ -2931,3 +2931,143 @@ tbody tr:hover { background: var(--hover); }
     flex-direction: column;
   }
 }
+
+/* ── 스티커 메모 페이지 ── */
+.sn-page {
+  padding: 16px;
+  max-width: 1200px;
+}
+.sn-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.sn-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.sn-color-filters {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.sn-cf-btn {
+  padding: 3px 10px;
+  border-radius: 12px;
+  border: 1.5px solid var(--border);
+  background: var(--bg2);
+  color: var(--text1);
+  font-size: 12px;
+  cursor: pointer;
+  transition: box-shadow .15s, opacity .15s;
+}
+.sn-cf-btn:hover { opacity: .8; }
+.sn-cf-btn.active {
+  box-shadow: 0 0 0 2px var(--accent);
+  font-weight: 600;
+}
+.sn-count {
+  font-size: 12px;
+  color: var(--text3);
+  white-space: nowrap;
+}
+.sn-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+.sn-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 48px 0;
+  color: var(--text3);
+  font-size: 14px;
+}
+.sn-card {
+  border-radius: 10px;
+  border: 1.5px solid;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 2px 6px rgba(0,0,0,.06);
+  transition: box-shadow .15s;
+}
+.sn-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,.12); }
+.sn-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px 4px;
+  gap: 4px;
+}
+.sn-color-picker-row {
+  display: flex;
+  gap: 4px;
+}
+.sn-cp-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid;
+  cursor: pointer;
+  padding: 0;
+  transition: transform .1s;
+}
+.sn-cp-dot:hover { transform: scale(1.25); }
+.sn-cp-dot.active {
+  box-shadow: 0 0 0 2px #555;
+}
+.sn-card-actions {
+  display: flex;
+  gap: 2px;
+}
+.sn-pin-btn,
+.sn-del-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-size: 13px;
+  opacity: .5;
+  transition: opacity .15s, background .15s;
+}
+.sn-pin-btn:hover, .sn-del-btn:hover { opacity: 1; background: rgba(0,0,0,.08); }
+.sn-pin-btn.pinned { opacity: 1; }
+.sn-textarea {
+  border: none;
+  background: transparent;
+  resize: none;
+  padding: 6px 10px 10px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #333;
+  min-height: 100px;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: inherit;
+  outline: none;
+}
+.sn-textarea::placeholder { color: #aaa; }
+
+/* 스티커 메모 대시보드 위젯 칩 */
+.sticky-widget-chip {
+  border-radius: 6px;
+  border: 1.5px solid;
+  padding: 5px 9px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #333;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: box-shadow .12s;
+}
+.sticky-widget-chip:hover { box-shadow: 0 2px 8px rgba(0,0,0,.12); }

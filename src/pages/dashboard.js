@@ -27,6 +27,7 @@ const WIDGET_LABELS = {
   'w-shortcuts':         '🔗 바로가기',
   'w-school-tt':         '🏫 학급 시간표',
   'w-ai':                '🤖 AI 할일 추출',
+  'w-sticky':            '📝 스티커 메모',
 };
 
 const DEFAULT_POSITIONS = {
@@ -43,6 +44,7 @@ const DEFAULT_POSITIONS = {
   'w-teacher-contact':  {x:756, y:802, w:165, h:110},
   'w-student-contact':  {x:929, y:802, w:165, h:110},
   'w-dday-list':        {x:756, y:920, w:340, h:150},
+  'w-sticky':           {x:1104, y:0,   w:340, h:280},
 };
 
 async function syncCloudIfPossible(){
@@ -244,6 +246,17 @@ async function render(c){
     </div>
   </div>
 
+  <div class="card sb-card" id="w-sticky" data-widget="sticky" style="overflow:hidden;display:flex;flex-direction:column">
+    <div class="card-header">
+      <span class="card-title">📝 스티커 메모</span>
+      <button class="btn btn-primary btn-xs" id="sticky-add-btn">+ 추가</button>
+    </div>
+    <div id="sticky-widget-list" style="flex:1;overflow-y:auto;padding:4px 8px 8px;display:flex;flex-direction:column;gap:6px"></div>
+    <div style="padding:4px 8px 8px;text-align:center">
+      <button class="btn btn-secondary btn-xs" onclick="navigateTo('sticky_notes')" style="width:100%;font-size:11px">전체 보기 →</button>
+    </div>
+  </div>
+
 </div>`;
 }
 
@@ -310,6 +323,9 @@ async function init(){
     }
   } catch(e) {}
 
+  // 스티커 메모 위젯 갱신 훅
+  window.__refreshStickyWidget = refreshStickyWidget;
+
   await Promise.all([
     loadNeisCalendar(),
     refreshTodos(),
@@ -321,6 +337,7 @@ async function init(){
     loadWeather(),
     loadMeal(),
     renderSchoolTT(),
+    refreshStickyWidget(),
   ]);
 }
 
@@ -1017,6 +1034,71 @@ window.__openShortcut=async(index)=>{
     toast('바로가기를 열 수 없습니다.','error');
   }
 };
+
+// ─────────────────────────────────────────────────────────
+// 스티커 메모 위젯
+// ─────────────────────────────────────────────────────────
+const STICKY_COLORS = [
+  { id: 'yellow', bg: '#fff9c4', border: '#f9e44e' },
+  { id: 'green',  bg: '#c8e6c9', border: '#81c784' },
+  { id: 'blue',   bg: '#bbdefb', border: '#64b5f6' },
+  { id: 'pink',   bg: '#f8bbd9', border: '#f48fb1' },
+  { id: 'purple', bg: '#e1bee7', border: '#ce93d8' },
+  { id: 'orange', bg: '#ffe0b2', border: '#ffb74d' },
+];
+async function refreshStickyWidget(){
+  const wrap = document.getElementById('sticky-widget-list');
+  const addBtn = document.getElementById('sticky-add-btn');
+  if(!wrap) return;
+
+  let notes = [];
+  try {
+    const raw = await api.getSetting('sticky_notes_v1', '[]');
+    notes = JSON.parse(raw || '[]');
+    if(!Array.isArray(notes)) notes = [];
+  } catch(e) { notes = []; }
+
+  // 고정된 것 먼저, 그 다음 최근 수정순
+  notes = [...notes].sort((a,b)=>{
+    if(a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+    return b.updated_at - a.updated_at;
+  });
+
+  if(addBtn) {
+    addBtn.onclick = async () => {
+      let notes2 = [];
+      try {
+        const raw2 = await api.getSetting('sticky_notes_v1', '[]');
+        notes2 = JSON.parse(raw2 || '[]');
+        if(!Array.isArray(notes2)) notes2 = [];
+      } catch(e) {}
+      const newNote = {
+        id: 'sn_' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
+        content: '', color: 'yellow', pinned: false,
+        created_at: Date.now(), updated_at: Date.now()
+      };
+      notes2.unshift(newNote);
+      await api.setSetting('sticky_notes_v1', JSON.stringify(notes2));
+      navigateTo('sticky_notes');
+    };
+  }
+
+  if(!notes.length){
+    wrap.innerHTML = '<div style="font-size:12px;color:var(--text3);text-align:center;padding:16px 0">메모가 없습니다</div>';
+    return;
+  }
+
+  // 최대 5개만 미리보기
+  const preview = notes.slice(0, 5);
+  wrap.innerHTML = preview.map(n => {
+    const col = STICKY_COLORS.find(c=>c.id===n.color) || STICKY_COLORS[0];
+    const text = (n.content || '').slice(0, 60) || '(빈 메모)';
+    const pin = n.pinned ? '📌 ' : '';
+    return `<div class="sticky-widget-chip" style="background:${col.bg};border-color:${col.border}" onclick="navigateTo('sticky_notes')" title="${escapeHtml(n.content||'')}">
+      ${pin}${escapeHtml(text)}${(n.content||'').length > 60 ? '…' : ''}
+    </div>`;
+  }).join('');
+}
 
 function showDdayModal(){
   const COLORS=[['#6366f1','인디고'],['#ef4444','빨강'],['#f59e0b','노랑'],['#10b981','초록'],['#3b82f6','파랑'],['#8b5cf6','보라'],['#ec4899','분홍']];
