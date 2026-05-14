@@ -806,11 +806,20 @@
     return next;
   }
 
+  var MENU_LAYOUT_VERSION = "v2"; // DEFAULT_MENU_GROUPS 바뀔 때 올려서 저장된 구버전 자동 초기화
+
   function parseMenuGroups(raw) {
     if (!raw) return ensureAdminMenuAccess(DEFAULT_MENU_GROUPS);
     try {
       var parsed = JSON.parse(raw);
       if (!Array.isArray(parsed)) throw new Error("invalid");
+
+      // 구버전 레이아웃 감지: "tools" 그룹에 5개 이상 = 이전 4범주 구조 → 기본값으로 리셋
+      var hasOldTools = parsed.some(function(g) { return g.key === "tools" && Array.isArray(g.items) && g.items.length >= 5; });
+      if (hasOldTools) {
+        api.setSetting("menu_groups_config", ""); // 저장 초기화
+        return ensureAdminMenuAccess(DEFAULT_MENU_GROUPS);
+      }
 
       var used = {};
       var next = parsed.map(function (group, index) {
