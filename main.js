@@ -59,9 +59,9 @@ const OLLAMA_MODELS = {
   local_basic: 'gemma4:e2b',
   local_pro: 'gemma4:e4b'
 };
-// Desktop 앱 OAuth — 빌드 시 CI가 플레이스홀더를 실제 값으로 치환
-const GOOGLE_CALENDAR_CLIENT_ID = process.env.SSAMPORT_GOOGLE_CLIENT_ID || '__GCAL_CLIENT_ID__';
-const GOOGLE_CALENDAR_CLIENT_SECRET = process.env.SSAMPORT_GOOGLE_CLIENT_SECRET || '__GCAL_CLIENT_SECRET__';
+// Desktop 앱 OAuth — client_id는 공개값, PKCE 방식으로 secret 없이 동작
+const GOOGLE_CALENDAR_CLIENT_ID = '780135122795-ldmauftdqlfksb4tfgrmro09b1mguh4f.apps.googleusercontent.com';
+const GOOGLE_CALENDAR_CLIENT_SECRET = '';
 const GOOGLE_OAUTH_SCOPES = [
   'https://www.googleapis.com/auth/calendar.events',
   'https://www.googleapis.com/auth/tasks'

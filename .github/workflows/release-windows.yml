@@ -25,14 +25,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Inject Google OAuth credentials
-        shell: pwsh
-        run: |
-          (Get-Content main.js) `
-            -replace '__GCAL_CLIENT_ID__', '${{ secrets.SSAMPORT_GOOGLE_CLIENT_ID }}' `
-            -replace '__GCAL_CLIENT_SECRET__', '${{ secrets.SSAMPORT_GOOGLE_CLIENT_SECRET }}' |
-          Set-Content main.js
-
       - name: Build and publish Windows installer
         run: npm run release:win
         env:
