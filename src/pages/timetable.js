@@ -32,7 +32,8 @@ async function render(container) {
             <div style="font-size:13px;font-weight:700;color:var(--text)">AI 시간표 불러오기</div>
             <div style="display:flex;gap:8px;flex-wrap:wrap">
               <button class="btn btn-secondary btn-sm" id="tt-image-pick">사진 선택</button>
-              <button class="btn btn-secondary btn-sm" id="tt-ai-run">AI 분석 후 채우기</button>
+              <button class="btn btn-secondary btn-sm" id="tt-ai-run">☁️ AI 분석 후 채우기</button>
+              <button class="btn btn-secondary btn-sm" id="tt-ocr-run">📷 로컬 OCR 채우기</button>
             </div>
           </div>
           <input type="file" id="tt-image-input" accept="image/*" style="display:none">
@@ -76,6 +77,7 @@ function bindEvents() {
   document.getElementById('tt-save').onclick = saveAll;
   document.getElementById('tt-clear').onclick = clearAll;
   document.getElementById('tt-ai-run').onclick = runTimetableAI;
+  document.getElementById('tt-ocr-run').onclick = runTimetableOCR;
   document.getElementById('tt-image-pick').onclick = () => document.getElementById('tt-image-input').click();
   document.getElementById('tt-image-input').onchange = onImageSelected;
   document.getElementById('tt-body')?.addEventListener('input', scheduleAutosave);
@@ -230,6 +232,87 @@ async function runTimetableAI() {
 
   await persistTimetable(parsed);
   setStatus(`시간표 ${parsed.length}칸을 자동으로 채웠습니다. 필요한 칸은 아래에서 수정하세요.`, 'success');
+}
+
+// 로컬 OCR (Tesseract) → Qwen 파싱
+async function runTimetableOCR() {
+  if (!selectedImage) {
+    setStatus('먼저 시간표 사진을 선택해주세요.', 'error');
+    return;
+  }
+
+  const button = document.getElementById('tt-ocr-run');
+  button.disabled = true;
+  button.textContent = 'OCR 중...';
+  setStatus('Tesseract로 텍스트를 추출하고 있습니다... (첫 실행 시 언어 파일 다운로드로 1~2분 소요)', 'default');
+
+  try {
+    // 1단계: Tesseract OCR
+    const ocrResult = await api.ocrImage(selectedImage.data, 'kor+eng');
+    if (ocrResult.error) {
+      setStatus(`OCR 오류: ${ocrResult.error}`, 'error');
+      button.disabled = false;
+      button.textContent = '📷 로컬 OCR 채우기';
+      return;
+    }
+
+    const ocrText = ocrResult.text || '';
+    if (!ocrText.trim()) {
+      setStatus('텍스트를 추출하지 못했습니다. 사진 화질을 확인해주세요.', 'error');
+      button.disabled = false;
+      button.textContent = '📷 로컬 OCR 채우기';
+      return;
+    }
+
+    // OCR 결과를 텍스트 입력란에 표시
+    document.getElementById('tt-ai-input').value = ocrText;
+    setStatus('OCR 완료! 로컬 AI로 시간표를 파싱하고 있습니다...', 'default');
+    button.textContent = 'AI 파싱 중...';
+
+    // 2단계: Qwen으로 구조화
+    const engine = await api.getSetting('ai_engine', 'local_lite');
+    const localEngine = (engine === 'local_lite' || engine === 'local_basic' || engine === 'local_pro') ? engine : 'local_lite';
+
+    const prompt = `다음은 교사 시간표를 OCR로 추출한 텍스트입니다. 이를 분석하여 JSON 배열로 출력하세요.
+
+각 항목 형식: {"day_of_week":요일번호, "period":교시번호, "subject":"과목명"}
+- 요일번호: 월=0, 화=1, 수=2, 목=3, 금=4
+- 교시번호: 1~7 정수
+- 코드블록 없이 JSON 배열만 출력
+
+OCR 텍스트:
+${ocrText}`;
+
+    const aiResult = await api.aiLocalChat({
+      engine: localEngine,
+      page: '시간표',
+      question: prompt,
+      context: ''
+    });
+
+    if (aiResult.error) {
+      setStatus(`AI 파싱 오류: ${aiResult.error} (OCR 텍스트는 위 입력란에서 확인 후 직접 수정 가능)`, 'error');
+      button.disabled = false;
+      button.textContent = '📷 로컬 OCR 채우기';
+      return;
+    }
+
+    const parsed = parseTimetableAIResult(aiResult.result || '');
+    if (!parsed.length) {
+      setStatus(`AI가 시간표 구조를 파악하지 못했습니다. OCR 텍스트(위 입력란)를 확인하고 '☁️ AI 분석' 버튼으로 다시 시도해보세요.`, 'warning');
+      button.disabled = false;
+      button.textContent = '📷 로컬 OCR 채우기';
+      return;
+    }
+
+    await persistTimetable(parsed);
+    setStatus(`✅ 시간표 ${parsed.length}칸을 채웠습니다. (Tesseract OCR + 로컬 AI)`, 'success');
+  } catch (err) {
+    setStatus(`오류: ${err.message}`, 'error');
+  }
+
+  button.disabled = false;
+  button.textContent = '📷 로컬 OCR 채우기';
 }
 
 function parseTimetableAIResult(raw) {
