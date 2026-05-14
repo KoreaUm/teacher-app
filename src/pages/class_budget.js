@@ -91,8 +91,8 @@ function render(container) {
       font-size:13px;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.2)"></div>
 
     <!-- 지출 추가/수정 모달 -->
-    <div id="cb-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;align-items:center;justify-content:center">
-      <div style="background:var(--bg1);border-radius:12px;padding:22px;width:420px">
+    <div id="cb-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;align-items:center;justify-content:center">
+      <div style="background:var(--bg1);border-radius:12px;padding:22px;width:420px;box-shadow:0 20px 60px rgba(0,0,0,.35)">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
           <strong id="cb-modal-title" style="font-size:15px">지출 추가</strong>
           <button class="btn btn-secondary btn-xs" id="cb-modal-close">✕</button>
@@ -129,8 +129,8 @@ function render(container) {
     </div>
 
     <!-- 예산 설정 모달 -->
-    <div id="cb-budget-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;align-items:center;justify-content:center">
-      <div style="background:var(--bg1);border-radius:12px;padding:22px;width:340px">
+    <div id="cb-budget-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;align-items:center;justify-content:center">
+      <div style="background:var(--bg1);border-radius:12px;padding:22px;width:340px;box-shadow:0 20px 60px rgba(0,0,0,.35)">
         <strong style="font-size:15px;display:block;margin-bottom:14px">🎯 예산 설정</strong>
         <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:4px">총 예산(원)</label>
         <input type="number" class="input" id="cb-budget-input" min="0" step="10000" placeholder="예: 500000" style="font-size:13px;margin-bottom:14px">

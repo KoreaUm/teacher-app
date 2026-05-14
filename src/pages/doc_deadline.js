@@ -74,8 +74,8 @@ function render(container) {
     </div>
 
     <!-- 공문 추가/수정 모달 -->
-    <div id="dd-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;align-items:center;justify-content:center">
-      <div style="background:var(--bg1);border-radius:12px;padding:22px;width:440px">
+    <div id="dd-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;align-items:center;justify-content:center">
+      <div style="background:var(--bg1);border-radius:12px;padding:22px;width:440px;box-shadow:0 20px 60px rgba(0,0,0,.35)">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
           <strong id="dd-modal-title" style="font-size:15px">공문 추가</strong>
           <button class="btn btn-secondary btn-xs" id="dd-modal-close">✕</button>

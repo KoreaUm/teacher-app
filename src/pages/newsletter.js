@@ -115,8 +115,8 @@ function render(container) {
       </div>
 
       <!-- 보관함 모달 -->
-      <div id="nl-library-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;align-items:center;justify-content:center">
-        <div style="background:var(--bg1);border-radius:12px;padding:20px;width:560px;max-height:75vh;display:flex;flex-direction:column">
+      <div id="nl-library-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;align-items:center;justify-content:center">
+        <div style="background:var(--bg1);border-radius:12px;padding:20px;width:560px;max-height:75vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.35)">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
             <strong style="font-size:15px">📚 저장된 가정통신문</strong>
             <button class="btn btn-secondary btn-xs" id="nl-library-close">✕</button>
