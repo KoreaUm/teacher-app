@@ -75,33 +75,33 @@ function render(container) {
 
     <!-- 공문 추가/수정 모달 -->
     <div id="dd-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;align-items:center;justify-content:center">
-      <div style="background:var(--bg1);border-radius:12px;padding:22px;width:440px;box-shadow:0 20px 60px rgba(0,0,0,.35)">
+      <div style="background:var(--bg1);border-radius:12px;border:1px solid var(--border);padding:22px;width:440px;box-shadow:0 20px 60px rgba(0,0,0,.35)">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
           <strong id="dd-modal-title" style="font-size:15px">공문 추가</strong>
           <button class="btn btn-secondary btn-xs" id="dd-modal-close">✕</button>
         </div>
         <div style="display:flex;flex-direction:column;gap:10px">
           <div>
-            <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:3px">공문 제목 *</label>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">공문 제목 *</label>
             <input class="input" id="dd-f-title" placeholder="예: 2026 학교폭력 예방 교육 결과 보고" style="font-size:13px">
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
             <div>
-              <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:3px">공문 번호</label>
+              <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">공문 번호</label>
               <input class="input" id="dd-f-docnum" placeholder="예: 교육정책과-1234" style="font-size:13px">
             </div>
             <div>
-              <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:3px">마감일 *</label>
+              <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">마감일 *</label>
               <input type="date" class="input" id="dd-f-due" style="font-size:13px">
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
             <div>
-              <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:3px">담당자</label>
+              <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">담당자</label>
               <input class="input" id="dd-f-owner" placeholder="예: 홍길동" style="font-size:13px">
             </div>
             <div>
-              <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:3px">우선순위</label>
+              <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">우선순위</label>
               <select class="input" id="dd-f-priority" style="font-size:13px">
                 <option value="high">🔴 높음</option>
                 <option value="mid" selected>🟡 보통</option>
@@ -110,7 +110,7 @@ function render(container) {
             </div>
           </div>
           <div>
-            <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:3px">메모</label>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">메모</label>
             <textarea class="input" id="dd-f-memo" rows="2" placeholder="관련 사항, 제출 방법 등" style="font-size:13px;resize:none"></textarea>
           </div>
           <div style="display:flex;align-items:center;gap:8px">

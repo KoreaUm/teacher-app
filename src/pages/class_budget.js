@@ -92,32 +92,32 @@ function render(container) {
 
     <!-- 지출 추가/수정 모달 -->
     <div id="cb-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;align-items:center;justify-content:center">
-      <div style="background:var(--bg1);border-radius:12px;padding:22px;width:420px;box-shadow:0 20px 60px rgba(0,0,0,.35)">
+      <div style="background:var(--bg1);border-radius:12px;border:1px solid var(--border);padding:22px;width:420px;box-shadow:0 20px 60px rgba(0,0,0,.35)">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
           <strong id="cb-modal-title" style="font-size:15px">지출 추가</strong>
           <button class="btn btn-secondary btn-xs" id="cb-modal-close">✕</button>
         </div>
         <div style="display:flex;flex-direction:column;gap:10px">
           <div>
-            <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:3px">날짜 *</label>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">날짜 *</label>
             <input type="date" class="input" id="cb-f-date" style="font-size:13px">
           </div>
           <div>
-            <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:3px">항목명 *</label>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">항목명 *</label>
             <input class="input" id="cb-f-name" placeholder="예: A4용지 구매" style="font-size:13px">
           </div>
           <div>
-            <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:3px">카테고리</label>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">카테고리</label>
             <select class="input" id="cb-f-cat" style="font-size:13px">
               ${CATEGORIES.map(function(c){return `<option>${c}</option>`;}).join('')}
             </select>
           </div>
           <div>
-            <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:3px">금액(원) *</label>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">금액(원) *</label>
             <input type="number" class="input" id="cb-f-amount" min="0" step="100" placeholder="0" style="font-size:13px">
           </div>
           <div>
-            <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:3px">비고</label>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">비고</label>
             <input class="input" id="cb-f-memo" placeholder="영수증 번호, 구매처 등" style="font-size:13px">
           </div>
         </div>
@@ -130,9 +130,9 @@ function render(container) {
 
     <!-- 예산 설정 모달 -->
     <div id="cb-budget-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;align-items:center;justify-content:center">
-      <div style="background:var(--bg1);border-radius:12px;padding:22px;width:340px;box-shadow:0 20px 60px rgba(0,0,0,.35)">
+      <div style="background:var(--bg1);border-radius:12px;border:1px solid var(--border);padding:22px;width:340px;box-shadow:0 20px 60px rgba(0,0,0,.35)">
         <strong style="font-size:15px;display:block;margin-bottom:14px">🎯 예산 설정</strong>
-        <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:4px">총 예산(원)</label>
+        <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">총 예산(원)</label>
         <input type="number" class="input" id="cb-budget-input" min="0" step="10000" placeholder="예: 500000" style="font-size:13px;margin-bottom:14px">
         <div style="display:flex;gap:8px;justify-content:flex-end">
           <button class="btn btn-secondary btn-sm" id="cb-budget-cancel">취소</button>
