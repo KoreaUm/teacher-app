@@ -1697,6 +1697,23 @@ ipcMain.handle('ai-extract-estimate-image', async (e, apiKey, model, provider, f
   }
 });
 
+// Tesseract.js 로컬 OCR (한국어 + 영어)
+ipcMain.handle('ocr-image', async (e, imageBase64, lang) => {
+  try {
+    const { createWorker } = require('tesseract.js');
+    const worker = await createWorker(lang || 'kor+eng', 1, {
+      logger: () => {},
+      // 한국어 학습 데이터 경로 (tesseract.js가 자동 캐시)
+    });
+    const buf = Buffer.from(imageBase64, 'base64');
+    const { data: { text } } = await worker.recognize(buf);
+    await worker.terminate();
+    return { text: text.trim() };
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
 ipcMain.handle('parse-excel-estimate', async (e, bufferData) => {
   try {
     const xlsx = require('xlsx');

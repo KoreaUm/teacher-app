@@ -41,6 +41,10 @@ function render(container) {
       <!-- 도구 모음 -->
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
         <button class="btn btn-primary btn-sm" id="cb-add-btn">+ 지출 추가</button>
+        <label class="btn btn-secondary btn-sm" style="cursor:pointer" title="품의서·영수증 사진을 OCR로 자동 입력">
+          📷 품의서 OCR
+          <input type="file" id="cb-ocr-input" accept="image/*" style="display:none">
+        </label>
         <button class="btn btn-secondary btn-sm" id="cb-budget-btn">🎯 예산 설정</button>
         <button class="btn btn-secondary btn-sm" id="cb-export-btn">⬇️ 에듀파인 CSV</button>
         <button class="btn btn-secondary btn-sm" id="cb-print-btn">🖨️ 인쇄</button>
@@ -80,6 +84,11 @@ function render(container) {
         </div>
       </div>
     </div>
+
+    <!-- OCR 진행 상태 -->
+    <div id="cb-ocr-status" style="display:none;position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
+      background:var(--bg1);border:1px solid var(--border);border-radius:8px;padding:10px 18px;
+      font-size:13px;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.2)"></div>
 
     <!-- 지출 추가/수정 모달 -->
     <div id="cb-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;align-items:center;justify-content:center">
@@ -253,6 +262,114 @@ async function init() {
   }
 
   document.getElementById('cb-add-btn').onclick = function () { openModal(null); };
+
+  // ── 품의서 OCR ──────────────────────────────────────────
+  document.getElementById('cb-ocr-input').onchange = async function (e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    e.target.value = '';
+
+    var statusEl = document.getElementById('cb-ocr-status');
+    function showStatus(msg) { statusEl.style.display = 'block'; statusEl.textContent = msg; }
+    function hideStatus() { statusEl.style.display = 'none'; }
+
+    showStatus('📷 Tesseract OCR 중... (첫 실행 시 1~2분 소요)');
+
+    try {
+      // 이미지 → base64
+      var base64 = await new Promise(function (resolve, reject) {
+        var reader = new FileReader();
+        reader.onload = function () {
+          var result = String(reader.result || '');
+          resolve(result.replace(/^data:[^;]+;base64,/, ''));
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      // 1단계: Tesseract OCR
+      var ocrResult = await api.ocrImage(base64, 'kor+eng');
+      if (ocrResult.error) { showStatus('OCR 오류: ' + ocrResult.error); setTimeout(hideStatus, 4000); return; }
+
+      var ocrText = (ocrResult.text || '').trim();
+      if (!ocrText) { showStatus('텍스트 추출 실패. 사진 화질을 확인하세요.'); setTimeout(hideStatus, 3000); return; }
+
+      showStatus('✅ OCR 완료! 로컬 AI로 품목 분석 중...');
+
+      // 2단계: Qwen으로 구조화
+      var engine = await api.getSetting('ai_engine', 'local_lite');
+      var localEngine = (engine === 'local_lite' || engine === 'local_basic' || engine === 'local_pro') ? engine : 'local_lite';
+
+      var prompt = `다음은 품의서 또는 영수증을 OCR로 추출한 텍스트입니다.
+이 문서에서 지출 정보를 추출하여 JSON 배열로 출력하세요.
+각 항목: {"date":"YYYY-MM-DD","name":"품목명","category":"카테고리","amount":금액(숫자),"memo":"비고"}
+- date는 문서에서 찾을 수 없으면 오늘 날짜로
+- category는 다음 중 하나: 교육활동비, 문구·소모품, 도서·자료, 행사·현장학습, 급식·간식, 기타
+- 코드블록 없이 JSON 배열만 출력
+
+OCR 텍스트:
+${ocrText}`;
+
+      var aiResult = await api.aiLocalChat({ engine: localEngine, page: '학급운영비', question: prompt, context: '' });
+
+      if (aiResult.error) {
+        showStatus('AI 오류: ' + aiResult.error);
+        setTimeout(hideStatus, 4000);
+        // OCR 텍스트라도 모달에 표시
+        openModal(null);
+        document.getElementById('cb-f-memo').value = ocrText.slice(0, 200);
+        return;
+      }
+
+      // JSON 파싱
+      var raw = (aiResult.result || '').trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/, '');
+      var items = [];
+      try { items = JSON.parse(raw); if (!Array.isArray(items)) items = [items]; } catch (_) { items = []; }
+
+      if (!items.length) {
+        showStatus('항목을 파악하지 못했습니다. 수동으로 입력해주세요.');
+        setTimeout(hideStatus, 3000);
+        openModal(null);
+        document.getElementById('cb-f-memo').value = ocrText.slice(0, 200);
+        return;
+      }
+
+      hideStatus();
+
+      // 품목이 여러 개면 모두 추가, 하나면 모달로 확인
+      if (items.length === 1) {
+        var item = items[0];
+        openModal(null);
+        var today = new Date().toISOString().slice(0, 10);
+        document.getElementById('cb-f-date').value   = item.date || today;
+        document.getElementById('cb-f-name').value   = item.name || '';
+        document.getElementById('cb-f-cat').value    = CATEGORIES.includes(item.category) ? item.category : CATEGORIES[0];
+        document.getElementById('cb-f-amount').value = item.amount || '';
+        document.getElementById('cb-f-memo').value   = item.memo || '';
+      } else {
+        // 복수 품목 확인 다이얼로그
+        var list = items.map(function (it, i) { return (i + 1) + '. ' + it.name + ' ' + Number(it.amount || 0).toLocaleString() + '원'; }).join('\n');
+        if (!confirm(items.length + '개 품목을 모두 추가할까요?\n\n' + list)) return;
+        var today2 = new Date().toISOString().slice(0, 10);
+        items.forEach(function (item) {
+          records.push({
+            id: Date.now() + Math.random(),
+            date: item.date || today2,
+            name: item.name || '품목',
+            category: CATEGORIES.includes(item.category) ? item.category : CATEGORIES[0],
+            amount: parseFloat(item.amount) || 0,
+            memo: item.memo || ''
+          });
+        });
+        await saveRecords(records);
+        renderAll();
+      }
+    } catch (err) {
+      showStatus('오류: ' + err.message);
+      setTimeout(hideStatus, 4000);
+    }
+  };
+  // ────────────────────────────────────────────────────────
   document.getElementById('cb-modal-close').onclick = function () { modal.style.display = 'none'; };
   document.getElementById('cb-modal-cancel').onclick = function () { modal.style.display = 'none'; };
   modal.addEventListener('click', function (e) { if (e.target === modal) modal.style.display = 'none'; });
