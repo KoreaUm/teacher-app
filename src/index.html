@@ -116,6 +116,39 @@
   var pageCache = {};
   var currentPage = "dashboard";
   var openGroupKey = "";
+
+  // ── 업무 효율성 추적 ──────────────────────────────────────
+  var _usagePageStartTime = null;
+  var _usageCurrentPage = null;
+  var USAGE_TRACK_PAGES = ['students','attendance','daily_memo','timetable','counseling',
+    'observations','lessons','assessments','submissions','statistics','ai_analysis',
+    'todos','official_document','lesson_materials','school_calendar','meal'];
+
+  function _usageSaveEntry(page, durationSec) {
+    if (!page || USAGE_TRACK_PAGES.indexOf(page) < 0) return;
+    if (durationSec < 3) return; // 3초 미만은 무시 (실수로 잠깐 누른 것)
+    var now = new Date();
+    var ym = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    var key = 'usage_' + ym;
+    api.getSetting(key, '').then(function (raw) {
+      var arr = [];
+      try { if (raw) arr = JSON.parse(raw); } catch (_) {}
+      arr.push({ page: page, durationSec: Math.round(durationSec), date: now.toISOString().slice(0, 10) });
+      // 최대 5000건 유지
+      if (arr.length > 5000) arr = arr.slice(arr.length - 5000);
+      api.setSetting(key, JSON.stringify(arr)).catch(function () {});
+    }).catch(function () {});
+  }
+
+  function _usageOnLeave(nextPage) {
+    if (_usageCurrentPage && _usagePageStartTime) {
+      var elapsed = (Date.now() - _usagePageStartTime) / 1000;
+      _usageSaveEntry(_usageCurrentPage, elapsed);
+    }
+    _usageCurrentPage = (USAGE_TRACK_PAGES.indexOf(nextPage) >= 0) ? nextPage : null;
+    _usagePageStartTime = _usageCurrentPage ? Date.now() : null;
+  }
+  // ─────────────────────────────────────────────────────────
   var closeGroupTimer = null;
   var widgetMode = false;
   var firebaseApp = null;
@@ -593,6 +626,11 @@
     { key: "official_document", label: "공문서 작성" },
     { key: "todos", label: "할일 목록" },
     { key: "sticky_notes", label: "스티커 메모" },
+    { key: "efficiency", label: "업무 효율 분석" },
+    { key: "neis_helper", label: "나이스 도우미" },
+    { key: "newsletter", label: "가정통신문 AI 작성" },
+    { key: "class_budget", label: "학급운영비 관리" },
+    { key: "doc_deadline", label: "공문 기한 추적" },
     { key: "settings", label: "설정" }
   ];
   var ADMIN_MENU_PAGE = { key: "user_management", label: "회원 관리" };
@@ -601,7 +639,7 @@
     { key: "class", label: "학급 관리", items: ["students", "attendance", "daily_memo", "timetable"] },
     { key: "records", label: "기록", items: ["counseling", "observations", "lessons"] },
     { key: "evaluation", label: "평가", items: ["assessments", "submissions", "statistics", "ai_analysis"] },
-    { key: "tools", label: "도구", items: ["meal", "school_calendar", "calculator", "lesson_materials", "official_document", "sticky_notes", "settings"] }
+    { key: "tools", label: "도구", items: ["meal", "school_calendar", "calculator", "lesson_materials", "official_document", "sticky_notes", "efficiency", "neis_helper", "newsletter", "class_budget", "doc_deadline", "settings"] }
   ];
 
   var menuGroups = cloneMenuGroups(DEFAULT_MENU_GROUPS);
@@ -664,6 +702,11 @@
         official_document: "공문 공문서 행정문서 작성 협조요청 통보 회신 보고 알림 검토 붙임 끝",
         todos: "할일 할 일 todo 업무 체크 완료",
         sticky_notes: "스티커 메모 포스트잇 노트 메모장 붙임",
+        efficiency: "효율 분석 시간 절감 업무 통계 리포트 보고서 PDF",
+        neis_helper: "나이스 NEIS 출결 봉사활동 중복 오류 CSV 체크 도우미",
+        newsletter: "가정통신문 AI 작성 번역 다국어 보관함 안내문 공지",
+        class_budget: "학급운영비 지출 예산 영수증 에듀파인 CSV 관리",
+        doc_deadline: "공문 기한 마감 D-day 알림 추적 캘린더",
         settings: "설정 환경설정 학교 날씨 메뉴 바로가기",
         user_management: "회원 관리 사용자 계정 승인 차단 삭제 공지사항 공지 배포"
       };
@@ -2360,6 +2403,7 @@
     if (currentPage === "grades" && key !== "grades" && window.appGradesLock) {
       window.appGradesLock();
     }
+    _usageOnLeave(key);
     currentPage = key;
     var parentGroup = menuGroups.find(function (group) {
       return group.items.some(function (itemKey) { return itemKey === key; });
