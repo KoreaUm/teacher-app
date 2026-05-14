@@ -98,7 +98,7 @@ function render(container) {
       </div>
 
       <!-- 설정 모달 -->
-      <div id="eff-config-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;display:flex;align-items:center;justify-content:center">
+      <div id="eff-config-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;align-items:center;justify-content:center">
         <div style="background:var(--bg1);border-radius:12px;padding:24px;width:560px;max-height:80vh;overflow-y:auto">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
             <strong style="font-size:15px">⚙️ 기능별 시간 기준 설정</strong>

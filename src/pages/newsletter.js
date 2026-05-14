@@ -48,86 +48,69 @@ function render(container) {
         <h1 class="page-header-title">📨 가정통신문 AI 작성</h1>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;height:calc(100vh - 140px);min-height:500px">
+      <!-- 유형 선택 -->
+      <div class="sb-card" style="padding:14px;margin-bottom:12px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:10px">📋 유형 선택</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px" id="nl-template-btns">
+          ${TEMPLATES.map(function (t) {
+            return `<button class="btn btn-secondary btn-xs nl-tpl-btn" data-id="${t.id}" title="${t.hint}">${t.icon} ${t.label}</button>`;
+          }).join('')}
+        </div>
+        <div id="nl-tpl-hint" style="font-size:12px;color:var(--text3);margin-top:8px;min-height:16px"></div>
+      </div>
 
-        <!-- 왼쪽: 입력 패널 -->
-        <div style="display:flex;flex-direction:column;gap:12px;overflow-y:auto">
-
-          <!-- 템플릿 선택 -->
-          <div class="sb-card" style="padding:14px">
-            <div style="font-size:13px;font-weight:600;margin-bottom:10px">📋 유형 선택</div>
-            <div style="display:flex;flex-wrap:wrap;gap:6px" id="nl-template-btns">
-              ${TEMPLATES.map(function (t) {
-                return `<button class="btn btn-secondary btn-xs nl-tpl-btn" data-id="${t.id}" title="${t.hint}">${t.icon} ${t.label}</button>`;
-              }).join('')}
-            </div>
-            <div id="nl-tpl-hint" style="font-size:12px;color:var(--text3);margin-top:8px"></div>
+      <!-- 기본 정보 -->
+      <div class="sb-card" style="padding:14px;margin-bottom:12px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:10px">📌 기본 정보</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div>
+            <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:3px">학년·반</label>
+            <input class="input" id="nl-class" placeholder="예: 3학년 2반" style="font-size:13px">
           </div>
-
-          <!-- 기본 정보 -->
-          <div class="sb-card" style="padding:14px">
-            <div style="font-size:13px;font-weight:600;margin-bottom:10px">📌 기본 정보</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-              <div>
-                <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:3px">학년·반</label>
-                <input class="input" id="nl-class" placeholder="예: 3학년 2반" style="font-size:13px">
-              </div>
-              <div>
-                <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:3px">담임 성함</label>
-                <input class="input" id="nl-teacher" placeholder="예: 홍길동" style="font-size:13px">
-              </div>
-            </div>
-          </div>
-
-          <!-- 내용 입력 -->
-          <div class="sb-card" style="padding:14px;flex:1;display:flex;flex-direction:column">
-            <div style="font-size:13px;font-weight:600;margin-bottom:8px">✏️ 내용 입력</div>
-            <textarea class="input" id="nl-input" style="flex:1;min-height:120px;resize:none;font-size:13px;line-height:1.6"
-              placeholder="전달할 내용을 간략히 입력하세요&#10;예) 5월 20일 소풍. 장소: 청주 상당산성. 준비물: 도시락, 물, 편한 복장. 비용 없음."></textarea>
-          </div>
-
-          <!-- 버튼 -->
-          <div style="display:flex;gap:8px">
-            <button class="btn btn-primary" id="nl-generate-btn" style="flex:1">🤖 AI로 작성하기</button>
-            <button class="btn btn-secondary btn-sm" id="nl-library-btn">📚 보관함</button>
+          <div>
+            <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:3px">담임 성함</label>
+            <input class="input" id="nl-teacher" placeholder="예: 홍길동" style="font-size:13px">
           </div>
         </div>
+      </div>
 
-        <!-- 오른쪽: 결과 패널 -->
-        <div style="display:flex;flex-direction:column;gap:10px;overflow-y:auto">
+      <!-- 내용 입력 -->
+      <div class="sb-card" style="padding:14px;margin-bottom:12px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:8px">✏️ 내용 입력</div>
+        <textarea class="input" id="nl-input" rows="5" style="width:100%;resize:vertical;font-size:13px;line-height:1.6;box-sizing:border-box"
+          placeholder="전달할 내용을 간략히 입력하세요&#10;예) 5월 20일 소풍. 장소: 청주 상당산성. 준비물: 도시락, 물, 편한 복장. 비용 없음."></textarea>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button class="btn btn-primary" id="nl-generate-btn">🤖 AI로 작성하기</button>
+          <button class="btn btn-secondary btn-sm" id="nl-library-btn">📚 보관함</button>
+        </div>
+        <div id="nl-loading" style="display:none;margin-top:10px;padding:10px;background:var(--bg2);border-radius:6px;font-size:13px;color:var(--text2);text-align:center">
+          <span id="nl-loading-msg">AI 작성 중...</span>
+        </div>
+      </div>
 
-          <!-- 결과 헤더 -->
-          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-            <span style="font-size:13px;font-weight:600;color:var(--text2)">번역:</span>
-            ${Object.keys(LANG_LABELS).filter(function(l){return l!=='ko';}).map(function (lang) {
-              return `<button class="btn btn-secondary btn-xs nl-translate-btn" data-lang="${lang}">${LANG_LABELS[lang]}</button>`;
-            }).join('')}
-            <div style="margin-left:auto;display:flex;gap:6px">
-              <button class="btn btn-secondary btn-xs" id="nl-copy-btn">📋 복사</button>
-              <button class="btn btn-secondary btn-xs" id="nl-save-btn">💾 보관함 저장</button>
-              <button class="btn btn-secondary btn-xs" id="nl-print-btn">🖨️ 인쇄</button>
-            </div>
+      <!-- 결과 영역 -->
+      <div class="sb-card" style="padding:14px;margin-bottom:12px">
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+          <span style="font-size:13px;font-weight:600;color:var(--text2)">번역:</span>
+          ${Object.keys(LANG_LABELS).filter(function(l){return l!=='ko';}).map(function (lang) {
+            return `<button class="btn btn-secondary btn-xs nl-translate-btn" data-lang="${lang}">${LANG_LABELS[lang]}</button>`;
+          }).join('')}
+          <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn btn-secondary btn-xs" id="nl-copy-btn">📋 복사</button>
+            <button class="btn btn-secondary btn-xs" id="nl-save-btn">💾 보관함 저장</button>
+            <button class="btn btn-secondary btn-xs" id="nl-print-btn">🖨️ 인쇄</button>
           </div>
+        </div>
+        <div id="nl-result" style="font-size:13px;line-height:1.9;white-space:pre-wrap;color:var(--text);min-height:160px;background:var(--bg2);padding:12px;border-radius:6px">
+          <span style="color:var(--text3)">위에서 내용을 입력하고 'AI로 작성하기'를 누르세요.</span>
+        </div>
+      </div>
 
-          <!-- 결과 영역 -->
-          <div class="sb-card" style="flex:1;padding:16px;position:relative">
-            <div id="nl-result" style="font-size:13px;line-height:1.9;white-space:pre-wrap;color:var(--text);min-height:200px">
-              <span style="color:var(--text3)">왼쪽에서 내용을 입력하고 'AI로 작성하기'를 누르세요.</span>
-            </div>
-            <div id="nl-loading" style="display:none;position:absolute;inset:0;background:rgba(var(--bg1-rgb),.85);
-              border-radius:8px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px">
-              <div class="spinner" style="width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite"></div>
-              <span id="nl-loading-msg" style="font-size:13px;color:var(--text2)">AI 작성 중...</span>
-            </div>
-          </div>
-
-          <!-- 번역 결과 -->
-          <div id="nl-translation-wrap" style="display:none">
-            <div class="sb-card" style="padding:14px">
-              <div style="font-size:12px;font-weight:600;color:var(--text3);margin-bottom:8px" id="nl-translation-lang"></div>
-              <div id="nl-translation-result" style="font-size:13px;line-height:1.8;white-space:pre-wrap"></div>
-            </div>
-          </div>
+      <!-- 번역 결과 -->
+      <div id="nl-translation-wrap" style="display:none;margin-bottom:12px">
+        <div class="sb-card" style="padding:14px">
+          <div style="font-size:12px;font-weight:600;color:var(--text3);margin-bottom:8px" id="nl-translation-lang"></div>
+          <div id="nl-translation-result" style="font-size:13px;line-height:1.8;white-space:pre-wrap"></div>
         </div>
       </div>
 
@@ -177,7 +160,7 @@ async function init() {
 
   function showLoading(msg) {
     var el = document.getElementById('nl-loading');
-    el.style.display = 'flex';
+    el.style.display = 'block';
     document.getElementById('nl-loading-msg').textContent = msg || 'AI 작성 중...';
   }
   function hideLoading() {
