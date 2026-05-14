@@ -179,7 +179,7 @@ function render(container) {
         <h1 class="page-header-title">🏫 나이스(NEIS) 데이터 도우미</h1>
       </div>
 
-      <div class="sb-card" style="margin-bottom:16px;padding:16px">
+      <div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:hidden;margin-bottom:16px;padding:16px">
         <p style="font-size:13px;color:var(--text2);margin-bottom:12px">
           나이스에서 내려받은 <strong>출결 CSV</strong> 또는 <strong>봉사활동 CSV</strong> 파일을 불러오면 오류를 자동으로 검출합니다.
         </p>
@@ -223,7 +223,7 @@ async function init() {
       try {
         var parsed = parseCSV(text);
         if (!parsed.headers.length) {
-          resultEl.innerHTML = '<div class="sb-card" style="color:#ef4444;padding:16px">CSV 파싱 실패: 파일 형식을 확인해주세요. (UTF-8 또는 EUC-KR 인코딩)</div>';
+          resultEl.innerHTML = '<div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:hidden;color:#ef4444;padding:16px">CSV 파싱 실패: 파일 형식을 확인해주세요. (UTF-8 또는 EUC-KR 인코딩)</div>';
           return;
         }
         var fileType = detectFileType(parsed);
@@ -249,7 +249,7 @@ async function init() {
 
         bindEditHandlers(analysis, parsed);
       } catch (err) {
-        resultEl.innerHTML = '<div class="sb-card" style="color:#ef4444;padding:16px">오류: ' + err.message + '</div>';
+        resultEl.innerHTML = '<div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:hidden;color:#ef4444;padding:16px">오류: ' + err.message + '</div>';
       }
     }, 50);
   }
@@ -264,7 +264,7 @@ async function init() {
 
 function renderTypeSelect(parsed) {
   return `
-    <div class="sb-card" style="padding:16px">
+    <div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:hidden;padding:16px">
       <p style="font-size:13px;margin-bottom:12px">파일 형식을 자동으로 감지하지 못했습니다. 분석 유형을 선택하세요.</p>
       <div style="display:flex;gap:8px">
         <button class="btn btn-primary btn-sm" id="neis-type-attendance">출결 분석</button>
@@ -286,19 +286,19 @@ function renderAttendanceResult(a) {
 
   var summaryCards = `
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
-      <div class="sb-card" style="text-align:center;padding:12px">
+      <div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:hidden;text-align:center;padding:12px">
         <div style="font-size:22px;font-weight:700">${a.stats.total}</div>
         <div style="font-size:11px;color:var(--text3)">전체 학생</div>
       </div>
-      <div class="sb-card" style="text-align:center;padding:12px">
+      <div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:hidden;text-align:center;padding:12px">
         <div style="font-size:22px;font-weight:700;color:#f59e0b">${a.stats.withAbsence}</div>
         <div style="font-size:11px;color:var(--text3)">결석 있음</div>
       </div>
-      <div class="sb-card" style="text-align:center;padding:12px">
+      <div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:hidden;text-align:center;padding:12px">
         <div style="font-size:22px;font-weight:700;color:#ef4444">${errorCount}</div>
         <div style="font-size:11px;color:var(--text3)">오류 감지</div>
       </div>
-      <div class="sb-card" style="text-align:center;padding:12px">
+      <div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:hidden;text-align:center;padding:12px">
         <div style="font-size:22px;font-weight:700;color:#f59e0b">${warnCount}</div>
         <div style="font-size:11px;color:var(--text3)">주의 항목</div>
       </div>
@@ -306,10 +306,10 @@ function renderAttendanceResult(a) {
 
   var issueHtml = '';
   if (a.issues.length === 0) {
-    issueHtml = '<div class="sb-card" style="padding:16px;color:#22c55e;text-align:center;font-size:14px">✅ 오류가 감지되지 않았습니다.</div>';
+    issueHtml = '<div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:hidden;padding:16px;color:#22c55e;text-align:center;font-size:14px">✅ 오류가 감지되지 않았습니다.</div>';
   } else {
     issueHtml = `
-      <div class="sb-card" style="margin-bottom:16px">
+      <div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:hidden;margin-bottom:16px">
         <div style="padding:12px 16px;font-weight:600;border-bottom:1px solid var(--border)">⚠️ 감지된 문제 (${a.issues.length}건)</div>
         <div style="max-height:200px;overflow-y:auto">
           ${a.issues.map(function (issue) {
@@ -350,7 +350,7 @@ function renderAttendanceResult(a) {
   }).join('');
 
   var tableHtml = `
-    <div class="sb-card" style="overflow:auto">
+    <div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:auto">
       <div style="padding:10px 16px;font-weight:600;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
         <span>📋 출결 현황 (수정 가능)</span>
         <button class="btn btn-secondary btn-xs" id="neis-export-btn">⬇️ CSV 내보내기</button>
@@ -414,29 +414,29 @@ function renderAttendanceResult(a) {
 function renderVolunteerResult(a) {
   var html = `
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
-      <div class="sb-card" style="text-align:center;padding:12px">
+      <div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:hidden;text-align:center;padding:12px">
         <div style="font-size:22px;font-weight:700">${a.stats.total}</div>
         <div style="font-size:11px;color:var(--text3)">전체 기록</div>
       </div>
-      <div class="sb-card" style="text-align:center;padding:12px">
+      <div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:hidden;text-align:center;padding:12px">
         <div style="font-size:22px;font-weight:700;color:var(--primary)">${a.stats.students}</div>
         <div style="font-size:11px;color:var(--text3)">학생 수</div>
       </div>
-      <div class="sb-card" style="text-align:center;padding:12px">
+      <div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:hidden;text-align:center;padding:12px">
         <div style="font-size:22px;font-weight:700;color:#ef4444">${a.stats.duplicates}</div>
         <div style="font-size:11px;color:var(--text3)">중복 기재</div>
       </div>
-      <div class="sb-card" style="text-align:center;padding:12px">
+      <div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:hidden;text-align:center;padding:12px">
         <div style="font-size:22px;font-weight:700;color:#f59e0b">${a.stats.warnings}</div>
         <div style="font-size:11px;color:var(--text3)">주의 항목</div>
       </div>
     </div>`;
 
   if (a.issues.length === 0) {
-    html += '<div class="sb-card" style="padding:16px;color:#22c55e;text-align:center">✅ 중복 기재 및 오류가 없습니다.</div>';
+    html += '<div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:hidden;padding:16px;color:#22c55e;text-align:center">✅ 중복 기재 및 오류가 없습니다.</div>';
   } else {
     html += `
-      <div class="sb-card" style="margin-bottom:16px">
+      <div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:hidden;margin-bottom:16px">
         <div style="padding:12px 16px;font-weight:600;border-bottom:1px solid var(--border)">⚠️ 감지된 문제 (${a.issues.length}건)</div>
         <div style="max-height:240px;overflow-y:auto">
           ${a.issues.map(function (issue) {
@@ -463,7 +463,7 @@ function renderVolunteerResult(a) {
   }).join('');
 
   html += `
-    <div class="sb-card" style="overflow:auto">
+    <div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:auto">
       <div style="padding:10px 16px;font-weight:600;border-bottom:1px solid var(--border)">👤 학생별 봉사활동 집계</div>
       <table style="width:100%;border-collapse:collapse">
         <thead>

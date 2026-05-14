@@ -49,7 +49,7 @@ function render(container) {
       </div>
 
       <!-- 유형 선택 -->
-      <div class="sb-card" style="padding:14px;margin-bottom:12px">
+      <div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:hidden;padding:14px;margin-bottom:12px">
         <div style="font-size:13px;font-weight:600;margin-bottom:10px">📋 유형 선택</div>
         <div style="display:flex;flex-wrap:wrap;gap:6px" id="nl-template-btns">
           ${TEMPLATES.map(function (t) {
@@ -60,7 +60,7 @@ function render(container) {
       </div>
 
       <!-- 기본 정보 -->
-      <div class="sb-card" style="padding:14px;margin-bottom:12px">
+      <div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:hidden;padding:14px;margin-bottom:12px">
         <div style="font-size:13px;font-weight:600;margin-bottom:10px">📌 기본 정보</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
           <div>
@@ -75,7 +75,7 @@ function render(container) {
       </div>
 
       <!-- 내용 입력 -->
-      <div class="sb-card" style="padding:14px;margin-bottom:12px">
+      <div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:hidden;padding:14px;margin-bottom:12px">
         <div style="font-size:13px;font-weight:600;margin-bottom:8px">✏️ 내용 입력</div>
         <textarea class="input" id="nl-input" rows="5" style="width:100%;resize:vertical;font-size:13px;line-height:1.6;box-sizing:border-box"
           placeholder="전달할 내용을 간략히 입력하세요&#10;예) 5월 20일 소풍. 장소: 청주 상당산성. 준비물: 도시락, 물, 편한 복장. 비용 없음."></textarea>
@@ -89,7 +89,7 @@ function render(container) {
       </div>
 
       <!-- 결과 영역 -->
-      <div class="sb-card" style="padding:14px;margin-bottom:12px">
+      <div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:hidden;padding:14px;margin-bottom:12px">
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
           <span style="font-size:13px;font-weight:600;color:var(--text2)">번역:</span>
           ${Object.keys(LANG_LABELS).filter(function(l){return l!=='ko';}).map(function (lang) {
@@ -108,7 +108,7 @@ function render(container) {
 
       <!-- 번역 결과 -->
       <div id="nl-translation-wrap" style="display:none;margin-bottom:12px">
-        <div class="sb-card" style="padding:14px">
+        <div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:hidden;padding:14px">
           <div style="font-size:12px;font-weight:600;color:var(--text3);margin-bottom:8px" id="nl-translation-lang"></div>
           <div id="nl-translation-result" style="font-size:13px;line-height:1.8;white-space:pre-wrap"></div>
         </div>

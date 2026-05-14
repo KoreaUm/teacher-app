@@ -198,7 +198,7 @@ async function init() {
       var ddLabel = doc.done ? '✅ 완료' : getDdayLabel(days);
       var gcalBadge = doc.gcal_event_id ? '<span style="font-size:10px;background:#e0f2fe;color:#0369a1;padding:1px 6px;border-radius:8px;margin-left:4px">📅 캘린더</span>' : '';
 
-      return `<div class="sb-card" style="padding:14px;${doc.done ? 'opacity:.6' : ''}">
+      return `<div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:hidden;padding:14px;${doc.done ? 'opacity:.6' : ''}">
         <div style="display:flex;align-items:flex-start;gap:12px">
           <!-- D-day 배지 -->
           <div style="flex-shrink:0;min-width:54px;text-align:center">

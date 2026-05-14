@@ -172,15 +172,15 @@ async function init() {
     // 요약 카드
     var summaryHtml = `
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
-        <div class="sb-card" style="text-align:center;padding:16px">
+        <div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:hidden;text-align:center;padding:16px">
           <div style="font-size:28px;font-weight:700;color:var(--primary)">${totalUsed}<span style="font-size:14px;font-weight:400">회</span></div>
           <div style="font-size:12px;color:var(--text3);margin-top:4px">총 기능 사용 횟수</div>
         </div>
-        <div class="sb-card" style="text-align:center;padding:16px">
+        <div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:hidden;text-align:center;padding:16px">
           <div style="font-size:28px;font-weight:700;color:#22c55e">${Math.round(totalSavedMin)}<span style="font-size:14px;font-weight:400">분</span></div>
           <div style="font-size:12px;color:var(--text3);margin-top:4px">추정 절감 시간</div>
         </div>
-        <div class="sb-card" style="text-align:center;padding:16px">
+        <div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:hidden;text-align:center;padding:16px">
           <div style="font-size:28px;font-weight:700;color:#f59e0b">${Math.round(totalSavedMin / 60 * 10) / 10}<span style="font-size:14px;font-weight:400">시간</span></div>
           <div style="font-size:12px;color:var(--text3);margin-top:4px">월 절감 환산</div>
         </div>
@@ -213,7 +213,7 @@ async function init() {
       }).join('');
 
       tableHtml = `
-        <div class="sb-card" style="overflow:auto">
+        <div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:auto">
           <table style="width:100%;border-collapse:collapse;font-size:13px">
             <thead>
               <tr style="border-bottom:2px solid var(--border)">
@@ -239,7 +239,7 @@ async function init() {
 
     // 도입 전·후 비교 섹션 (보고서용)
     var compareHtml = `
-      <div class="sb-card" style="margin-top:16px;padding:16px">
+      <div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:hidden;margin-top:16px;padding:16px">
         <div style="font-weight:600;font-size:14px;margin-bottom:12px">📋 도입 전·후 비교</div>
         <table style="width:100%;border-collapse:collapse;font-size:13px">
           <thead>

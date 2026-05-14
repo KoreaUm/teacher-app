@@ -58,13 +58,13 @@ function render(container) {
       </div>
 
       <!-- 카테고리별 막대 그래프 -->
-      <div class="sb-card" style="padding:14px;margin-bottom:14px">
+      <div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:hidden;padding:14px;margin-bottom:14px">
         <div style="font-size:13px;font-weight:600;margin-bottom:10px">📊 카테고리별 지출</div>
         <div id="cb-chart"></div>
       </div>
 
       <!-- 지출 목록 -->
-      <div class="sb-card" style="overflow:auto">
+      <div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:auto">
         <div style="padding:10px 16px;font-weight:600;border-bottom:1px solid var(--border);font-size:13px">📋 지출 내역</div>
         <table style="width:100%;border-collapse:collapse;font-size:13px" id="cb-table">
           <thead>
@@ -171,7 +171,7 @@ async function init() {
 
     // 요약 카드
     document.getElementById('cb-summary').innerHTML = `
-      <div class="sb-card" style="text-align:center;padding:14px">
+      <div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:hidden;text-align:center;padding:14px">
         <div style="font-size:22px;font-weight:700;color:var(--primary)">${formatWon(budget || 0)}</div>
         <div style="font-size:11px;color:var(--text3);margin-top:3px">총 예산</div>
         ${budget > 0 ? `<div style="background:var(--bg2);border-radius:4px;height:6px;margin-top:8px;overflow:hidden">
@@ -179,12 +179,12 @@ async function init() {
         </div>
         <div style="font-size:11px;color:${pctColor};margin-top:4px">${pct}% 사용</div>` : ''}
       </div>
-      <div class="sb-card" style="text-align:center;padding:14px">
+      <div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:hidden;text-align:center;padding:14px">
         <div style="font-size:22px;font-weight:700;color:#ef4444">${formatWon(allSpent)}</div>
         <div style="font-size:11px;color:var(--text3);margin-top:3px">총 지출</div>
         <div style="font-size:11px;color:var(--text3);margin-top:4px">${records.length}건</div>
       </div>
-      <div class="sb-card" style="text-align:center;padding:14px">
+      <div style="background:var(--bg1);border-radius:10px;box-sizing:border-box;overflow:hidden;text-align:center;padding:14px">
         <div style="font-size:22px;font-weight:700;color:${budget > 0 && remain < 0 ? '#ef4444' : '#22c55e'}">${budget > 0 ? formatWon(remain) : '-'}</div>
         <div style="font-size:11px;color:var(--text3);margin-top:3px">잔액</div>
         ${filtered !== records ? `<div style="font-size:11px;color:var(--text3);margin-top:4px">필터: ${formatWon(totalSpent)}</div>` : ''}
