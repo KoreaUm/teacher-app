@@ -2,7 +2,7 @@
 'use strict';
 
 var LIBRARY_KEY = 'newsletter_library';
-var LANG_LABELS = { ko: '한국어', en: 'English', zh: '中文', vi: 'Tiếng Việt', ja: '日本語', th: 'ภาษาไทย' };
+var LANG_LABELS = { ko: '한국어', en: '영어', zh: '중국어', vi: '베트남어', ja: '일본어', th: '태국어' };
 
 var TEMPLATES = [
   { id: 'event',    label: '행사 안내',    icon: '📅', hint: '행사명, 일시, 장소, 준비물을 입력하면 안내문을 작성합니다.' },
