@@ -2941,3 +2941,31 @@ tbody tr:hover { background: var(--hover); }
     flex-direction: column;
   }
 }
+
+/* ── 업무 효율성 분석 페이지 ────────────────── */
+@media print {
+  /* 인쇄 시 앱 UI 숨기기 */
+  #sidebar, #topbar, #titlebar, .titlebar,
+  #page-header-bar, .no-print {
+    display: none !important;
+  }
+  #page-content {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  body, html {
+    background: #fff !important;
+    color: #000 !important;
+  }
+  .sb-card {
+    border: 1px solid #ddd !important;
+    box-shadow: none !important;
+    break-inside: avoid;
+  }
+  .print-only {
+    display: block !important;
+  }
+}
+.print-only {
+  display: none;
+}
