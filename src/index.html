@@ -636,10 +636,12 @@
   var ADMIN_MENU_PAGE = { key: "user_management", label: "회원 관리" };
 
   var DEFAULT_MENU_GROUPS = [
-    { key: "class", label: "학급 관리", items: ["students", "attendance", "daily_memo", "timetable"] },
-    { key: "records", label: "기록", items: ["counseling", "observations", "lessons"] },
-    { key: "evaluation", label: "평가", items: ["assessments", "submissions", "statistics", "ai_analysis"] },
-    { key: "tools", label: "도구", items: ["meal", "school_calendar", "calculator", "lesson_materials", "official_document", "sticky_notes", "efficiency", "neis_helper", "newsletter", "class_budget", "doc_deadline", "settings"] }
+    { key: "class",      label: "학급 관리", items: ["students", "attendance", "daily_memo", "timetable"] },
+    { key: "records",    label: "학생 기록", items: ["counseling", "observations", "lessons"] },
+    { key: "evaluation", label: "평가",     items: ["assessments", "submissions", "statistics", "ai_analysis"] },
+    { key: "admin",      label: "업무",     items: ["official_document", "doc_deadline", "neis_helper", "class_budget", "newsletter", "efficiency"] },
+    { key: "utility",    label: "편의",     items: ["meal", "school_calendar", "calculator", "lesson_materials", "todos", "sticky_notes"] },
+    { key: "settings",   label: "설정",     items: ["settings"] }
   ];
 
   var menuGroups = cloneMenuGroups(DEFAULT_MENU_GROUPS);
