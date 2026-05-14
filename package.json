@@ -1,6 +1,6 @@
 {
   "name": "teacher-app",
-  "version": "2.0.59",
+  "version": "2.0.60",
   "description": "쌤포트 Electron 앱",
   "author": "충상",
   "main": "main.js",
@@ -17,6 +17,7 @@
     "better-sqlite3": "^9.4.3",
     "electron-updater": "^6.8.3",
     "firebase": "^12.12.1",
+    "tesseract.js": "^7.0.0",
     "xlsx": "^0.18.5",
     "yauzl": "^3.3.0"
   },
