@@ -96,32 +96,6 @@ function render(container) {
       <div id="eff-content">
         <div style="color:var(--text3);text-align:center;padding:40px">불러오는 중...</div>
       </div>
-
-      <!-- 설정 모달 -->
-      <div id="eff-config-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;align-items:center;justify-content:center">
-        <div style="background:var(--bg1);border-radius:12px;border:1px solid var(--border);padding:24px;width:560px;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.35)">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-            <strong style="font-size:15px">⚙️ 기능별 시간 기준 설정</strong>
-            <button class="btn btn-secondary btn-xs" id="eff-config-close">✕</button>
-          </div>
-          <p style="font-size:12px;color:var(--text3);margin-bottom:12px">각 기능을 사용하기 전·후 예상 소요 시간을 분 단위로 입력하세요. 절감 시간 = (이전 - 이후) × 사용 횟수</p>
-          <table style="width:100%;border-collapse:collapse;font-size:13px" id="eff-config-table">
-            <thead>
-              <tr style="border-bottom:1px solid var(--border)">
-                <th style="text-align:left;padding:6px 4px">기능</th>
-                <th style="text-align:center;padding:6px 4px">도입 전(분)</th>
-                <th style="text-align:center;padding:6px 4px">도입 후(분)</th>
-                <th style="text-align:center;padding:6px 4px">건당 절감</th>
-              </tr>
-            </thead>
-            <tbody id="eff-config-tbody"></tbody>
-          </table>
-          <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
-            <button class="btn btn-secondary btn-sm" id="eff-config-reset">기본값 복원</button>
-            <button class="btn btn-primary btn-sm" id="eff-config-save">저장</button>
-          </div>
-        </div>
-      </div>
     </div>
   `;
 }
@@ -284,20 +258,8 @@ async function init() {
   };
 
   // 설정 모달
-  var modal = document.getElementById('eff-config-modal');
-  document.getElementById('eff-config-btn').onclick = function () {
-    renderConfigTable(config);
-    modal.style.display = 'flex';
-  };
-  document.getElementById('eff-config-close').onclick = function () {
-    modal.style.display = 'none';
-  };
-  modal.addEventListener('click', function (e) {
-    if (e.target === modal) modal.style.display = 'none';
-  });
-
-  function renderConfigTable(cfg) {
-    var tbody = document.getElementById('eff-config-tbody');
+  function renderConfigTable(cfg, containerEl) {
+    var tbody = containerEl.querySelector('#eff-config-tbody');
     tbody.innerHTML = Object.keys(DEFAULT_CONFIG).map(function (key) {
       var c = cfg[key] || DEFAULT_CONFIG[key];
       var saved = Math.max(0, c.beforeMin - c.afterMin);
@@ -324,22 +286,50 @@ async function init() {
     });
   }
 
-  document.getElementById('eff-config-reset').onclick = function () {
-    config = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
-    renderConfigTable(config);
-  };
+  document.getElementById('eff-config-btn').onclick = function () {
+    var m = window.showModal(
+      `<div class="modal-header">
+        <span class="modal-title">⚙️ 기능별 시간 기준 설정</span>
+        <button class="modal-close" data-close>✕</button>
+      </div>
+      <div class="modal-body" style="max-height:60vh;overflow-y:auto">
+        <p style="font-size:12px;color:var(--text3);margin-bottom:12px">각 기능을 사용하기 전·후 예상 소요 시간을 분 단위로 입력하세요. 절감 시간 = (이전 - 이후) × 사용 횟수</p>
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead>
+            <tr style="border-bottom:1px solid var(--border)">
+              <th style="text-align:left;padding:6px 4px">기능</th>
+              <th style="text-align:center;padding:6px 4px">도입 전(분)</th>
+              <th style="text-align:center;padding:6px 4px">도입 후(분)</th>
+              <th style="text-align:center;padding:6px 4px">건당 절감</th>
+            </tr>
+          </thead>
+          <tbody id="eff-config-tbody"></tbody>
+        </table>
+      </div>
+      <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px">
+        <button class="btn btn-secondary btn-sm" id="eff-config-reset">기본값 복원</button>
+        <button class="btn btn-primary btn-sm" id="eff-config-save">저장</button>
+      </div>`
+    );
 
-  document.getElementById('eff-config-save').onclick = async function () {
-    var tbody = document.getElementById('eff-config-tbody');
-    tbody.querySelectorAll('tr[data-key]').forEach(function (row) {
-      var key = row.getAttribute('data-key');
-      if (!config[key]) config[key] = Object.assign({}, DEFAULT_CONFIG[key]);
-      config[key].beforeMin = parseFloat(row.querySelector('.cfg-before').value) || 0;
-      config[key].afterMin = parseFloat(row.querySelector('.cfg-after').value) || 0;
-    });
-    await saveConfig(config);
-    modal.style.display = 'none';
-    await renderContent();
+    renderConfigTable(config, m.el);
+
+    m.el.querySelector('#eff-config-reset').onclick = function () {
+      config = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+      renderConfigTable(config, m.el);
+    };
+
+    m.el.querySelector('#eff-config-save').onclick = async function () {
+      m.el.querySelector('#eff-config-tbody').querySelectorAll('tr[data-key]').forEach(function (row) {
+        var key = row.getAttribute('data-key');
+        if (!config[key]) config[key] = Object.assign({}, DEFAULT_CONFIG[key]);
+        config[key].beforeMin = parseFloat(row.querySelector('.cfg-before').value) || 0;
+        config[key].afterMin = parseFloat(row.querySelector('.cfg-after').value) || 0;
+      });
+      await saveConfig(config);
+      m.close();
+      await renderContent();
+    };
   };
 }
 

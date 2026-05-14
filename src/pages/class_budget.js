@@ -84,62 +84,6 @@ function render(container) {
         </div>
       </div>
     </div>
-
-    <!-- OCR 진행 상태 -->
-    <div id="cb-ocr-status" style="display:none;position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
-      background:var(--bg1);border:1px solid var(--border);border-radius:8px;padding:10px 18px;
-      font-size:13px;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.2)"></div>
-
-    <!-- 지출 추가/수정 모달 -->
-    <div id="cb-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;align-items:center;justify-content:center">
-      <div style="background:var(--bg1);border-radius:12px;border:1px solid var(--border);padding:22px;width:420px;box-shadow:0 20px 60px rgba(0,0,0,.35)">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-          <strong id="cb-modal-title" style="font-size:15px">지출 추가</strong>
-          <button class="btn btn-secondary btn-xs" id="cb-modal-close">✕</button>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:10px">
-          <div>
-            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">날짜 *</label>
-            <input type="date" class="input" id="cb-f-date" style="font-size:13px">
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">항목명 *</label>
-            <input class="input" id="cb-f-name" placeholder="예: A4용지 구매" style="font-size:13px">
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">카테고리</label>
-            <select class="input" id="cb-f-cat" style="font-size:13px">
-              ${CATEGORIES.map(function(c){return `<option>${c}</option>`;}).join('')}
-            </select>
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">금액(원) *</label>
-            <input type="number" class="input" id="cb-f-amount" min="0" step="100" placeholder="0" style="font-size:13px">
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">비고</label>
-            <input class="input" id="cb-f-memo" placeholder="영수증 번호, 구매처 등" style="font-size:13px">
-          </div>
-        </div>
-        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
-          <button class="btn btn-secondary btn-sm" id="cb-modal-cancel">취소</button>
-          <button class="btn btn-primary btn-sm" id="cb-modal-save">저장</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- 예산 설정 모달 -->
-    <div id="cb-budget-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;align-items:center;justify-content:center">
-      <div style="background:var(--bg1);border-radius:12px;border:1px solid var(--border);padding:22px;width:340px;box-shadow:0 20px 60px rgba(0,0,0,.35)">
-        <strong style="font-size:15px;display:block;margin-bottom:14px">🎯 예산 설정</strong>
-        <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">총 예산(원)</label>
-        <input type="number" class="input" id="cb-budget-input" min="0" step="10000" placeholder="예: 500000" style="font-size:13px;margin-bottom:14px">
-        <div style="display:flex;gap:8px;justify-content:flex-end">
-          <button class="btn btn-secondary btn-sm" id="cb-budget-cancel">취소</button>
-          <button class="btn btn-primary btn-sm" id="cb-budget-save">저장</button>
-        </div>
-      </div>
-    </div>
   `;
 }
 
@@ -147,6 +91,15 @@ async function init() {
   var records = await loadRecords();
   var budget  = await loadBudget();
   var editId  = null;
+  var currentModalRef = null;
+
+  // OCR 상태 토스트 (document.body에 추가)
+  var ocrStatusEl = document.createElement('div');
+  ocrStatusEl.id = 'cb-ocr-status';
+  ocrStatusEl.style.cssText = 'display:none;position:fixed;bottom:20px;left:50%;transform:translateX(-50%);' +
+    'background:var(--bg1);border:1px solid var(--border);border-radius:8px;padding:10px 18px;' +
+    'font-size:13px;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.2)';
+  document.body.appendChild(ocrStatusEl);
 
   var today = new Date().toISOString().slice(0, 7);
   document.getElementById('cb-month-filter').value = today;
@@ -247,18 +200,69 @@ async function init() {
   }
 
   // 모달
-  var modal = document.getElementById('cb-modal');
   function openModal(id) {
     editId = id || null;
-    document.getElementById('cb-modal-title').textContent = editId ? '지출 수정' : '지출 추가';
     var rec = editId ? records.find(function (r) { return r.id === editId; }) : null;
-    document.getElementById('cb-f-date').value   = rec ? rec.date   : new Date().toISOString().slice(0, 10);
-    document.getElementById('cb-f-name').value   = rec ? rec.name   : '';
-    document.getElementById('cb-f-cat').value    = rec ? rec.category : CATEGORIES[0];
-    document.getElementById('cb-f-amount').value = rec ? rec.amount : '';
-    document.getElementById('cb-f-memo').value   = rec ? rec.memo   : '';
-    modal.style.display = 'flex';
-    document.getElementById('cb-f-name').focus();
+    var titleText = editId ? '지출 수정' : '지출 추가';
+    var defaultDate = new Date().toISOString().slice(0, 10);
+
+    var m = window.showModal(
+      `<div class="modal-header">
+        <span class="modal-title">${titleText}</span>
+        <button class="modal-close" data-close>✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">날짜 *</label>
+            <input type="date" class="input" id="cb-f-date" value="${rec ? rec.date : defaultDate}" style="font-size:13px">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">항목명 *</label>
+            <input class="input" id="cb-f-name" placeholder="예: A4용지 구매" value="${rec ? rec.name : ''}" style="font-size:13px">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">카테고리</label>
+            <select class="input" id="cb-f-cat" style="font-size:13px">
+              ${CATEGORIES.map(function(c){return `<option${rec && rec.category === c ? ' selected' : ''}>${c}</option>`;}).join('')}
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">금액(원) *</label>
+            <input type="number" class="input" id="cb-f-amount" min="0" step="100" placeholder="0" value="${rec ? rec.amount : ''}" style="font-size:13px">
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">비고</label>
+            <input class="input" id="cb-f-memo" placeholder="영수증 번호, 구매처 등" value="${rec ? (rec.memo || '') : ''}" style="font-size:13px">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-secondary btn-sm" data-close>취소</button>
+        <button class="btn btn-primary btn-sm" id="cb-modal-save">저장</button>
+      </div>`
+    );
+    currentModalRef = m;
+    m.el.querySelector('#cb-f-name').focus();
+
+    m.el.querySelector('#cb-modal-save').onclick = async function () {
+      var date   = m.el.querySelector('#cb-f-date').value;
+      var name   = m.el.querySelector('#cb-f-name').value.trim();
+      var cat    = m.el.querySelector('#cb-f-cat').value;
+      var amount = parseFloat(m.el.querySelector('#cb-f-amount').value) || 0;
+      var memo   = m.el.querySelector('#cb-f-memo').value.trim();
+      if (!date || !name || amount <= 0) { alert('날짜, 항목명, 금액을 입력하세요.'); return; }
+
+      if (editId) {
+        var idx = records.findIndex(function (r) { return r.id === editId; });
+        if (idx >= 0) records[idx] = { id: editId, date: date, name: name, category: cat, amount: amount, memo: memo };
+      } else {
+        records.push({ id: Date.now(), date: date, name: name, category: cat, amount: amount, memo: memo });
+      }
+      await saveRecords(records);
+      m.close();
+      renderAll();
+    };
   }
 
   document.getElementById('cb-add-btn').onclick = function () { openModal(null); };
@@ -269,9 +273,8 @@ async function init() {
     if (!file) return;
     e.target.value = '';
 
-    var statusEl = document.getElementById('cb-ocr-status');
-    function showStatus(msg) { statusEl.style.display = 'block'; statusEl.textContent = msg; }
-    function hideStatus() { statusEl.style.display = 'none'; }
+    function showStatus(msg) { ocrStatusEl.style.display = 'block'; ocrStatusEl.textContent = msg; }
+    function hideStatus() { ocrStatusEl.style.display = 'none'; }
 
     showStatus('📷 Tesseract OCR 중... (첫 실행 시 1~2분 소요)');
 
@@ -317,7 +320,7 @@ ${ocrText}`;
         setTimeout(hideStatus, 4000);
         // OCR 텍스트라도 모달에 표시
         openModal(null);
-        document.getElementById('cb-f-memo').value = ocrText.slice(0, 200);
+        currentModalRef.el.querySelector('#cb-f-memo').value = ocrText.slice(0, 200);
         return;
       }
 
@@ -330,7 +333,7 @@ ${ocrText}`;
         showStatus('항목을 파악하지 못했습니다. 수동으로 입력해주세요.');
         setTimeout(hideStatus, 3000);
         openModal(null);
-        document.getElementById('cb-f-memo').value = ocrText.slice(0, 200);
+        currentModalRef.el.querySelector('#cb-f-memo').value = ocrText.slice(0, 200);
         return;
       }
 
@@ -341,11 +344,11 @@ ${ocrText}`;
         var item = items[0];
         openModal(null);
         var today = new Date().toISOString().slice(0, 10);
-        document.getElementById('cb-f-date').value   = item.date || today;
-        document.getElementById('cb-f-name').value   = item.name || '';
-        document.getElementById('cb-f-cat').value    = CATEGORIES.includes(item.category) ? item.category : CATEGORIES[0];
-        document.getElementById('cb-f-amount').value = item.amount || '';
-        document.getElementById('cb-f-memo').value   = item.memo || '';
+        currentModalRef.el.querySelector('#cb-f-date').value   = item.date || today;
+        currentModalRef.el.querySelector('#cb-f-name').value   = item.name || '';
+        currentModalRef.el.querySelector('#cb-f-cat').value    = CATEGORIES.includes(item.category) ? item.category : CATEGORIES[0];
+        currentModalRef.el.querySelector('#cb-f-amount').value = item.amount || '';
+        currentModalRef.el.querySelector('#cb-f-memo').value   = item.memo || '';
       } else {
         // 복수 품목 확인 다이얼로그
         var list = items.map(function (it, i) { return (i + 1) + '. ' + it.name + ' ' + Number(it.amount || 0).toLocaleString() + '원'; }).join('\n');
@@ -370,43 +373,30 @@ ${ocrText}`;
     }
   };
   // ────────────────────────────────────────────────────────
-  document.getElementById('cb-modal-close').onclick = function () { modal.style.display = 'none'; };
-  document.getElementById('cb-modal-cancel').onclick = function () { modal.style.display = 'none'; };
-  modal.addEventListener('click', function (e) { if (e.target === modal) modal.style.display = 'none'; });
-
-  document.getElementById('cb-modal-save').onclick = async function () {
-    var date   = document.getElementById('cb-f-date').value;
-    var name   = document.getElementById('cb-f-name').value.trim();
-    var cat    = document.getElementById('cb-f-cat').value;
-    var amount = parseFloat(document.getElementById('cb-f-amount').value) || 0;
-    var memo   = document.getElementById('cb-f-memo').value.trim();
-    if (!date || !name || amount <= 0) { alert('날짜, 항목명, 금액을 입력하세요.'); return; }
-
-    if (editId) {
-      var idx = records.findIndex(function (r) { return r.id === editId; });
-      if (idx >= 0) records[idx] = { id: editId, date: date, name: name, category: cat, amount: amount, memo: memo };
-    } else {
-      records.push({ id: Date.now(), date: date, name: name, category: cat, amount: amount, memo: memo });
-    }
-    await saveRecords(records);
-    modal.style.display = 'none';
-    renderAll();
-  };
 
   // 예산 모달
-  var bModal = document.getElementById('cb-budget-modal');
   document.getElementById('cb-budget-btn').onclick = function () {
-    document.getElementById('cb-budget-input').value = budget || '';
-    bModal.style.display = 'flex';
-  };
-  document.getElementById('cb-budget-cancel').onclick = function () { bModal.style.display = 'none'; };
-  bModal.addEventListener('click', function (e) { if (e.target === bModal) bModal.style.display = 'none'; });
-  document.getElementById('cb-budget-save').onclick = async function () {
-    var val = parseFloat(document.getElementById('cb-budget-input').value) || 0;
-    budget = val;
-    await saveBudget(val);
-    bModal.style.display = 'none';
-    renderAll();
+    var bm = window.showModal(
+      `<div class="modal-header">
+        <span class="modal-title">🎯 예산 설정</span>
+        <button class="modal-close" data-close>✕</button>
+      </div>
+      <div class="modal-body">
+        <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">총 예산(원)</label>
+        <input type="number" class="input" id="cb-budget-input" min="0" step="10000" placeholder="예: 500000" value="${budget || ''}" style="font-size:13px">
+      </div>
+      <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-secondary btn-sm" data-close>취소</button>
+        <button class="btn btn-primary btn-sm" id="cb-budget-save">저장</button>
+      </div>`
+    );
+    bm.el.querySelector('#cb-budget-save').onclick = async function () {
+      var val = parseFloat(bm.el.querySelector('#cb-budget-input').value) || 0;
+      budget = val;
+      await saveBudget(val);
+      bm.close();
+      renderAll();
+    };
   };
 
   // 에듀파인 CSV 내보내기

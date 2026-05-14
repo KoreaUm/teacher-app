@@ -72,58 +72,6 @@ function render(container) {
         등록된 공문이 없습니다.<br><span style="font-size:12px">공문 추가 버튼으로 새 공문을 등록하세요.</span>
       </div>
     </div>
-
-    <!-- 공문 추가/수정 모달 -->
-    <div id="dd-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;align-items:center;justify-content:center">
-      <div style="background:var(--bg1);border-radius:12px;border:1px solid var(--border);padding:22px;width:440px;box-shadow:0 20px 60px rgba(0,0,0,.35)">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-          <strong id="dd-modal-title" style="font-size:15px">공문 추가</strong>
-          <button class="btn btn-secondary btn-xs" id="dd-modal-close">✕</button>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:10px">
-          <div>
-            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">공문 제목 *</label>
-            <input class="input" id="dd-f-title" placeholder="예: 2026 학교폭력 예방 교육 결과 보고" style="font-size:13px">
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-            <div>
-              <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">공문 번호</label>
-              <input class="input" id="dd-f-docnum" placeholder="예: 교육정책과-1234" style="font-size:13px">
-            </div>
-            <div>
-              <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">마감일 *</label>
-              <input type="date" class="input" id="dd-f-due" style="font-size:13px">
-            </div>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-            <div>
-              <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">담당자</label>
-              <input class="input" id="dd-f-owner" placeholder="예: 홍길동" style="font-size:13px">
-            </div>
-            <div>
-              <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">우선순위</label>
-              <select class="input" id="dd-f-priority" style="font-size:13px">
-                <option value="high">🔴 높음</option>
-                <option value="mid" selected>🟡 보통</option>
-                <option value="low">🟢 낮음</option>
-              </select>
-            </div>
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">메모</label>
-            <textarea class="input" id="dd-f-memo" rows="2" placeholder="관련 사항, 제출 방법 등" style="font-size:13px;resize:none"></textarea>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px">
-            <input type="checkbox" id="dd-f-gcal" style="width:16px;height:16px">
-            <label for="dd-f-gcal" style="font-size:13px;cursor:pointer">Google Calendar에 마감일 등록</label>
-          </div>
-        </div>
-        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
-          <button class="btn btn-secondary btn-sm" id="dd-modal-cancel">취소</button>
-          <button class="btn btn-primary btn-sm" id="dd-modal-save">저장</button>
-        </div>
-      </div>
-    </div>
   `;
 }
 
@@ -276,68 +224,109 @@ async function init() {
   });
 
   // 모달
-  var modal = document.getElementById('dd-modal');
-
   function openModal(id) {
     editId = id || null;
     var doc = editId ? docs.find(function (d) { return d.id === editId; }) : null;
-    document.getElementById('dd-modal-title').textContent = editId ? '공문 수정' : '공문 추가';
-    document.getElementById('dd-f-title').value    = doc ? doc.title   : '';
-    document.getElementById('dd-f-docnum').value   = doc ? doc.docnum  : '';
-    document.getElementById('dd-f-due').value      = doc ? doc.due     : '';
-    document.getElementById('dd-f-owner').value    = doc ? doc.owner   : '';
-    document.getElementById('dd-f-priority').value = doc ? doc.priority : 'mid';
-    document.getElementById('dd-f-memo').value     = doc ? doc.memo    : '';
-    document.getElementById('dd-f-gcal').checked   = false;
-    modal.style.display = 'flex';
-    document.getElementById('dd-f-title').focus();
+    var titleText = editId ? '공문 수정' : '공문 추가';
+    var priorityOpts = [
+      { v: 'high', l: '🔴 높음' },
+      { v: 'mid',  l: '🟡 보통' },
+      { v: 'low',  l: '🟢 낮음' }
+    ];
+
+    var m = window.showModal(
+      `<div class="modal-header">
+        <span class="modal-title">${titleText}</span>
+        <button class="modal-close" data-close>✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">공문 제목 *</label>
+            <input class="input" id="dd-f-title" placeholder="예: 2026 학교폭력 예방 교육 결과 보고" value="${doc ? doc.title : ''}" style="font-size:13px">
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div>
+              <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">공문 번호</label>
+              <input class="input" id="dd-f-docnum" placeholder="예: 교육정책과-1234" value="${doc ? (doc.docnum || '') : ''}" style="font-size:13px">
+            </div>
+            <div>
+              <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">마감일 *</label>
+              <input type="date" class="input" id="dd-f-due" value="${doc ? doc.due : ''}" style="font-size:13px">
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div>
+              <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">담당자</label>
+              <input class="input" id="dd-f-owner" placeholder="예: 홍길동" value="${doc ? (doc.owner || '') : ''}" style="font-size:13px">
+            </div>
+            <div>
+              <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">우선순위</label>
+              <select class="input" id="dd-f-priority" style="font-size:13px">
+                ${priorityOpts.map(function(o){return `<option value="${o.v}"${doc && doc.priority === o.v ? ' selected' : (!doc && o.v === 'mid' ? ' selected' : '')}>${o.l}</option>`;}).join('')}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:3px">메모</label>
+            <textarea class="input" id="dd-f-memo" rows="2" placeholder="관련 사항, 제출 방법 등" style="font-size:13px;resize:none">${doc ? (doc.memo || '') : ''}</textarea>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <input type="checkbox" id="dd-f-gcal" style="width:16px;height:16px">
+            <label for="dd-f-gcal" style="font-size:13px;cursor:pointer">Google Calendar에 마감일 등록</label>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-secondary btn-sm" data-close>취소</button>
+        <button class="btn btn-primary btn-sm" id="dd-modal-save">저장</button>
+      </div>`
+    );
+
+    m.el.querySelector('#dd-f-title').focus();
+
+    m.el.querySelector('#dd-modal-save').onclick = async function () {
+      var title    = m.el.querySelector('#dd-f-title').value.trim();
+      var docnum   = m.el.querySelector('#dd-f-docnum').value.trim();
+      var due      = m.el.querySelector('#dd-f-due').value;
+      var owner    = m.el.querySelector('#dd-f-owner').value.trim();
+      var priority = m.el.querySelector('#dd-f-priority').value;
+      var memo     = m.el.querySelector('#dd-f-memo').value.trim();
+      var useGcal  = m.el.querySelector('#dd-f-gcal').checked;
+
+      if (!title || !due) { alert('제목과 마감일은 필수입니다.'); return; }
+
+      var saveBtn = m.el.querySelector('#dd-modal-save');
+      saveBtn.disabled = true; saveBtn.textContent = '저장 중...';
+
+      var gcalId = '';
+      if (useGcal && window.addGoogleCalendarCustomEvent) {
+        gcalId = await window.addGoogleCalendarCustomEvent({
+          name: '📬 [공문마감] ' + title,
+          date: due
+        }).catch(function () { return ''; }) || '';
+      }
+
+      if (editId) {
+        var idx = docs.findIndex(function (d) { return d.id === editId; });
+        if (idx >= 0) {
+          var existing = docs[idx];
+          docs[idx] = Object.assign(existing, { title: title, docnum: docnum, due: due,
+            owner: owner, priority: priority, memo: memo });
+          if (gcalId) docs[idx].gcal_event_id = gcalId;
+        }
+      } else {
+        docs.push({ id: Date.now(), title: title, docnum: docnum, due: due,
+          owner: owner, priority: priority, memo: memo, done: false, gcal_event_id: gcalId });
+      }
+
+      await saveDocs(docs);
+      m.close();
+      renderList();
+    };
   }
 
   document.getElementById('dd-add-btn').onclick = function () { openModal(null); };
-  document.getElementById('dd-modal-close').onclick  = function () { modal.style.display = 'none'; };
-  document.getElementById('dd-modal-cancel').onclick = function () { modal.style.display = 'none'; };
-  modal.addEventListener('click', function (e) { if (e.target === modal) modal.style.display = 'none'; });
-
-  document.getElementById('dd-modal-save').onclick = async function () {
-    var title    = document.getElementById('dd-f-title').value.trim();
-    var docnum   = document.getElementById('dd-f-docnum').value.trim();
-    var due      = document.getElementById('dd-f-due').value;
-    var owner    = document.getElementById('dd-f-owner').value.trim();
-    var priority = document.getElementById('dd-f-priority').value;
-    var memo     = document.getElementById('dd-f-memo').value.trim();
-    var useGcal  = document.getElementById('dd-f-gcal').checked;
-
-    if (!title || !due) { alert('제목과 마감일은 필수입니다.'); return; }
-
-    var btn = document.getElementById('dd-modal-save');
-    btn.disabled = true; btn.textContent = '저장 중...';
-
-    var gcalId = '';
-    if (useGcal && window.addGoogleCalendarCustomEvent) {
-      gcalId = await window.addGoogleCalendarCustomEvent({
-        name: '📬 [공문마감] ' + title,
-        date: due
-      }).catch(function () { return ''; }) || '';
-    }
-
-    if (editId) {
-      var idx = docs.findIndex(function (d) { return d.id === editId; });
-      if (idx >= 0) {
-        var existing = docs[idx];
-        docs[idx] = Object.assign(existing, { title: title, docnum: docnum, due: due,
-          owner: owner, priority: priority, memo: memo });
-        if (gcalId) docs[idx].gcal_event_id = gcalId;
-      }
-    } else {
-      docs.push({ id: Date.now(), title: title, docnum: docnum, due: due,
-        owner: owner, priority: priority, memo: memo, done: false, gcal_event_id: gcalId });
-    }
-
-    await saveDocs(docs);
-    modal.style.display = 'none';
-    btn.disabled = false; btn.textContent = '저장';
-    renderList();
-  };
 
   renderList();
 }

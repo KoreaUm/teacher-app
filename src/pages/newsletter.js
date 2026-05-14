@@ -113,17 +113,6 @@ function render(container) {
           <div id="nl-translation-result" style="font-size:13px;line-height:1.8;white-space:pre-wrap"></div>
         </div>
       </div>
-
-      <!-- 보관함 모달 -->
-      <div id="nl-library-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9000;align-items:center;justify-content:center">
-        <div style="background:var(--bg1);border-radius:12px;border:1px solid var(--border);padding:20px;width:560px;max-height:75vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.35)">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-            <strong style="font-size:15px">📚 저장된 가정통신문</strong>
-            <button class="btn btn-secondary btn-xs" id="nl-library-close">✕</button>
-          </div>
-          <div id="nl-library-list" style="flex:1;overflow-y:auto"></div>
-        </div>
-      </div>
     </div>
 
     <style>
@@ -276,21 +265,25 @@ async function init() {
   };
 
   // 보관함 모달
-  var modal = document.getElementById('nl-library-modal');
-  document.getElementById('nl-library-btn').onclick = async function () {
-    modal.style.display = 'flex';
-    await renderLibrary();
-  };
-  document.getElementById('nl-library-close').onclick = function () {
-    modal.style.display = 'none';
-  };
-  modal.addEventListener('click', function (e) {
-    if (e.target === modal) modal.style.display = 'none';
-  });
+  var currentLibModal = null;
 
-  async function renderLibrary() {
+  document.getElementById('nl-library-btn').onclick = async function () {
+    var m = window.showModal(
+      `<div class="modal-header">
+        <span class="modal-title">📚 저장된 가정통신문</span>
+        <button class="modal-close" data-close>✕</button>
+      </div>
+      <div class="modal-body" style="max-height:60vh;overflow-y:auto">
+        <div id="nl-library-list">불러오는 중...</div>
+      </div>`
+    );
+    currentLibModal = m;
+    await renderLibrary(m);
+  };
+
+  async function renderLibrary(m) {
     var lib = await loadLibrary();
-    var listEl = document.getElementById('nl-library-list');
+    var listEl = m.el.querySelector('#nl-library-list');
     if (!lib.length) {
       listEl.innerHTML = '<div style="text-align:center;padding:32px;color:var(--text3)">저장된 가정통신문이 없습니다.</div>';
       return;
@@ -317,7 +310,7 @@ async function init() {
         if (!item) return;
         currentResult = item.content;
         document.getElementById('nl-result').textContent = currentResult;
-        modal.style.display = 'none';
+        m.close();
       };
     });
 
@@ -328,7 +321,7 @@ async function init() {
         var updated = lib.filter(function (i) { return i.id !== id; });
         await saveLibrary(updated);
         lib = updated;
-        await renderLibrary();
+        await renderLibrary(m);
       };
     });
   }
