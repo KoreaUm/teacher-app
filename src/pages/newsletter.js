@@ -117,7 +117,8 @@ function render(container) {
 
     <style>
       @keyframes spin { to { transform: rotate(360deg); } }
-      .nl-tpl-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+      .nl-tpl-btn { position: relative; transition: border-color .15s; }
+      .nl-tpl-btn.active { background: var(--bg1); color: var(--primary); border-color: var(--primary); font-weight: 700; box-shadow: 0 3px 0 var(--primary); }
     </style>
   `;
 }

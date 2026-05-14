@@ -793,15 +793,16 @@
 
     if (!isAdmin) return next;
 
-    var toolsGroup = next.find(function (group) {
-      return group.key === "tools";
-    });
-    if (!toolsGroup) {
-      toolsGroup = { key: "tools", label: "도구", items: [] };
-      next.push(toolsGroup);
+    // "settings" → "tools" → 마지막 그룹 순으로 찾아서 관리자 페이지 추가
+    var adminTargetGroup = next.find(function (g) { return g.key === "settings"; }) ||
+                           next.find(function (g) { return g.key === "tools"; }) ||
+                           next[next.length - 1];
+    if (!adminTargetGroup) {
+      adminTargetGroup = { key: "settings", label: "설정", items: [] };
+      next.push(adminTargetGroup);
     }
-    if (toolsGroup.items.indexOf(ADMIN_MENU_PAGE.key) < 0) {
-      toolsGroup.items.push(ADMIN_MENU_PAGE.key);
+    if (adminTargetGroup.items.indexOf(ADMIN_MENU_PAGE.key) < 0) {
+      adminTargetGroup.items.push(ADMIN_MENU_PAGE.key);
     }
     return next;
   }

@@ -73,6 +73,12 @@ async function render(container) {
   const classSubjects = parseClassTimetableSubjects(settings.class_timetable_json);
   const versionLabel = buildVersionLabel(appMeta);
   menuConfigState = parseMenuGroups(settings.menu_groups_config);
+  // 구버전 "tools" 그룹 감지 → 즉시 기본값으로 마이그레이션
+  const _hasOldTools = menuConfigState.some((g) => g.key === 'tools' && Array.isArray(g.items) && g.items.length >= 5);
+  if (_hasOldTools) {
+    menuConfigState = cloneMenuGroups(DEFAULT_MENU_GROUPS);
+    scheduleMenuAutosave(); // 변환된 기본값을 DB에 저장
+  }
   shortcutState = parseShortcuts(settings.quick_links_config);
   subjectColorState = parseSubjectColors(settings.class_timetable_subject_colors, classSubjects);
 
