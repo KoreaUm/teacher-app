@@ -59,7 +59,8 @@ const OLLAMA_MODELS = {
   local_basic: 'gemma4:e2b',
   local_pro: 'gemma4:e4b'
 };
-const GOOGLE_CALENDAR_CLIENT_ID = process.env.SSAMPORT_GOOGLE_CLIENT_ID || '';
+// client_id는 공개값이므로 직접 내장 (Desktop 앱 타입 — PKCE 방식, client_secret 불필요)
+const GOOGLE_CALENDAR_CLIENT_ID = process.env.SSAMPORT_GOOGLE_CLIENT_ID || '780135122795-tahcpuhf2unjo4rhuvsnfacb46321uop.apps.googleusercontent.com';
 const GOOGLE_CALENDAR_CLIENT_SECRET = process.env.SSAMPORT_GOOGLE_CLIENT_SECRET || '';
 const GOOGLE_OAUTH_SCOPES = [
   'https://www.googleapis.com/auth/calendar.events',
