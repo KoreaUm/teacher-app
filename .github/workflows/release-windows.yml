@@ -26,9 +26,11 @@ jobs:
         run: npm ci
 
       - name: Inject OAuth client secret
-        run: node -e "require('fs').writeFileSync('oauth-config.js', 'module.exports = { GOOGLE_CALENDAR_CLIENT_SECRET: ' + JSON.stringify(process.env.GCAL_CLIENT_SECRET || '') + ' };\n')"
+        shell: bash
         env:
           GCAL_CLIENT_SECRET: ${{ secrets.GOOGLE_CALENDAR_CLIENT_SECRET }}
+        run: |
+          node -e 'const fs=require("fs"); const s=process.env.GCAL_CLIENT_SECRET||""; fs.writeFileSync("oauth-config.js","module.exports = { GOOGLE_CALENDAR_CLIENT_SECRET: "+JSON.stringify(s)+" };");'
 
       - name: Build and publish Windows installer
         run: npm run release:win
