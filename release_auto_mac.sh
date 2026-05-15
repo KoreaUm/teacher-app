@@ -25,25 +25,36 @@ if ! GIT_TERMINAL_PROMPT=0 git push --dry-run origin "$current_branch" >/dev/nul
 fi
 
 step "현재 버전 확인"
+# 다음 버전은 git 태그와 package.json 중 더 높은 쪽 기준으로 patch +1.
+# (과거 릴리즈가 package.json 버전을 안 올린 적이 있어 package.json만 믿으면 기존 태그와 충돌함)
+GIT_TERMINAL_PROMPT=0 git fetch --tags --quiet origin 2>/dev/null || true
+latest_tag="$(git tag --list 'v*' --sort=-v:refname | head -n 1)"
 current_version="$(node -p "require('./package.json').version")"
-next_version="$(node - <<'NODE'
-const pkg = require('./package.json');
-const parts = String(pkg.version || '').split('.').map(Number);
-if (parts.length !== 3 || parts.some((n) => !Number.isInteger(n))) {
-  throw new Error(`version format must be x.y.z: ${pkg.version}`);
-}
-parts[2] += 1;
-process.stdout.write(parts.join('.'));
+next_version="$(node - "$latest_tag" "$current_version" <<'NODE'
+const parse = (s) => {
+  const parts = String(s || '').replace(/^v/, '').trim().split('.').map(Number);
+  return (parts.length === 3 && parts.every(Number.isInteger)) ? parts : null;
+};
+const tagV = parse(process.argv[2]);
+const pkgV = parse(process.argv[3]);
+if (!pkgV) throw new Error(`package.json version 형식 오류: ${process.argv[3]}`);
+const cmp = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+const base = tagV && cmp(tagV, pkgV) > 0 ? tagV : pkgV;
+process.stdout.write([base[0], base[1], base[2] + 1].join('.'));
 NODE
 )"
-printf "Current version: %s\n" "$current_version"
+printf "Latest tag: %s\n" "${latest_tag:-(none)}"
+printf "package.json version: %s\n" "$current_version"
 printf "Next version: %s\n" "$next_version"
 
 step "package.json / package-lock.json 버전 올리기"
 npm version "$next_version" --no-git-tag-version
 
 step "변경사항 커밋"
-git add --all -- ':!.claude'
+# .claude/ 는 .gitignore에 있어 git add --all로는 스테이징되지 않는다.
+# 단, 과거 worktree gitlink가 tracked로 들어간 적이 있어 만일을 대비해 인덱스에서 제외한다.
+git add --all
+git reset --quiet -- .claude 2>/dev/null || true
 git commit -m "Release v$next_version"
 
 step "브랜치 푸시"
