@@ -204,10 +204,12 @@
       return result;
     });
   };
-  var originalAddTodo = api.addTodo.bind(api);
-  var originalUpdateTodo = api.updateTodo.bind(api);
-  var originalToggleTodo = api.toggleTodo.bind(api);
-  var originalDeleteTodo = api.deleteTodo.bind(api);
+  // *Raw 변형은 Google 동기화를 트리거하지 않는다. 양방향 동기화가 원격 변경을
+  // 로컬에 반영할 때 다시 원격으로 푸시되는 루프를 막기 위해 Raw를 사용한다.
+  var originalAddTodo = (api.addTodoRaw || api.addTodo).bind(api);
+  var originalUpdateTodo = (api.updateTodoRaw || api.updateTodo).bind(api);
+  var originalToggleTodo = (api.toggleTodoRaw || api.toggleTodo).bind(api);
+  var originalDeleteTodo = (api.deleteTodoRaw || api.deleteTodo).bind(api);
   var originalSetTodoGcalId = api.setTodoGcalId.bind(api);
   var originalSetTodoGoogleTaskId = api.setTodoGoogleTaskId ? api.setTodoGoogleTaskId.bind(api) : null;
   var originalSetTimetableCell = api.setTimetableCell.bind(api);

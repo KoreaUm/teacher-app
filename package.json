@@ -1,6 +1,6 @@
 {
   "name": "teacher-app",
-  "version": "2.0.62",
+  "version": "2.0.66",
   "description": "쌤포트 Electron 앱",
   "author": "충상",
   "main": "main.js",
@@ -34,6 +34,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "oauth-config.js",
       "package.json",
       "assets/**/*",
       "src/**/*",

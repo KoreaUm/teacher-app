@@ -1,5 +1,132 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+// ── 할일 → Google Calendar / Tasks 동기화 헬퍼 ──────────────────────────
+// contextBridge로 노출된 window.api는 불변이라 렌더러(index.html)에서
+// api.addTodo를 래핑할 수 없다. 그래서 동기화를 preload 단계에서 수행한다.
+async function googleGetAccessToken() {
+  try {
+    const rt = await ipcRenderer.invoke('get-setting', 'gcal_refresh_token', '');
+    if (!rt) return null;
+    const res = await ipcRenderer.invoke('gcal-refresh-token', rt);
+    return res && res.access_token ? res.access_token : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function normalizeCalendarDate(text) {
+  const raw = String(text || '').replace(/\D/g, '');
+  if (!/^\d{8}$/.test(raw)) return '';
+  return raw.slice(0, 4) + '-' + raw.slice(4, 6) + '-' + raw.slice(6, 8);
+}
+
+function calendarNextDay(date) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return '';
+  const d = new Date(date + 'T00:00:00');
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+function buildTodoCalendarEvent(payload) {
+  const start = normalizeCalendarDate(payload && payload.deadline);
+  if (!start) return null;
+  return {
+    summary: '[할일] ' + String((payload && payload.title) || '쌤포트 할일'),
+    description: [
+      '쌤포트 할일에서 자동 추가됨',
+      payload && payload.priority ? '중요도: ' + payload.priority : '',
+      payload && payload.category ? '카테고리: ' + payload.category : ''
+    ].filter(Boolean).join('\n'),
+    start: { date: start },
+    end: { date: calendarNextDay(start) || start },
+    colorId: payload && payload.priority === '높음' ? '11' : payload && payload.priority === '낮음' ? '2' : '5',
+    reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: 480 }] }
+  };
+}
+
+function buildGoogleTaskPayload(id, payload) {
+  return {
+    id: id,
+    title: (payload && payload.title) || '',
+    deadline: (payload && payload.deadline) || '',
+    priority: (payload && payload.priority) || '보통',
+    category: (payload && payload.category) || '기타',
+    source_text: (payload && payload.source_text) || '',
+    is_done: payload && payload.is_done ? 1 : 0
+  };
+}
+
+async function syncTodoAfterAdd(id, payload) {
+  if (!id) return;
+  const token = await googleGetAccessToken();
+  if (!token) return;
+  const event = buildTodoCalendarEvent(payload);
+  if (event) {
+    try {
+      const created = await ipcRenderer.invoke('gcal-add-event', token, event);
+      if (created && created.id) await ipcRenderer.invoke('set-todo-gcal-id', id, created.id);
+      else if (created && created.error) console.warn('todo gcal add failed', created.error);
+    } catch (e) { console.warn('todo gcal add failed', e); }
+  }
+  try {
+    const created = await ipcRenderer.invoke('gtasks-add-task', token, buildGoogleTaskPayload(id, payload));
+    if (created && created.id) await ipcRenderer.invoke('set-todo-google-task-id', id, created.id);
+    else if (created && created.error) console.warn('todo gtask add failed', created.error);
+  } catch (e) { console.warn('todo gtask add failed', e); }
+}
+
+async function syncTodoAfterUpdate(id, payload) {
+  if (!id) return;
+  const token = await googleGetAccessToken();
+  if (!token) return;
+  try {
+    const eventId = await ipcRenderer.invoke('get-todo-gcal-id', id);
+    const event = buildTodoCalendarEvent(payload);
+    if (!event && eventId) {
+      await ipcRenderer.invoke('gcal-delete-event', token, eventId);
+      await ipcRenderer.invoke('set-todo-gcal-id', id, '');
+    } else if (event && eventId) {
+      await ipcRenderer.invoke('gcal-update-event', token, eventId, event);
+    } else if (event && !eventId) {
+      const created = await ipcRenderer.invoke('gcal-add-event', token, event);
+      if (created && created.id) await ipcRenderer.invoke('set-todo-gcal-id', id, created.id);
+    }
+  } catch (e) { console.warn('todo gcal update failed', e); }
+  try {
+    const taskId = await ipcRenderer.invoke('get-todo-google-task-id', id);
+    if (taskId) {
+      await ipcRenderer.invoke('gtasks-update-task', token, taskId, buildGoogleTaskPayload(id, payload));
+    } else {
+      const created = await ipcRenderer.invoke('gtasks-add-task', token, buildGoogleTaskPayload(id, payload));
+      if (created && created.id) await ipcRenderer.invoke('set-todo-google-task-id', id, created.id);
+    }
+  } catch (e) { console.warn('todo gtask update failed', e); }
+}
+
+async function syncTodoStatus(id, isDone) {
+  if (!id) return;
+  const token = await googleGetAccessToken();
+  if (!token) return;
+  try {
+    const taskId = await ipcRenderer.invoke('get-todo-google-task-id', id);
+    if (taskId) await ipcRenderer.invoke('gtasks-set-status', token, taskId, !!isDone);
+  } catch (e) { console.warn('todo gtask status failed', e); }
+}
+
+async function syncTodoDelete(gcalId, gtaskId) {
+  if (!gcalId && !gtaskId) return;
+  const token = await googleGetAccessToken();
+  if (!token) return;
+  if (gcalId) {
+    try { await ipcRenderer.invoke('gcal-delete-event', token, gcalId); }
+    catch (e) { console.warn('todo gcal delete failed', e); }
+  }
+  if (gtaskId) {
+    try { await ipcRenderer.invoke('gtasks-delete-task', token, gtaskId); }
+    catch (e) { console.warn('todo gtask delete failed', e); }
+  }
+}
+
 contextBridge.exposeInMainWorld('api', {
   // Window
   minimize: () => ipcRenderer.send('window-minimize'),
@@ -102,10 +229,41 @@ contextBridge.exposeInMainWorld('api', {
 
   // Todos
   getTodos: (done) => ipcRenderer.invoke('get-todos', done),
-  addTodo: (d) => ipcRenderer.invoke('add-todo', d),
-  updateTodo: (id, d) => ipcRenderer.invoke('update-todo', id, d),
-  toggleTodo: (id) => ipcRenderer.invoke('toggle-todo', id),
-  deleteTodo: (id) => ipcRenderer.invoke('delete-todo', id),
+  // addTodo/updateTodo/toggleTodo/deleteTodo는 로컬 저장 후 Google 동기화를 트리거한다.
+  // *Raw 변형은 동기화 없이 IPC만 호출 — index.html의 Google Tasks 양방향 동기화가
+  // 원격→로컬 반영 시 다시 원격으로 푸시되는 루프를 막기 위해 사용한다.
+  addTodo: async (d) => {
+    const id = await ipcRenderer.invoke('add-todo', d);
+    syncTodoAfterAdd(id, d);
+    return id;
+  },
+  updateTodo: async (id, d) => {
+    const result = await ipcRenderer.invoke('update-todo', id, d);
+    syncTodoAfterUpdate(id, d);
+    return result;
+  },
+  toggleTodo: async (id) => {
+    const result = await ipcRenderer.invoke('toggle-todo', id);
+    try {
+      const todos = await ipcRenderer.invoke('get-todos', true);
+      const todo = (todos || []).find((t) => Number(t.id) === Number(id));
+      if (todo) syncTodoStatus(id, !!todo.is_done);
+    } catch (_) {}
+    return result;
+  },
+  deleteTodo: async (id) => {
+    let gcalId = '';
+    let gtaskId = '';
+    try { gcalId = await ipcRenderer.invoke('get-todo-gcal-id', id); } catch (_) {}
+    try { gtaskId = await ipcRenderer.invoke('get-todo-google-task-id', id); } catch (_) {}
+    const result = await ipcRenderer.invoke('delete-todo', id);
+    syncTodoDelete(gcalId, gtaskId);
+    return result;
+  },
+  addTodoRaw: (d) => ipcRenderer.invoke('add-todo', d),
+  updateTodoRaw: (id, d) => ipcRenderer.invoke('update-todo', id, d),
+  toggleTodoRaw: (id) => ipcRenderer.invoke('toggle-todo', id),
+  deleteTodoRaw: (id) => ipcRenderer.invoke('delete-todo', id),
   replaceTodos: (items) => ipcRenderer.invoke('replace-todos', items),
   setTodoGcalId: (id, gcalId) => ipcRenderer.invoke('set-todo-gcal-id', id, gcalId),
   getTodoGcalId: (id) => ipcRenderer.invoke('get-todo-gcal-id', id),

@@ -59,9 +59,16 @@ const OLLAMA_MODELS = {
   local_basic: 'gemma4:e2b',
   local_pro: 'gemma4:e4b'
 };
-// Desktop 앱 OAuth — client_id는 공개값, PKCE 방식으로 secret 없이 동작
+// Desktop 앱 OAuth (PKCE + 루프백 리디렉트).
+// 2025년 정책 변경 이후 데스크톱 클라이언트도 토큰 교환 시 client_secret을 요구함.
+// client_secret은 빌드 시 CI가 oauth-config.js에 주입한다(저장소에는 빈 값으로 커밋).
 const GOOGLE_CALENDAR_CLIENT_ID = '780135122795-ldmauftdqlfksb4tfgrmro09b1mguh4f.apps.googleusercontent.com';
-const GOOGLE_CALENDAR_CLIENT_SECRET = '';
+let GOOGLE_CALENDAR_CLIENT_SECRET = '';
+try {
+  GOOGLE_CALENDAR_CLIENT_SECRET = String(require('./oauth-config').GOOGLE_CALENDAR_CLIENT_SECRET || '');
+} catch (_) {
+  GOOGLE_CALENDAR_CLIENT_SECRET = '';
+}
 const GOOGLE_OAUTH_SCOPES = [
   'https://www.googleapis.com/auth/calendar.events',
   'https://www.googleapis.com/auth/tasks'
@@ -114,8 +121,7 @@ function getGoogleCalendarOAuthConfig(fallbackClientId = '', fallbackClientSecre
     String(GOOGLE_CALENDAR_CLIENT_ID || '').trim() ||
     String(fallbackClientId || '').trim() ||
     String(db?.getSetting?.('gcal_client_id', '') || '').trim();
-  // Desktop 앱 + PKCE 방식은 client_secret 불필요.
-  // DB에 남아있는 잘못된 값이 Google 토큰 교환을 막으므로 환경변수만 허용.
+  // client_secret은 앱에 내장된 상수만 사용. DB에 남은 잘못된 값이 토큰 교환을 막을 수 있어 제외.
   const clientSecret = String(GOOGLE_CALENDAR_CLIENT_SECRET || '').trim();
   return { clientId, clientSecret };
 }
