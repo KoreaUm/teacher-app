@@ -50,6 +50,12 @@
       "!node_modules/**/CHANGELOG*",
       "!node_modules/**/LICENSE*"
     ],
+    "extraResources": [
+      {
+        "from": "hwp_engine",
+        "to": "hwp_engine"
+      }
+    ],
     "asar": false,
     "win": {
       "target": "nsis",
