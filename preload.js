@@ -338,4 +338,7 @@ contextBridge.exposeInMainWorld('api', {
   macroStop: () => ipcRenderer.invoke('macro-stop'),
   macroFillEdufineCdp: (cfg) => ipcRenderer.invoke('macro-fill-edufine-cdp', cfg),
   macroDiagnose: (wsUrl) => ipcRenderer.invoke('macro-diagnose', wsUrl),
+
+  // 한글(HWP) 자동 서식
+  hwpApplyFormat: () => ipcRenderer.invoke('hwp-apply-format'),
 });

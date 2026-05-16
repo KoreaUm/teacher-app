@@ -2706,3 +2706,34 @@ ipcMain.handle('macro-fill-edufine-cdp', async (e, { wsUrl, items }) => {
     _macroStopWsUrl = null;
   }
 });
+
+// ── 한글(HWP) 자동 서식 엔진 ─────────────────────────────────────
+ipcMain.handle('hwp-apply-format', async () => {
+  const isDev = !app.isPackaged;
+  const scriptPath = isDev
+    ? path.join(__dirname, 'hwp_engine', 'format_doc.ps1')
+    : path.join(process.resourcesPath, 'hwp_engine', 'format_doc.ps1');
+
+  return await new Promise((resolve) => {
+    const ps = spawn('powershell', [
+      '-ExecutionPolicy', 'Bypass',
+      '-NoProfile',
+      '-File', scriptPath
+    ], { windowsHide: true });
+    let out = '';
+    let err = '';
+    ps.stdout.on('data', d => { out += d.toString(); });
+    ps.stderr.on('data', d => { err += d.toString(); });
+    ps.on('close', () => {
+      try {
+        const parsed = JSON.parse(out.trim());
+        resolve(parsed);
+      } catch {
+        resolve({ ok: false, error: err || out || '알 수 없는 오류' });
+      }
+    });
+    ps.on('error', (e) => {
+      resolve({ ok: false, error: 'PowerShell 실행 실패: ' + e.message });
+    });
+  });
+});
