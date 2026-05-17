@@ -231,22 +231,31 @@ function Set-CharShape($hwp, $font, $sizePt, $bold) {
     $act = $hwp.HAction
     $pset = $hwp.HParameterSet.HCharShape
     $act.GetDefault("CharShape", $pset.HSet) | Out-Null
-    foreach ($attr in $FONT_ATTRS) { $pset.$attr = $font }
-    $pset.Height = $sizePt * 100
-    $pset.Bold = if ($bold) { 1 } else { 0 }
+    foreach ($attr in $FONT_ATTRS) { Try-SetProp $pset $attr $font }
+    Try-SetProp $pset 'Height' ($sizePt * 100)
+    $boldVal = if ($bold) { 1 } else { 0 }
+    Try-SetProp $pset 'Bold' $boldVal
     $act.Execute("CharShape", $pset.HSet) | Out-Null
+}
+
+function Try-SetProp($obj, $name, $value) {
+    try { $obj.$name = $value } catch {}
 }
 
 function Set-ParaShape($hwp, $indent, $line, $align, $spaceBefore=0, $spaceAfter=0) {
     $act = $hwp.HAction
     $pset = $hwp.HParameterSet.HParaShape
     $act.GetDefault("ParagraphShape", $pset.HSet) | Out-Null
-    $pset.Indent = $indent
-    $pset.LineSpacing = $line
-    $pset.LineSpacingType = 0
-    $pset.AlignType = $align
-    if ($pset.PSObject.Properties.Name -contains 'PrevSpacing') { $pset.PrevSpacing = $spaceBefore }
-    if ($pset.PSObject.Properties.Name -contains 'NextSpacing') { $pset.NextSpacing = $spaceAfter }
+
+    # 들여쓰기: Indent는 일부 버전에서만 존재 → LeftMargin 사용 (더 호환성 높음)
+    Try-SetProp $pset 'LeftMargin'      $indent
+    Try-SetProp $pset 'Indent'          0           # 첫 줄 내어쓰기 0
+    Try-SetProp $pset 'LineSpacing'     $line
+    Try-SetProp $pset 'LineSpacingType' 0
+    Try-SetProp $pset 'AlignType'       $align
+    Try-SetProp $pset 'PrevSpacing'     $spaceBefore
+    Try-SetProp $pset 'NextSpacing'     $spaceAfter
+
     $act.Execute("ParagraphShape", $pset.HSet) | Out-Null
 }
 
