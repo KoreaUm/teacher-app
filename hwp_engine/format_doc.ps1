@@ -350,8 +350,83 @@ function Write-EmptyLines($hwp, $count) {
     }
 }
 
+function Insert-Rectangle($hwp, $widthHwpUnit, $heightHwpUnit, $fillRgb) {
+    # 실제 도형(직사각형) 삽입 시도 - 여러 방법 시도
+    # 성공: $true, 실패: $false 반환
+    $methods = @()
+
+    # 방법 1: CreateAction + CreateSet + DrawObjType 패턴 (pyhwpx 스타일)
+    $methods += {
+        param($h, $w, $hgt, $rgb)
+        $action = $h.CreateAction("DrawObjCreator")
+        $pset = $action.CreateSet()
+        $action.GetDefault($pset)
+        $pset.SetItem("DrawObjType", "Rectangle")
+        $pset.SetItem("SizeWidth", $w)
+        $pset.SetItem("SizeHeight", $hgt)
+        $pset.SetItem("FillType", 1)
+        $pset.SetItem("FaceColor", $rgb)
+        $pset.SetItem("LineType", 0)
+        $pset.SetItem("LineColor", 0)
+        $pset.SetItem("LineWidth", 0)
+        $pset.SetItem("TreatAsChar", 1)
+        $action.Execute($pset)
+    }
+
+    # 방법 2: HShapeObject 파라미터셋 직접 조작
+    $methods += {
+        param($h, $w, $hgt, $rgb)
+        $act = $h.HAction
+        $pset = $h.HParameterSet.HShapeObject
+        $act.GetDefault("DrawObjCreator", $pset.HSet)
+        Try-SetProp $pset 'DrawObjType' 'Rectangle'
+        Try-SetProp $pset 'SizeWidth'   $w
+        Try-SetProp $pset 'SizeHeight'  $hgt
+        Try-SetProp $pset 'FillType'    1
+        Try-SetProp $pset 'FaceColor'   $rgb
+        Try-SetProp $pset 'LineType'    0
+        Try-SetProp $pset 'LineColor'   0
+        Try-SetProp $pset 'LineWidth'   0
+        Try-SetProp $pset 'TreatAsChar' 1
+        $act.Execute("DrawObjCreator", $pset.HSet)
+    }
+
+    # 방법 3: HSet.SetItem 직접 사용
+    $methods += {
+        param($h, $w, $hgt, $rgb)
+        $act = $h.HAction
+        $pset = $h.HParameterSet.HShapeObject
+        $act.GetDefault("DrawObjCreator", $pset.HSet)
+        $pset.HSet.SetItem("DrawObjType", "Rectangle")
+        $pset.HSet.SetItem("SizeWidth", $w)
+        $pset.HSet.SetItem("SizeHeight", $hgt)
+        $pset.HSet.SetItem("FillType", 1)
+        $pset.HSet.SetItem("FaceColor", $rgb)
+        $pset.HSet.SetItem("LineWidth", 0)
+        $pset.HSet.SetItem("TreatAsChar", 1)
+        $act.Execute("DrawObjCreator", $pset.HSet)
+    }
+
+    foreach ($method in $methods) {
+        try {
+            & $method $hwp $widthHwpUnit $heightHwpUnit $fillRgb
+            # 성공 시 다음 줄로 이동
+            Safe-Run $hwp "BreakPara"
+            return $true
+        } catch {
+            continue
+        }
+    }
+    return $false
+}
+
 function Write-ColorBar($hwp, $rgb, $heightHwpUnit=400) {
-    # 가로 컬러 막대: 1x1 표 + 배경색, 테두리 없음
+    # 1차 시도: 진짜 도형(직사각형) 삽입
+    $widthHwp = 36000
+    $shapeOk = Insert-Rectangle $hwp $widthHwp $heightHwpUnit $rgb
+    if ($shapeOk) { return }
+
+    # 2차 폴백: 1x1 표에 배경색 (안정적)
     try {
         $act = $hwp.HAction
         $pset = $hwp.HParameterSet.HTableCreation
@@ -364,19 +439,16 @@ function Write-ColorBar($hwp, $rgb, $heightHwpUnit=400) {
         Try-SetProp $pset 'HeightValue' $heightHwpUnit
         try { $act.Execute("TableCreate", $pset.HSet) | Out-Null } catch {}
 
-        # 셀 선택 후 채우기/테두리 설정
         Safe-Run $hwp "TableSelTable"
         $act2 = $hwp.HAction
         $pset2 = $hwp.HParameterSet.HCellBorderFill
         $act2.GetDefault("CellBorderFill", $pset2.HSet) | Out-Null
 
-        # 채우기 (여러 속성명 시도)
         foreach ($p in 'HasFill','UseFill') { Try-SetProp $pset2 $p $true }
         Try-SetProp $pset2 'FillType' 1
         foreach ($p in 'ColorFillFG','ColorFG','ColorFill1','FaceColor','Color','BackColor') {
             Try-SetProp $pset2 $p $rgb
         }
-        # 테두리 제거 (없음 = 0)
         foreach ($dir in 'BorderTypeLeft','BorderTypeRight','BorderTypeTop','BorderTypeBottom','BorderTypeInsideHorz','BorderTypeInsideVert') {
             Try-SetProp $pset2 $dir 0
         }
