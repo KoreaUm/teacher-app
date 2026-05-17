@@ -23,12 +23,61 @@ function Write-Result($obj) {
     Write-Output ($obj | ConvertTo-Json -Compress)
 }
 
-# 한글 COM 연결
-try {
-    $hwp = [System.Runtime.InteropServices.Marshal]::GetActiveObject("HWPFrame.HwpObject")
-} catch {
-    Write-Result @{ ok = $false; error = "한글 프로그램이 열려있지 않습니다. 한글을 먼저 실행하고 문서를 여세요." }
+# 한글 COM 연결 (여러 방법 시도)
+$hwp = $null
+$connectErrors = @()
+
+# 시도 1: GetActiveObject (ROT 등록된 인스턴스)
+foreach ($progId in @("HWPFrame.HwpObject", "HWPFrame.HwpObject.1", "Hwp.Application")) {
+    try {
+        $hwp = [System.Runtime.InteropServices.Marshal]::GetActiveObject($progId)
+        if ($hwp) { break }
+    } catch {
+        $connectErrors += "GetActiveObject($progId): $($_.Exception.Message)"
+    }
+}
+
+# 시도 2: New-Object (HWP 2018+ 는 ROT 미등록이라 이걸로 attach)
+if (-not $hwp) {
+    foreach ($progId in @("HWPFrame.HwpObject", "HWPFrame.HwpObject.1")) {
+        try {
+            $hwp = New-Object -ComObject $progId
+            if ($hwp) { break }
+        } catch {
+            $connectErrors += "New-Object($progId): $($_.Exception.Message)"
+        }
+    }
+}
+
+if (-not $hwp) {
+    Write-Result @{ ok = $false; error = "한글 COM 연결 실패. 한글 프로그램이 설치되어 있는지 확인하세요.`n상세: $($connectErrors -join '; ')" }
     exit 1
+}
+
+# 보안 모듈 등록 (한글 자동화 보안 팝업 우회)
+try {
+    $hwp.RegisterModule("FilePathCheckerModuleExample", "FilePathCheckerModule") | Out-Null
+} catch {
+    # 등록 실패해도 계속 진행 (이미 등록되어 있을 수 있음)
+}
+
+# 창 보이기 (New-Object로 생성된 경우)
+try {
+    if ($hwp.XHwpWindows.Count -gt 0) {
+        $hwp.XHwpWindows.Item(0).Visible = $true
+    }
+} catch {}
+
+# 문서가 비어있는지 확인 (New-Object로 새 인스턴스가 생성된 경우)
+try {
+    $docCount = 0
+    if ($hwp.XHwpDocuments) { $docCount = $hwp.XHwpDocuments.Count }
+    if ($docCount -eq 0) {
+        Write-Result @{ ok = $false; error = "한글에 열린 문서가 없습니다. 한글에서 텍스트가 작성된 문서를 먼저 열어주세요." }
+        exit 1
+    }
+} catch {
+    # XHwpDocuments 가 없는 구형 버전에서는 그냥 진행
 }
 
 # 문서 텍스트 읽기
