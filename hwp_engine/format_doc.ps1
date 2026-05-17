@@ -74,11 +74,46 @@ try {
     }
 } catch {}
 
-# 문서 텍스트 읽기
+# 문서 텍스트 읽기 (여러 인코딩 시도)
+$rawText = $null
 try {
     $tmp = [System.IO.Path]::GetTempFileName() + ".txt"
     $hwp.SaveAs($tmp, "TEXT", "") | Out-Null
-    $rawText = [System.IO.File]::ReadAllText($tmp, [System.Text.Encoding]::UTF8)
+
+    # 바이트 단위로 읽고 BOM/내용 확인 후 적절한 인코딩 선택
+    $bytes = [System.IO.File]::ReadAllBytes($tmp)
+
+    if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+        # UTF-8 BOM
+        $rawText = [System.Text.Encoding]::UTF8.GetString($bytes, 3, $bytes.Length - 3)
+    }
+    elseif ($bytes.Length -ge 2 -and $bytes[0] -eq 0xFF -and $bytes[1] -eq 0xFE) {
+        # UTF-16 LE BOM
+        $rawText = [System.Text.Encoding]::Unicode.GetString($bytes, 2, $bytes.Length - 2)
+    }
+    elseif ($bytes.Length -ge 2 -and $bytes[0] -eq 0xFE -and $bytes[1] -eq 0xFF) {
+        # UTF-16 BE BOM
+        $rawText = [System.Text.Encoding]::BigEndianUnicode.GetString($bytes, 2, $bytes.Length - 2)
+    }
+    else {
+        # BOM 없음: UTF-8 → CP949(EUC-KR) 순으로 시도
+        $tryUtf8 = [System.Text.Encoding]::UTF8.GetString($bytes)
+        # 한글이 포함되어 있고 깨진 문자(U+FFFD)가 적으면 UTF-8 채택
+        $replacementCount = ([regex]::Matches($tryUtf8, "�")).Count
+        $hasKorean = $tryUtf8 -match '[가-힣]'
+        if ($hasKorean -and $replacementCount -lt 5) {
+            $rawText = $tryUtf8
+        } else {
+            # CP949 시도
+            try {
+                $cp949 = [System.Text.Encoding]::GetEncoding(949)
+                $rawText = $cp949.GetString($bytes)
+            } catch {
+                $rawText = $tryUtf8  # 최후 수단
+            }
+        }
+    }
+
     Remove-Item $tmp -ErrorAction SilentlyContinue
 } catch {
     Write-Result @{ ok = $false; error = "문서 읽기 실패: $_" }
@@ -228,14 +263,16 @@ $STYLE = @{
 $FONT_ATTRS = @('FaceNameHangul','FaceNameLatin','FaceNameHanja','FaceNameJapanese','FaceNameOther','FaceNameSymbol','FaceNameUser')
 
 function Set-CharShape($hwp, $font, $sizePt, $bold) {
-    $act = $hwp.HAction
-    $pset = $hwp.HParameterSet.HCharShape
-    $act.GetDefault("CharShape", $pset.HSet) | Out-Null
-    foreach ($attr in $FONT_ATTRS) { Try-SetProp $pset $attr $font }
-    Try-SetProp $pset 'Height' ($sizePt * 100)
-    $boldVal = if ($bold) { 1 } else { 0 }
-    Try-SetProp $pset 'Bold' $boldVal
-    $act.Execute("CharShape", $pset.HSet) | Out-Null
+    try {
+        $act = $hwp.HAction
+        $pset = $hwp.HParameterSet.HCharShape
+        $act.GetDefault("CharShape", $pset.HSet) | Out-Null
+        foreach ($attr in $FONT_ATTRS) { Try-SetProp $pset $attr $font }
+        Try-SetProp $pset 'Height' ($sizePt * 100)
+        $boldVal = if ($bold) { 1 } else { 0 }
+        Try-SetProp $pset 'Bold' $boldVal
+        try { $act.Execute("CharShape", $pset.HSet) | Out-Null } catch {}
+    } catch {}
 }
 
 function Try-SetProp($obj, $name, $value) {
@@ -243,84 +280,126 @@ function Try-SetProp($obj, $name, $value) {
 }
 
 function Set-ParaShape($hwp, $indent, $line, $align, $spaceBefore=0, $spaceAfter=0) {
-    $act = $hwp.HAction
-    $pset = $hwp.HParameterSet.HParaShape
-    $act.GetDefault("ParagraphShape", $pset.HSet) | Out-Null
+    try {
+        $act = $hwp.HAction
+        $pset = $hwp.HParameterSet.HParaShape
+        $act.GetDefault("ParagraphShape", $pset.HSet) | Out-Null
 
-    # 들여쓰기: Indent는 일부 버전에서만 존재 → LeftMargin 사용 (더 호환성 높음)
-    Try-SetProp $pset 'LeftMargin'      $indent
-    Try-SetProp $pset 'Indent'          0           # 첫 줄 내어쓰기 0
-    Try-SetProp $pset 'LineSpacing'     $line
-    Try-SetProp $pset 'LineSpacingType' 0
-    Try-SetProp $pset 'AlignType'       $align
-    Try-SetProp $pset 'PrevSpacing'     $spaceBefore
-    Try-SetProp $pset 'NextSpacing'     $spaceAfter
+        # 들여쓰기: Indent는 일부 버전에서만 존재 → LeftMargin 사용
+        Try-SetProp $pset 'LeftMargin'      $indent
+        Try-SetProp $pset 'Indent'          0
+        Try-SetProp $pset 'LineSpacing'     $line
+        Try-SetProp $pset 'LineSpacingType' 0
+        Try-SetProp $pset 'AlignType'       $align
+        Try-SetProp $pset 'PrevSpacing'     $spaceBefore
+        Try-SetProp $pset 'NextSpacing'     $spaceAfter
 
-    $act.Execute("ParagraphShape", $pset.HSet) | Out-Null
+        try { $act.Execute("ParagraphShape", $pset.HSet) | Out-Null } catch {}
+    } catch {}
 }
 
 function Insert-Text($hwp, $text) {
-    $act = $hwp.HAction
-    $pset = $hwp.HParameterSet.HInsertText
-    $act.GetDefault("InsertText", $pset.HSet) | Out-Null
-    $pset.Text = $text
-    $act.Execute("InsertText", $pset.HSet) | Out-Null
+    try {
+        $act = $hwp.HAction
+        $pset = $hwp.HParameterSet.HInsertText
+        $act.GetDefault("InsertText", $pset.HSet) | Out-Null
+        Try-SetProp $pset 'Text' ([string]$text)
+        try { $act.Execute("InsertText", $pset.HSet) | Out-Null } catch {}
+    } catch {}
 }
 
 function Write-StyledPara($hwp, $text, $s) {
-    Set-ParaShape $hwp $s.indent $s.line $s.align $s.spaceBefore $s.spaceAfter
-    Set-CharShape $hwp $s.font $s.size $s.bold
-    Insert-Text $hwp $text
-    $hwp.HAction.Run("BreakPara") | Out-Null
+    try {
+        Set-ParaShape $hwp $s.indent $s.line $s.align $s.spaceBefore $s.spaceAfter
+        Set-CharShape $hwp $s.font $s.size $s.bold
+        Insert-Text $hwp $text
+        Safe-Run $hwp "BreakPara"
+    } catch {}
+}
+
+function Safe-Run($hwp, $cmd) {
+    try { $hwp.HAction.Run($cmd) | Out-Null } catch {}
 }
 
 function Write-Table($hwp, $rows) {
     $numRows = $rows.Count
+    if ($numRows -eq 0) { return }
     $numCols = ($rows[0]).Count
-    if ($numRows -eq 0 -or $numCols -eq 0) { return }
+    if ($numCols -eq 0) { return }
 
-    $act = $hwp.HAction
-    $pset = $hwp.HParameterSet.HTableCreation
-    $act.GetDefault("TableCreate", $pset.HSet) | Out-Null
-    $pset.Rows = $numRows
-    $pset.Cols = $numCols
-    $pset.WidthType = 0
-    $pset.HeightType = 1
-    $pset.CreateItemArray("ColWidth", $numCols) | Out-Null
-    $colW = [int](8000 / $numCols)
-    for ($c = 0; $c -lt $numCols; $c++) { $pset.ColWidth.SetItem($c, $colW) | Out-Null }
-    $pset.CreateItemArray("RowHeight", $numRows) | Out-Null
-    for ($r = 0; $r -lt $numRows; $r++) { $pset.RowHeight.SetItem($r, 1000) | Out-Null }
-    $act.Execute("TableCreate", $pset.HSet) | Out-Null
+    # 표 생성 시도
+    $tableCreated = $false
+    try {
+        $act = $hwp.HAction
+        $pset = $hwp.HParameterSet.HTableCreation
+        $act.GetDefault("TableCreate", $pset.HSet) | Out-Null
+        Try-SetProp $pset 'Rows'       $numRows
+        Try-SetProp $pset 'Cols'       $numCols
+        Try-SetProp $pset 'WidthType'  2     # 2 = 본문 너비에 맞춤 (auto)
+        Try-SetProp $pset 'HeightType' 0     # 0 = 자동
+        # ColWidth/RowHeight 배열은 일부 버전에서 SetItem 없음 → try/catch
+        try {
+            $pset.CreateItemArray("ColWidth", $numCols) | Out-Null
+            $colW = [int](8000 / $numCols)
+            for ($c = 0; $c -lt $numCols; $c++) {
+                try { $pset.ColWidth.SetItem($c, $colW) | Out-Null } catch {}
+            }
+        } catch {}
+        try {
+            $pset.CreateItemArray("RowHeight", $numRows) | Out-Null
+            for ($r = 0; $r -lt $numRows; $r++) {
+                try { $pset.RowHeight.SetItem($r, 1000) | Out-Null } catch {}
+            }
+        } catch {}
 
-    for ($r = 0; $r -lt $numRows; $r++) {
-        for ($c = 0; $c -lt $numCols; $c++) {
-            $isHeader = ($r -eq 0)
-            $cellStyle = if ($isHeader) { $STYLE.TH } else { $STYLE.TD }
-            $cellText = if ($c -lt $rows[$r].Count) { $rows[$r][$c] } else { "" }
+        $act.Execute("TableCreate", $pset.HSet) | Out-Null
+        $tableCreated = $true
+    } catch {
+        # 표 생성 자체 실패 → 텍스트 폴백
+    }
 
-            Set-CharShape $hwp $cellStyle.font $cellStyle.size $cellStyle.bold
-            Set-ParaShape $hwp 0 150 $cellStyle.align 0 0
-            Insert-Text $hwp $cellText
+    if ($tableCreated) {
+        # 셀 채우기
+        for ($r = 0; $r -lt $numRows; $r++) {
+            for ($c = 0; $c -lt $numCols; $c++) {
+                $cellStyle = if ($r -eq 0) { $STYLE.TH } else { $STYLE.TD }
+                $cellText = if ($c -lt $rows[$r].Count) { [string]$rows[$r][$c] } else { "" }
 
-            if (-not ($r -eq ($numRows-1) -and $c -eq ($numCols-1))) {
-                $hwp.HAction.Run("TableRightCell") | Out-Null
+                Set-CharShape $hwp $cellStyle.font $cellStyle.size $cellStyle.bold
+                Set-ParaShape $hwp 0 150 $cellStyle.align 0 0
+                try { Insert-Text $hwp $cellText } catch {}
+
+                if (-not ($r -eq ($numRows-1) -and $c -eq ($numCols-1))) {
+                    Safe-Run $hwp "TableRightCell"
+                }
             }
         }
+        Safe-Run $hwp "CloseEx"
+        Safe-Run $hwp "MoveDocEnd"
+        Safe-Run $hwp "BreakPara"
+    } else {
+        # 폴백: 표를 탭 구분 텍스트로 출력
+        for ($r = 0; $r -lt $numRows; $r++) {
+            $cellStyle = if ($r -eq 0) { $STYLE.TH } else { $STYLE.TD }
+            $line = ($rows[$r] -join "  |  ")
+            Set-CharShape $hwp $cellStyle.font $cellStyle.size $cellStyle.bold
+            Set-ParaShape $hwp 400 170 0 0 0
+            try { Insert-Text $hwp $line } catch {}
+            Safe-Run $hwp "BreakPara"
+        }
     }
-    $hwp.HAction.Run("CloseEx") | Out-Null
-    $hwp.HAction.Run("MoveDocEnd") | Out-Null
-    $hwp.HAction.Run("BreakPara") | Out-Null
 }
 
 # ── 5단계: 문서 지우고 다시 쓰기 ────────────────────────────────
-try {
-    $hwp.HAction.Run("MoveDocBegin") | Out-Null
-    $hwp.HAction.Run("SelectAll") | Out-Null
-    $hwp.HAction.Run("Delete") | Out-Null
-    $hwp.HAction.Run("MoveDocBegin") | Out-Null
+Safe-Run $hwp "MoveDocBegin"
+Safe-Run $hwp "SelectAll"
+Safe-Run $hwp "Delete"
+Safe-Run $hwp "MoveDocBegin"
 
-    foreach ($node in $nodes) {
+$errors = @()
+$processed = 0
+foreach ($node in $nodes) {
+    try {
         switch ($node.kind) {
             'heading' {
                 $key = "H$($node.level)"
@@ -334,22 +413,43 @@ try {
             'body'        { Write-StyledPara $hwp $node.text $STYLE.BODY }
             'table'       { Write-Table $hwp $node.rows }
         }
-    }
-
-    $hwp.HAction.Run("MoveDocBegin") | Out-Null
-
-    # 파일 저장 (원본 형식 그대로)
-    try {
-        $saveFormat = if ($ext -eq '.hwpx') { "HWPX" } else { "HWP" }
-        $hwp.SaveAs($AbsPath, $saveFormat, "") | Out-Null
+        $processed++
     } catch {
-        Write-Result @{ ok = $false; error = "저장 실패: $_" }
-        exit 1
+        $errors += "[$($node.kind)] $($_.Exception.Message)"
     }
-
-    $topLevelName = if ($topIsRoman) { 'Roman' } else { 'Number' }
-    Write-Result @{ ok = $true; blocks = $nodes.Count; topLevel = $topLevelName; savedTo = $AbsPath }
-} catch {
-    Write-Result @{ ok = $false; error = "서식 적용 중 오류: $_" }
-    exit 1
 }
+
+Safe-Run $hwp "MoveDocBegin"
+
+# 파일 저장 (원본 형식 그대로) - 실패해도 끝까지 시도
+$saved = $false
+try {
+    $saveFormat = if ($ext -eq '.hwpx') { "HWPX" } else { "HWP" }
+    $hwp.SaveAs($AbsPath, $saveFormat, "") | Out-Null
+    $saved = $true
+} catch {
+    # HWP로 재시도
+    try {
+        $hwp.SaveAs($AbsPath, "HWP", "") | Out-Null
+        $saved = $true
+    } catch {
+        $errors += "저장 실패: $($_.Exception.Message)"
+    }
+}
+
+$topLevelName = if ($topIsRoman) { 'Roman' } else { 'Number' }
+$resultObj = @{
+    ok = $saved
+    blocks = $processed
+    totalBlocks = $nodes.Count
+    topLevel = $topLevelName
+    savedTo = $AbsPath
+}
+if ($errors.Count -gt 0) {
+    $resultObj.warnings = $errors
+}
+if (-not $saved) {
+    $resultObj.error = "파일을 저장하지 못했습니다."
+}
+Write-Result $resultObj
+if (-not $saved) { exit 1 }
