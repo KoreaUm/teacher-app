@@ -20,31 +20,46 @@ function render(container) {
         </ol>
       </div>
 
-      <!-- 자동 감지 스타일 안내 -->
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:20px">
-        <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center">
-          <div style="font-size:20px;margin-bottom:6px">1️⃣</div>
-          <div style="font-size:12px;font-weight:600">대제목 자동 감지</div>
-          <div style="font-size:11px;color:var(--text2);margin-top:4px">예: <code>1. 목적</code></div>
-          <div style="font-size:11px;color:var(--text2)">HY헤드라인M · 15pt · 굵게</div>
+      <!-- 한국 공문서 표준 항목 표시 체계 안내 -->
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:20px">
+        <div style="font-weight:600;margin-bottom:10px;font-size:13px">📐 한국 공문서 표준 항목 표시 체계</div>
+        <div style="font-size:12px;color:var(--text2);line-height:1.9">
+          행정안전부 공문서 작성 기준에 따라 다음 순서로 자동 인식합니다:<br>
+          <code>Ⅰ.</code> → <code>1.</code> → <code>가.</code> → <code>1)</code> → <code>가)</code> → <code>(1)</code> → <code>◦</code> → <code>-</code>
+          <br><br>
+          <b>자동 레벨 감지:</b> 문서에 <code>Ⅰ</code>이 있으면 <code>Ⅰ</code>이 대제목, <code>1.</code>이 중제목이 됩니다.
+          <code>Ⅰ</code>이 없으면 <code>1.</code>이 자동으로 대제목이 됩니다.
         </div>
-        <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center">
-          <div style="font-size:20px;margin-bottom:6px">🅰️</div>
-          <div style="font-size:12px;font-weight:600">소제목 자동 감지</div>
-          <div style="font-size:11px;color:var(--text2);margin-top:4px">예: <code>가. 방침</code></div>
-          <div style="font-size:11px;color:var(--text2)">HY견고딕 · 12pt</div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:20px">
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px">
+          <div style="font-size:12px;font-weight:600;margin-bottom:4px">🔤 표제목 자동 적용</div>
+          <div style="font-size:11px;color:var(--text2);line-height:1.6">
+            함초롬돋움 · Bold<br>
+            레벨별 크기 자동 조정
+          </div>
         </div>
-        <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center">
-          <div style="font-size:20px;margin-bottom:6px">📝</div>
-          <div style="font-size:12px;font-weight:600">본문 자동 감지</div>
-          <div style="font-size:11px;color:var(--text2);margin-top:4px">일반 텍스트</div>
-          <div style="font-size:11px;color:var(--text2)">맑은고딕 · 10pt</div>
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px">
+          <div style="font-size:12px;font-weight:600;margin-bottom:4px">📝 본문 자동 적용</div>
+          <div style="font-size:11px;color:var(--text2);line-height:1.6">
+            함초롬바탕 11pt<br>
+            줄간격 170%, 들여쓰기 자동
+          </div>
         </div>
-        <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center">
-          <div style="font-size:20px;margin-bottom:6px">📊</div>
-          <div style="font-size:12px;font-weight:600">표 자동 감지</div>
-          <div style="font-size:11px;color:var(--text2);margin-top:4px">열이 여러 개인 행</div>
-          <div style="font-size:11px;color:var(--text2)">한글 표로 자동 변환</div>
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px">
+          <div style="font-size:12px;font-weight:600;margin-bottom:4px">💡 강조/참고 인식</div>
+          <div style="font-size:11px;color:var(--text2);line-height:1.6">
+            <code>▪</code> 강조 · Bold<br>
+            <code>※</code> 참고 · 작게
+          </div>
+        </div>
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px">
+          <div style="font-size:12px;font-weight:600;margin-bottom:4px">📊 표 자동 생성</div>
+          <div style="font-size:11px;color:var(--text2);line-height:1.6">
+            탭 또는 2칸+ 공백으로<br>
+            구분된 행을 표로 변환
+          </div>
         </div>
       </div>
 
@@ -54,18 +69,19 @@ function render(container) {
           💡 입력 예시 보기 / 숨기기
         </button>
         <div id="hwpf-example" style="display:none;margin-top:12px">
-          <pre style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px;font-size:12px;line-height:1.8;overflow-x:auto;white-space:pre-wrap">1. 목적
+          <pre style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px;font-size:12px;line-height:1.8;overflow-x:auto;white-space:pre-wrap">Ⅰ. 개요
+1. 목적
 가. 학생 간부들의 리더십 및 공동체 의식을 함양한다.
 나. 학생자치활동의 활성화 및 학교 문화 개선 방안을 모색한다.
 
 2. 방침
 가. 학생 중심의 참여형 프로그램으로 운영한다.
+◦ 외부 강사와 협력하여 전문성을 확보한다.
+▪ 안전 관리 강화
+※ 사전 안전교육 필수
 
-3. 개요
-행사명 : 2026학년도 학생 간부수련회
-일시 : 2026년 ○월 ○일
-
-4. 세부 일정
+Ⅱ. 세부 계획
+1. 일정
 시간  내용  비고
 08:30 ~ 09:00  집결 및 출석 확인  학교 운동장
 09:00 ~ 12:00  팀빌딩 활동  강당</pre>
