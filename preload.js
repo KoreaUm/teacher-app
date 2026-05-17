@@ -340,6 +340,5 @@ contextBridge.exposeInMainWorld('api', {
   macroDiagnose: (wsUrl) => ipcRenderer.invoke('macro-diagnose', wsUrl),
 
   // 한글(HWP) 자동 서식
-  hwpApplyFormat: (cfg) => ipcRenderer.invoke('hwp-apply-format', cfg),
-  hwpPickLogo: () => ipcRenderer.invoke('hwp-pick-logo'),
+  hwpApplyFormat: () => ipcRenderer.invoke('hwp-apply-format'),
 });

@@ -1,126 +1,92 @@
 (function () {
 'use strict';
 
-var SETTINGS_KEY = 'hwp_formatter_settings';
-
-async function loadSettings() {
-  var raw = await api.getSetting(SETTINGS_KEY, '');
-  try { return raw ? JSON.parse(raw) : {}; } catch (_) { return {}; }
-}
-
-async function saveSettings(cfg) {
-  await api.setSetting(SETTINGS_KEY, JSON.stringify(cfg));
-}
-
 function escapeHtml(s) {
   return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-function shortPath(p) {
-  if (!p) return '';
-  var parts = String(p).split(/[\\/]/);
-  return parts[parts.length - 1] || p;
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 async function render(container) {
-  var cfg = await loadSettings();
-
   container.innerHTML = `
     <div class="page-wrap">
       <div class="page-header">
         <h1 class="page-header-title">📄 한글 자동 서식</h1>
-        <p class="page-header-desc">학교 공문서 양식으로 자동 변환 (표지 + 본문 포맷)</p>
+        <p class="page-header-desc">ChatGPT/Claude 마크다운이나 일반 텍스트를 한국 공문서 서식으로 자동 변환</p>
       </div>
 
-      <!-- 사용법 -->
+      <!-- 워크플로우 안내 -->
+      <div style="background:linear-gradient(135deg,#e0e7ff,#f3e8ff);border-radius:12px;padding:18px;margin-bottom:18px">
+        <div style="font-weight:600;margin-bottom:10px;font-size:14px">💡 추천 워크플로우</div>
+        <div style="display:flex;gap:12px;align-items:center;font-size:12px;color:#4b5563;flex-wrap:wrap">
+          <div style="background:#fff;padding:8px 14px;border-radius:20px;border:1px solid #c7d2fe">1️⃣ ChatGPT/Claude에 마크다운으로 받기</div>
+          <span>→</span>
+          <div style="background:#fff;padding:8px 14px;border-radius:20px;border:1px solid #c7d2fe">2️⃣ 한글에 붙여넣고 저장</div>
+          <span>→</span>
+          <div style="background:#fff;padding:8px 14px;border-radius:20px;border:1px solid #c7d2fe">3️⃣ 쌤포트에서 서식 적용</div>
+          <span>→</span>
+          <div style="background:#fff;padding:8px 14px;border-radius:20px;border:1px solid #c7d2fe">4️⃣ 깔끔한 공문서 완성</div>
+        </div>
+      </div>
+
+      <!-- 지원 구문 -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px">
+        <!-- 마크다운 -->
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px">
+          <div style="font-weight:600;font-size:13px;margin-bottom:10px;color:#7c3aed">📝 마크다운 구문 (AI 출력 그대로)</div>
+          <pre style="background:#f9fafb;border-radius:6px;padding:10px;font-size:11px;line-height:1.6;margin:0;overflow-x:auto;color:#1f2937"># 대제목
+## 중제목
+### 소제목
+- 글머리 항목
+  - 하위 항목
+**굵게**
+
+| 시간 | 활동 |
+|------|------|
+| 09:00 | 집결 |</pre>
+        </div>
+
+        <!-- 한국 공문 -->
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px">
+          <div style="font-weight:600;font-size:13px;margin-bottom:10px;color:#0891b2">📋 한국 공문 표시 체계</div>
+          <pre style="background:#f9fafb;border-radius:6px;padding:10px;font-size:11px;line-height:1.6;margin:0;overflow-x:auto;color:#1f2937">Ⅰ. 대제목 (또는 # )
+1. 중제목 (또는 ##)
+가. 소제목 (또는 ###)
+1) 항
+가) 호
+(1) 목
+◦ 글머리
+- 하위
+▪ 강조
+※ 참고</pre>
+        </div>
+      </div>
+
+      <!-- 자동 적용되는 것들 -->
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:18px">
+        <div style="font-weight:600;margin-bottom:12px;font-size:14px">✨ 자동으로 적용되는 서식</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;font-size:12px;color:var(--text2)">
+          <div>📐 <b>위계 자동 감지</b><br>Ⅰ 있으면 대제목, 없으면 1.이 대제목</div>
+          <div>🔤 <b>폰트 일괄 통일</b><br>제목: HY견고딕/HY헤드라인M<br>본문: 맑은고딕</div>
+          <div>📏 <b>들여쓰기 자동</b><br>레벨에 맞춰 정확한 들여쓰기</div>
+          <div>📊 <b>표 자동 서식</b><br>테두리 + 헤더 행 강조</div>
+          <div>📝 <b>줄간격 170%</b><br>공문서 표준</div>
+          <div>🧹 <b>마크다운 정리</b><br>**굵게** 마커 자동 제거</div>
+        </div>
+      </div>
+
+      <!-- 사용 순서 -->
       <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:18px">
         <div style="font-weight:600;margin-bottom:10px;font-size:14px">📋 사용 순서</div>
         <ol style="margin:0;padding-left:20px;line-height:2;color:var(--text2);font-size:13px">
-          <li>한글에서 문서 작성 (첫 줄에 <b>문서 제목</b>)</li>
-          <li><b>Ctrl+S</b>로 저장하고 한글을 <b>완전히 종료</b></li>
+          <li>한글에서 텍스트 작성 (마크다운 또는 한국 공문 형식)</li>
+          <li><b>Ctrl+S</b>로 .hwp 또는 .hwpx 저장</li>
+          <li>한글 프로그램 <b>완전 종료</b> (파일 잠금 방지)</li>
           <li>아래 <b>서식 적용</b> 클릭 → 저장한 파일 선택</li>
-          <li>표지 + 본문 서식 자동 적용 후 한글에서 결과 확인</li>
+          <li>한글에서 결과 확인 (자동 열림)</li>
         </ol>
       </div>
 
-      <!-- 표지 설정 -->
-      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:18px">
-        <div style="font-weight:600;margin-bottom:14px;font-size:14px">🎨 표지 페이지 설정</div>
-
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
-          <!-- 좌측 상단 로고 -->
-          <div>
-            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">좌측 상단 로고</label>
-            <div style="display:flex;gap:6px">
-              <input type="text" id="hwpf-logo-left" class="input" readonly placeholder="선택 안 함"
-                value="${escapeHtml(shortPath(cfg.logoLeft))}"
-                data-fullpath="${escapeHtml(cfg.logoLeft || '')}"
-                style="flex:1;font-size:12px;padding:6px 8px">
-              <button class="btn btn-secondary btn-sm" data-pick="logoLeft">선택</button>
-              <button class="btn btn-secondary btn-sm" data-clear="logoLeft">✕</button>
-            </div>
-          </div>
-
-          <!-- 우측 상단 로고 -->
-          <div>
-            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">우측 상단 로고</label>
-            <div style="display:flex;gap:6px">
-              <input type="text" id="hwpf-logo-right" class="input" readonly placeholder="선택 안 함"
-                value="${escapeHtml(shortPath(cfg.logoRight))}"
-                data-fullpath="${escapeHtml(cfg.logoRight || '')}"
-                style="flex:1;font-size:12px;padding:6px 8px">
-              <button class="btn btn-secondary btn-sm" data-pick="logoRight">선택</button>
-              <button class="btn btn-secondary btn-sm" data-clear="logoRight">✕</button>
-            </div>
-          </div>
-
-          <!-- 하단 로고 -->
-          <div>
-            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">하단 중앙 로고 (예: 교육청)</label>
-            <div style="display:flex;gap:6px">
-              <input type="text" id="hwpf-logo-bottom" class="input" readonly placeholder="선택 안 함"
-                value="${escapeHtml(shortPath(cfg.logoBottom))}"
-                data-fullpath="${escapeHtml(cfg.logoBottom || '')}"
-                style="flex:1;font-size:12px;padding:6px 8px">
-              <button class="btn btn-secondary btn-sm" data-pick="logoBottom">선택</button>
-              <button class="btn btn-secondary btn-sm" data-clear="logoBottom">✕</button>
-            </div>
-          </div>
-
-          <!-- 컬러 막대 색상 -->
-          <div>
-            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">컬러 막대</label>
-            <div style="display:flex;gap:8px;align-items:center">
-              <input type="color" id="hwpf-bar1" value="${escapeHtml(cfg.barColor1Hex || '#E8B4D6')}" style="width:40px;height:32px;border:1px solid var(--border);border-radius:6px;padding:2px">
-              <input type="color" id="hwpf-bar2" value="${escapeHtml(cfg.barColor2Hex || '#C0CCE6')}" style="width:40px;height:32px;border:1px solid var(--border);border-radius:6px;padding:2px">
-              <span style="font-size:11px;color:var(--text2)">2가지 색 막대</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- 기관명/부서명 -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-          <div>
-            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">기관명 (예: ○○고등학교)</label>
-            <input type="text" id="hwpf-org" class="input" placeholder="○○학교" value="${escapeHtml(cfg.orgName || '')}" style="width:100%;font-size:12px;padding:6px 8px">
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--text2);display:block;margin-bottom:4px">부서명 (예: 학생부)</label>
-            <input type="text" id="hwpf-dept" class="input" placeholder="(생략 가능)" value="${escapeHtml(cfg.deptName || '')}" style="width:100%;font-size:12px;padding:6px 8px">
-          </div>
-        </div>
-
-        <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
-          <button class="btn btn-secondary btn-sm" id="hwpf-save-cfg">💾 설정 저장</button>
-          <span id="hwpf-save-status" style="font-size:12px;color:var(--accent)"></span>
-        </div>
-      </div>
-
-      <!-- 메인 실행 버튼 -->
+      <!-- 메인 버튼 -->
       <div style="display:flex;flex-direction:column;align-items:center;gap:14px;padding:28px;background:var(--card);border:2px solid var(--border);border-radius:16px;margin-bottom:18px">
         <div id="hwpf-status-icon" style="font-size:44px">📄</div>
         <div id="hwpf-status-text" style="font-size:13px;color:var(--text2);text-align:center">
@@ -137,90 +103,25 @@ async function render(container) {
       <!-- 결과 -->
       <div id="hwpf-result" style="display:none;margin-bottom:18px"></div>
 
-      <!-- 주의사항 -->
+      <!-- 주의 -->
       <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:12px;color:var(--text2)">
         <div style="font-weight:600;color:var(--text1);margin-bottom:6px">⚠️ 주의</div>
         <ul style="margin:0;padding-left:18px;line-height:1.9">
           <li>Windows + 한글(HWP) 2018+ 필요</li>
           <li>적용 전 한글 프로그램 완전 종료</li>
-          <li>첫 줄(문서 제목)이 표지로 사용됨</li>
-          <li>로고는 PNG/JPG 권장 (투명 배경)</li>
+          <li>기존 서식은 모두 초기화되고 새로 적용됨 (Ctrl+Z로 한글에서 되돌리기 가능)</li>
+          <li>표지 페이지 자동 생성은 제거됨 (양식 파일 직접 활용 권장)</li>
         </ul>
       </div>
     </div>
   `;
 
-  // 로고 선택 핸들러
-  container.querySelectorAll('[data-pick]').forEach(function (btn) {
-    btn.addEventListener('click', async function () {
-      var key = btn.getAttribute('data-pick');
-      var r = await window.api.hwpPickLogo();
-      if (r && r.ok && r.path) {
-        var input = container.querySelector('#hwpf-logo-' + key.replace('logo', '').toLowerCase());
-        if (input) {
-          input.value = shortPath(r.path);
-          input.setAttribute('data-fullpath', r.path);
-        }
-      }
-    });
-  });
-
-  // 로고 제거
-  container.querySelectorAll('[data-clear]').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      var key = btn.getAttribute('data-clear');
-      var input = container.querySelector('#hwpf-logo-' + key.replace('logo', '').toLowerCase());
-      if (input) {
-        input.value = '';
-        input.setAttribute('data-fullpath', '');
-      }
-    });
-  });
-
-  // 설정 저장
-  function collectCfg() {
-    var hex1 = container.querySelector('#hwpf-bar1').value;
-    var hex2 = container.querySelector('#hwpf-bar2').value;
-    return {
-      logoLeft:   container.querySelector('#hwpf-logo-left').getAttribute('data-fullpath') || '',
-      logoRight:  container.querySelector('#hwpf-logo-right').getAttribute('data-fullpath') || '',
-      logoBottom: container.querySelector('#hwpf-logo-bottom').getAttribute('data-fullpath') || '',
-      orgName:    container.querySelector('#hwpf-org').value.trim(),
-      deptName:   container.querySelector('#hwpf-dept').value.trim(),
-      barColor1Hex: hex1,
-      barColor2Hex: hex2,
-      barColor1: hexToRgbString(hex1),
-      barColor2: hexToRgbString(hex2),
-    };
-  }
-
-  function hexToRgbString(hex) {
-    var h = (hex || '').replace('#', '');
-    if (h.length !== 6) return '232,180,214';
-    return [
-      parseInt(h.substring(0, 2), 16),
-      parseInt(h.substring(2, 4), 16),
-      parseInt(h.substring(4, 6), 16)
-    ].join(',');
-  }
-
-  container.querySelector('#hwpf-save-cfg').addEventListener('click', async function () {
-    await saveSettings(collectCfg());
-    var st = container.querySelector('#hwpf-save-status');
-    st.textContent = '저장됨 ✓';
-    setTimeout(function () { st.textContent = ''; }, 2000);
-  });
-
-  // 메인 적용 버튼
   container.querySelector('#hwpf-apply-btn').addEventListener('click', async function () {
     var btn     = container.querySelector('#hwpf-apply-btn');
     var spinner = container.querySelector('#hwpf-spinner');
     var icon    = container.querySelector('#hwpf-status-icon');
     var statusText = container.querySelector('#hwpf-status-text');
     var resultDiv  = container.querySelector('#hwpf-result');
-
-    var currentCfg = collectCfg();
-    await saveSettings(currentCfg);   // 항상 최신 설정 저장
 
     btn.disabled = true;
     spinner.style.display = 'block';
@@ -229,15 +130,20 @@ async function render(container) {
     statusText.textContent = '파일을 열어 서식을 적용하는 중...';
 
     try {
-      var result = await window.api.hwpApplyFormat(currentCfg);
+      var result = await window.api.hwpApplyFormat();
 
       if (result && result.ok) {
         icon.textContent = '✅';
         statusText.textContent = '서식 적용 완료!';
+        var typeLabel = {
+          'markdown': '마크다운',
+          'korean-roman': '한국 공문 (Ⅰ 기준)',
+          'korean-num': '한국 공문 (1. 기준)'
+        }[result.inputType] || '자동 감지';
         resultDiv.style.display = 'block';
         resultDiv.innerHTML = `
           <div style="background:#d1fae5;border:1px solid #6ee7b7;border-radius:10px;padding:14px;font-size:13px;color:#065f46">
-            <b>✅ 완료!</b> ${result.blocks}개 단락/표 처리됨.
+            <b>✅ 완료!</b> ${result.blocks}개 단락/표 처리됨 (입력 형식: ${escapeHtml(typeLabel)})
             ${result.warnings && result.warnings.length ? '<br><span style="font-size:11px">⚠ ' + result.warnings.length + '개 경고</span>' : ''}
           </div>`;
       } else if (result && result.canceled) {

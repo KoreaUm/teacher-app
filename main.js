@@ -2707,23 +2707,8 @@ ipcMain.handle('macro-fill-edufine-cdp', async (e, { wsUrl, items }) => {
   }
 });
 
-// ── 한글(HWP) 자동 서식: 이미지(로고) 파일 선택 ──────────────────
-ipcMain.handle('hwp-pick-logo', async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    title: '로고 이미지 선택',
-    properties: ['openFile'],
-    filters: [
-      { name: '이미지 파일', extensions: ['png', 'jpg', 'jpeg', 'bmp', 'gif'] },
-      { name: '모든 파일', extensions: ['*'] }
-    ]
-  });
-  if (result.canceled || !result.filePaths.length) return { canceled: true };
-  return { ok: true, path: result.filePaths[0] };
-});
-
 // ── 한글(HWP) 자동 서식 엔진 ─────────────────────────────────────
-ipcMain.handle('hwp-apply-format', async (_evt, cfg = {}) => {
-  // 1. 파일 선택 다이얼로그
+ipcMain.handle('hwp-apply-format', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: '서식을 적용할 한글 문서를 선택하세요',
     properties: ['openFile'],
@@ -2744,23 +2729,13 @@ ipcMain.handle('hwp-apply-format', async (_evt, cfg = {}) => {
     ? path.join(__dirname, 'hwp_engine', 'format_doc.ps1')
     : path.join(process.resourcesPath, 'hwp_engine', 'format_doc.ps1');
 
-  // 설정값을 PowerShell 인자로 변환 (빈 값은 ""로)
-  const args = [
-    '-ExecutionPolicy', 'Bypass',
-    '-NoProfile',
-    '-File', scriptPath,
-    '-FilePath', filePath,
-  ];
-  if (cfg.logoLeft)   args.push('-LogoLeft',   cfg.logoLeft);
-  if (cfg.logoRight)  args.push('-LogoRight',  cfg.logoRight);
-  if (cfg.logoBottom) args.push('-LogoBottom', cfg.logoBottom);
-  if (cfg.orgName)    args.push('-OrgName',    cfg.orgName);
-  if (cfg.deptName)   args.push('-DeptName',   cfg.deptName);
-  if (cfg.barColor1)  args.push('-BarColor1',  cfg.barColor1);
-  if (cfg.barColor2)  args.push('-BarColor2',  cfg.barColor2);
-
   return await new Promise((resolve) => {
-    const ps = spawn('powershell', args, { windowsHide: true });
+    const ps = spawn('powershell', [
+      '-ExecutionPolicy', 'Bypass',
+      '-NoProfile',
+      '-File', scriptPath,
+      '-FilePath', filePath
+    ], { windowsHide: true });
     let out = '';
     let err = '';
     ps.stdout.on('data', d => { out += d.toString(); });
