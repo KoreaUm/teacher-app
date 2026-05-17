@@ -19,7 +19,14 @@
 param(
     [Parameter(Mandatory=$true)]
     [string]$FilePath,
-    [string]$TemplatePath = ""
+    [string]$TemplatePath = "",
+    [string]$LogoLeft = "",
+    [string]$LogoRight = "",
+    [string]$LogoBottom = "",
+    [string]$OrgName = "",
+    [string]$DeptName = "",
+    [string]$BarColor1 = "232,180,214",
+    [string]$BarColor2 = "192,204,230"
 )
 
 $OutputEncoding = [System.Text.Encoding]::UTF8
@@ -325,6 +332,179 @@ function Safe-Run($hwp, $cmd) {
     try { $hwp.HAction.Run($cmd) | Out-Null } catch {}
 }
 
+# ─── 표지 페이지 헬퍼 ─────────────────────────────────────────
+function Parse-RGB($rgbStr) {
+    # "R,G,B" 형식 → BGR 정수 (HWP는 BGR 사용)
+    $parts = $rgbStr -split ','
+    if ($parts.Count -lt 3) { return 0 }
+    $r = [int]$parts[0]
+    $g = [int]$parts[1]
+    $b = [int]$parts[2]
+    return ($b * 65536) + ($g * 256) + $r
+}
+
+function Write-EmptyLines($hwp, $count) {
+    $s = @{ font='함초롬바탕'; size=11; bold=$false; indent=0; line=170; align=0; spaceBefore=0; spaceAfter=0 }
+    for ($i=0; $i -lt $count; $i++) {
+        Write-StyledPara $hwp '' $s
+    }
+}
+
+function Write-ColorBar($hwp, $rgb, $heightHwpUnit=400) {
+    # 가로 컬러 막대: 1x1 표 + 배경색, 테두리 없음
+    try {
+        $act = $hwp.HAction
+        $pset = $hwp.HParameterSet.HTableCreation
+        $act.GetDefault("TableCreate", $pset.HSet) | Out-Null
+        Try-SetProp $pset 'Rows' 1
+        Try-SetProp $pset 'Cols' 1
+        Try-SetProp $pset 'WidthType' 0
+        Try-SetProp $pset 'WidthValue' 36000
+        Try-SetProp $pset 'HeightType' 0
+        Try-SetProp $pset 'HeightValue' $heightHwpUnit
+        try { $act.Execute("TableCreate", $pset.HSet) | Out-Null } catch {}
+
+        # 셀 선택 후 채우기/테두리 설정
+        Safe-Run $hwp "TableSelTable"
+        $act2 = $hwp.HAction
+        $pset2 = $hwp.HParameterSet.HCellBorderFill
+        $act2.GetDefault("CellBorderFill", $pset2.HSet) | Out-Null
+
+        # 채우기 (여러 속성명 시도)
+        foreach ($p in 'HasFill','UseFill') { Try-SetProp $pset2 $p $true }
+        Try-SetProp $pset2 'FillType' 1
+        foreach ($p in 'ColorFillFG','ColorFG','ColorFill1','FaceColor','Color','BackColor') {
+            Try-SetProp $pset2 $p $rgb
+        }
+        # 테두리 제거 (없음 = 0)
+        foreach ($dir in 'BorderTypeLeft','BorderTypeRight','BorderTypeTop','BorderTypeBottom','BorderTypeInsideHorz','BorderTypeInsideVert') {
+            Try-SetProp $pset2 $dir 0
+        }
+        try { $act2.Execute("CellBorderFill", $pset2.HSet) | Out-Null } catch {}
+
+        Safe-Run $hwp "CloseEx"
+        Safe-Run $hwp "MoveDocEnd"
+    } catch {}
+}
+
+function Insert-CenteredPicture($hwp, $imagePath) {
+    if (-not $imagePath -or -not (Test-Path -LiteralPath $imagePath)) { return $false }
+    try {
+        $absImg = (Resolve-Path -LiteralPath $imagePath).Path
+        Set-ParaShape $hwp 0 170 1 0 0    # 가운데 정렬
+        $act = $hwp.HAction
+        $pset = $hwp.HParameterSet.HInsertPicture
+        $act.GetDefault("InsertPicture", $pset.HSet) | Out-Null
+        Try-SetProp $pset 'Path' $absImg
+        Try-SetProp $pset 'Embedded' 1
+        Try-SetProp $pset 'sizeoption' 2    # 자동 크기
+        Try-SetProp $pset 'KeepRatio' $true
+        try { $act.Execute("InsertPicture", $pset.HSet) | Out-Null } catch {}
+        Safe-Run $hwp "MoveDocEnd"
+        Safe-Run $hwp "BreakPara"
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+function Write-CoverPage($hwp, $title, $orgName, $deptName, $logoLeft, $logoRight, $logoBottom, $rgb1, $rgb2) {
+    # 상단 여백
+    Write-EmptyLines $hwp 2
+
+    # 상단 로고 (좌+우): 둘 다 있으면 1x2 표, 하나만 있으면 가운데
+    $hasLeft = ($logoLeft -and (Test-Path -LiteralPath $logoLeft))
+    $hasRight = ($logoRight -and (Test-Path -LiteralPath $logoRight))
+    if ($hasLeft -and $hasRight) {
+        # 1x2 표
+        try {
+            $act = $hwp.HAction
+            $pset = $hwp.HParameterSet.HTableCreation
+            $act.GetDefault("TableCreate", $pset.HSet) | Out-Null
+            Try-SetProp $pset 'Rows' 1
+            Try-SetProp $pset 'Cols' 2
+            Try-SetProp $pset 'WidthType' 0
+            Try-SetProp $pset 'WidthValue' 36000
+            Try-SetProp $pset 'HeightType' 0
+            try { $act.Execute("TableCreate", $pset.HSet) | Out-Null } catch {}
+
+            Insert-CenteredPicture $hwp $logoLeft
+            Safe-Run $hwp "TableRightCell"
+            Insert-CenteredPicture $hwp $logoRight
+
+            # 표 테두리 제거
+            Safe-Run $hwp "TableSelTable"
+            $act2 = $hwp.HAction
+            $pset2 = $hwp.HParameterSet.HCellBorderFill
+            $act2.GetDefault("CellBorderFill", $pset2.HSet) | Out-Null
+            foreach ($dir in 'BorderTypeLeft','BorderTypeRight','BorderTypeTop','BorderTypeBottom','BorderTypeInsideHorz','BorderTypeInsideVert') {
+                Try-SetProp $pset2 $dir 0
+            }
+            try { $act2.Execute("CellBorderFill", $pset2.HSet) | Out-Null } catch {}
+
+            Safe-Run $hwp "CloseEx"
+            Safe-Run $hwp "MoveDocEnd"
+            Safe-Run $hwp "BreakPara"
+        } catch {}
+    } elseif ($hasLeft) {
+        Insert-CenteredPicture $hwp $logoLeft
+    } elseif ($hasRight) {
+        Insert-CenteredPicture $hwp $logoRight
+    }
+
+    Write-EmptyLines $hwp 2
+
+    # 위쪽 컬러 막대 (2줄)
+    Write-ColorBar $hwp $rgb1 400
+    Write-ColorBar $hwp $rgb2 400
+
+    # 제목 위 여백
+    Write-EmptyLines $hwp 2
+
+    # 큰 가운데 제목
+    $titleStyle = @{ font='HY헤드라인M'; size=26; bold=$true; indent=0; line=200; align=1; spaceBefore=0; spaceAfter=0 }
+    Write-StyledPara $hwp $title $titleStyle
+
+    # 제목 아래 여백
+    Write-EmptyLines $hwp 2
+
+    # 아래 컬러 막대 (2줄, 색 반전)
+    Write-ColorBar $hwp $rgb2 400
+    Write-ColorBar $hwp $rgb1 400
+
+    # 큰 빈 공간
+    Write-EmptyLines $hwp 10
+
+    # 날짜
+    $year = (Get-Date).Year
+    $month = (Get-Date).Month
+    $date = "${year}. ${month}."
+    $dateStyle = @{ font='HY헤드라인M'; size=18; bold=$true; indent=0; line=180; align=1; spaceBefore=0; spaceAfter=0 }
+    Write-StyledPara $hwp $date $dateStyle
+
+    Write-EmptyLines $hwp 3
+
+    # 하단 로고
+    if ($logoBottom -and (Test-Path -LiteralPath $logoBottom)) {
+        Insert-CenteredPicture $hwp $logoBottom
+    }
+
+    # 기관명
+    if ($orgName) {
+        $orgStyle = @{ font='HY헤드라인M'; size=16; bold=$true; indent=0; line=180; align=1; spaceBefore=0; spaceAfter=0 }
+        Write-StyledPara $hwp $orgName $orgStyle
+    }
+
+    # 부서명 (대괄호)
+    if ($deptName) {
+        $deptStyle = @{ font='HY견고딕'; size=14; bold=$true; indent=0; line=180; align=1; spaceBefore=0; spaceAfter=0 }
+        Write-StyledPara $hwp "[ $deptName ]" $deptStyle
+    }
+
+    # 페이지 나누기
+    Safe-Run $hwp "BreakPage"
+}
+
 function Write-Table($hwp, $rows) {
     $numRows = $rows.Count
     if ($numRows -eq 0) { return }
@@ -460,35 +640,15 @@ Safe-Run $hwp "MoveDocBegin"
 
 # 첫 노드가 BODY(짧은 제목)면 표지 페이지로 처리
 $hasCoverPage = $false
+$skipFirst = $false
 if ($nodes.Count -gt 0 -and $nodes[0].kind -eq 'body' -and $nodes[0].text.Length -lt 60) {
     $title = $nodes[0].text
-    # 표지: 위쪽 여백을 위한 빈 줄 8개
-    $emptyStyle = @{ font='함초롬바탕'; size=11; bold=$false; indent=0; line=170; align=0; spaceBefore=0; spaceAfter=0 }
-    for ($i=0; $i -lt 8; $i++) {
-        Write-StyledPara $hwp '' $emptyStyle
-    }
-    # 큰 제목 (가운데 정렬)
-    $titleStyle = @{ font='HY헤드라인M'; size=26; bold=$true; indent=0; line=200; align=1; spaceBefore=0; spaceAfter=0 }
-    Write-StyledPara $hwp $title $titleStyle
-    # 아래 여백
-    for ($i=0; $i -lt 3; $i++) {
-        Write-StyledPara $hwp '' $emptyStyle
-    }
-    # 부제: 작성일 (현재 연도 ○월)
-    $year = (Get-Date).Year
-    $subStyle = @{ font='함초롬돋움'; size=14; bold=$false; indent=0; line=180; align=1; spaceBefore=0; spaceAfter=0 }
-    Write-StyledPara $hwp "$year. ○." $subStyle
-    Write-StyledPara $hwp '' $emptyStyle
-    # 학교/부서명 (사용자가 채울 자리)
-    $orgStyle = @{ font='함초롬돋움'; size=16; bold=$true; indent=0; line=180; align=1; spaceBefore=0; spaceAfter=0 }
-    Write-StyledPara $hwp '○○학교' $orgStyle
-    # 페이지 나누기
-    Safe-Run $hwp "BreakPage"
+    $rgb1 = Parse-RGB $BarColor1
+    $rgb2 = Parse-RGB $BarColor2
+    $orgFallback = if ($OrgName) { $OrgName } else { '○○학교' }
+    Write-CoverPage $hwp $title $orgFallback $DeptName $LogoLeft $LogoRight $LogoBottom $rgb1 $rgb2
     $hasCoverPage = $true
-    # 첫 노드(제목)는 본문에서 제외하기 위해 skip 카운트
     $skipFirst = $true
-} else {
-    $skipFirst = $false
 }
 
 $errors = @()
