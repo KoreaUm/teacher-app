@@ -126,27 +126,8 @@ if ([string]::IsNullOrWhiteSpace($rawText)) {
     exit 1
 }
 
-# ── 양식 베이스 열기 (있으면) ──────────────────────────────────────
-# 사용자 파일을 닫고 양식.hwpx를 베이스로 열어 페이지 설정/스타일/머리말 상속
-$usingTemplate = $false
-if ($TemplatePath -and (Test-Path -LiteralPath $TemplatePath)) {
-    try {
-        # 사용자 파일 닫기 (저장 안 함)
-        try {
-            $hwp.HAction.Run("FileClose") | Out-Null
-        } catch {
-            # FileClose 실패 시 Clear로 대체
-            try { $hwp.Clear(1) | Out-Null } catch {}
-        }
-        # 양식 베이스 열기
-        $absTemplate = (Resolve-Path -LiteralPath $TemplatePath).Path
-        $hwp.Open($absTemplate, "HWPX", "") | Out-Null
-        $usingTemplate = $true
-    } catch {
-        # 베이스 열기 실패해도 사용자 파일에 직접 처리
-        $usingTemplate = $false
-    }
-}
+# 양식.hwpx 베이스 사용은 표지/도형 잔존 문제로 비활성화
+# 사용자 파일을 그대로 사용
 
 # ── 1단계: 라인 분류 ─────────────────────────────────────────
 $lines = $rawText -split "`r?`n"
