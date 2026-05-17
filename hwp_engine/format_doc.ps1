@@ -332,27 +332,46 @@ function Write-Table($hwp, $rows) {
     if ($numCols -eq 0) { return }
 
     # 표 생성 시도
+    # 본문 너비 약 36000 HWPUNIT (A4 본문 폭 ≈ 150mm × 283 = 42450, 안전 35000)
+    $totalWidth = 36000
+    $colW = [int]($totalWidth / $numCols)
+    $rowH = 1500
+
     $tableCreated = $false
     try {
         $act = $hwp.HAction
         $pset = $hwp.HParameterSet.HTableCreation
         $act.GetDefault("TableCreate", $pset.HSet) | Out-Null
-        Try-SetProp $pset 'Rows'       $numRows
-        Try-SetProp $pset 'Cols'       $numCols
-        Try-SetProp $pset 'WidthType'  2     # 2 = 본문 너비에 맞춤 (auto)
-        Try-SetProp $pset 'HeightType' 0     # 0 = 자동
-        # ColWidth/RowHeight 배열은 일부 버전에서 SetItem 없음 → try/catch
+        Try-SetProp $pset 'Rows'        $numRows
+        Try-SetProp $pset 'Cols'        $numCols
+        Try-SetProp $pset 'WidthType'   0           # 0 = 절대값 (HWPUNIT)
+        Try-SetProp $pset 'HeightType'  0           # 0 = 자동
+        Try-SetProp $pset 'WidthValue'  $totalWidth
+        Try-SetProp $pset 'HeightValue' ($rowH * $numRows)
+
+        # ColWidth/RowHeight 배열 채우기 (여러 방법 시도)
+        $arrayOk = $false
         try {
             $pset.CreateItemArray("ColWidth", $numCols) | Out-Null
-            $colW = [int](8000 / $numCols)
             for ($c = 0; $c -lt $numCols; $c++) {
-                try { $pset.ColWidth.SetItem($c, $colW) | Out-Null } catch {}
+                $set = $false
+                # 방법1: SetItem
+                try { $pset.ColWidth.SetItem($c, $colW); $set = $true } catch {}
+                # 방법2: Item indexer
+                if (-not $set) { try { $pset.ColWidth.Item($c) = $colW; $set = $true } catch {} }
+                # 방법3: 직접 indexer
+                if (-not $set) { try { $pset.ColWidth[$c] = $colW; $set = $true } catch {} }
             }
+            $arrayOk = $true
         } catch {}
         try {
             $pset.CreateItemArray("RowHeight", $numRows) | Out-Null
             for ($r = 0; $r -lt $numRows; $r++) {
-                try { $pset.RowHeight.SetItem($r, 1000) | Out-Null } catch {}
+                try { $pset.RowHeight.SetItem($r, $rowH) | Out-Null } catch {
+                    try { $pset.RowHeight.Item($r) = $rowH } catch {
+                        try { $pset.RowHeight[$r] = $rowH } catch {}
+                    }
+                }
             }
         } catch {}
 
@@ -439,9 +458,45 @@ Safe-Run $hwp "SelectAll"
 Safe-Run $hwp "Delete"
 Safe-Run $hwp "MoveDocBegin"
 
+# 첫 노드가 BODY(짧은 제목)면 표지 페이지로 처리
+$hasCoverPage = $false
+if ($nodes.Count -gt 0 -and $nodes[0].kind -eq 'body' -and $nodes[0].text.Length -lt 60) {
+    $title = $nodes[0].text
+    # 표지: 위쪽 여백을 위한 빈 줄 8개
+    $emptyStyle = @{ font='함초롬바탕'; size=11; bold=$false; indent=0; line=170; align=0; spaceBefore=0; spaceAfter=0 }
+    for ($i=0; $i -lt 8; $i++) {
+        Write-StyledPara $hwp '' $emptyStyle
+    }
+    # 큰 제목 (가운데 정렬)
+    $titleStyle = @{ font='HY헤드라인M'; size=26; bold=$true; indent=0; line=200; align=1; spaceBefore=0; spaceAfter=0 }
+    Write-StyledPara $hwp $title $titleStyle
+    # 아래 여백
+    for ($i=0; $i -lt 3; $i++) {
+        Write-StyledPara $hwp '' $emptyStyle
+    }
+    # 부제: 작성일 (현재 연도 ○월)
+    $year = (Get-Date).Year
+    $subStyle = @{ font='함초롬돋움'; size=14; bold=$false; indent=0; line=180; align=1; spaceBefore=0; spaceAfter=0 }
+    Write-StyledPara $hwp "$year. ○." $subStyle
+    Write-StyledPara $hwp '' $emptyStyle
+    # 학교/부서명 (사용자가 채울 자리)
+    $orgStyle = @{ font='함초롬돋움'; size=16; bold=$true; indent=0; line=180; align=1; spaceBefore=0; spaceAfter=0 }
+    Write-StyledPara $hwp '○○학교' $orgStyle
+    # 페이지 나누기
+    Safe-Run $hwp "BreakPage"
+    $hasCoverPage = $true
+    # 첫 노드(제목)는 본문에서 제외하기 위해 skip 카운트
+    $skipFirst = $true
+} else {
+    $skipFirst = $false
+}
+
 $errors = @()
 $processed = 0
+$nodeIndex = -1
 foreach ($node in $nodes) {
+    $nodeIndex++
+    if ($skipFirst -and $nodeIndex -eq 0) { continue }
     try {
         switch ($node.kind) {
             'heading' {
