@@ -18,7 +18,8 @@
 
 param(
     [Parameter(Mandatory=$true)]
-    [string]$FilePath
+    [string]$FilePath,
+    [string]$TemplatePath = ""
 )
 
 $OutputEncoding = [System.Text.Encoding]::UTF8
@@ -57,7 +58,7 @@ try {
     $hwp.RegisterModule("FilePathCheckerModuleExample", "FilePathCheckerModule") | Out-Null
 } catch {}
 
-# 파일 열기
+# 파일 열기 (사용자 파일에서 텍스트 읽기 위해)
 try {
     $ext = [System.IO.Path]::GetExtension($AbsPath).ToLower()
     $format = if ($ext -eq '.hwpx') { "HWPX" } else { "HWP" }
@@ -123,6 +124,28 @@ try {
 if ([string]::IsNullOrWhiteSpace($rawText)) {
     Write-Result @{ ok = $false; error = "문서가 비어있습니다." }
     exit 1
+}
+
+# ── 양식 베이스 열기 (있으면) ──────────────────────────────────────
+# 사용자 파일을 닫고 양식.hwpx를 베이스로 열어 페이지 설정/스타일/머리말 상속
+$usingTemplate = $false
+if ($TemplatePath -and (Test-Path -LiteralPath $TemplatePath)) {
+    try {
+        # 사용자 파일 닫기 (저장 안 함)
+        try {
+            $hwp.HAction.Run("FileClose") | Out-Null
+        } catch {
+            # FileClose 실패 시 Clear로 대체
+            try { $hwp.Clear(1) | Out-Null } catch {}
+        }
+        # 양식 베이스 열기
+        $absTemplate = (Resolve-Path -LiteralPath $TemplatePath).Path
+        $hwp.Open($absTemplate, "HWPX", "") | Out-Null
+        $usingTemplate = $true
+    } catch {
+        # 베이스 열기 실패해도 사용자 파일에 직접 처리
+        $usingTemplate = $false
+    }
 }
 
 # ── 1단계: 라인 분류 ─────────────────────────────────────────
@@ -374,6 +397,45 @@ function Write-Table($hwp, $rows) {
                 }
             }
         }
+
+        # 표 전체 선택 후 테두리 적용
+        try {
+            # 첫 셀로 이동
+            Safe-Run $hwp "TableColBegin"
+            Safe-Run $hwp "TableSelTable"
+            # 모든 테두리 적용
+            $act = $hwp.HAction
+            $pset = $hwp.HParameterSet.HCellBorderFill
+            $act.GetDefault("CellBorderFill", $pset.HSet) | Out-Null
+            Try-SetProp $pset 'HasBorder' $true
+            # 모든 방향 테두리 설정
+            foreach ($dir in 'BorderTypeLeft','BorderTypeRight','BorderTypeTop','BorderTypeBottom','BorderTypeInsideHorz','BorderTypeInsideVert') {
+                Try-SetProp $pset $dir 1   # 1 = 실선
+            }
+            foreach ($w in 'BorderWidthLeft','BorderWidthRight','BorderWidthTop','BorderWidthBottom','BorderWidthInsideHorz','BorderWidthInsideVert') {
+                Try-SetProp $pset $w 3     # 가는 선
+            }
+            foreach ($col in 'BorderColorLeft','BorderColorRight','BorderColorTop','BorderColorBottom','BorderColorInsideHorz','BorderColorInsideVert') {
+                Try-SetProp $pset $col 0   # 검정
+            }
+            try { $act.Execute("CellBorderFill", $pset.HSet) | Out-Null } catch {}
+        } catch {}
+
+        # 헤더 행(첫 행) 배경색 적용
+        try {
+            Safe-Run $hwp "TableColBegin"   # 첫 셀로
+            Safe-Run $hwp "TableSelRow"     # 첫 행 선택
+            $act2 = $hwp.HAction
+            $pset2 = $hwp.HParameterSet.HCellBorderFill
+            $act2.GetDefault("CellBorderFill", $pset2.HSet) | Out-Null
+            Try-SetProp $pset2 'HasFill' $true
+            Try-SetProp $pset2 'FillColorR' 230
+            Try-SetProp $pset2 'FillColorG' 230
+            Try-SetProp $pset2 'FillColorB' 230
+            try { $act2.Execute("CellBorderFill", $pset2.HSet) | Out-Null } catch {}
+        } catch {}
+
+        # 표 밖으로 나가기
         Safe-Run $hwp "CloseEx"
         Safe-Run $hwp "MoveDocEnd"
         Safe-Run $hwp "BreakPara"
@@ -420,6 +482,17 @@ foreach ($node in $nodes) {
 }
 
 Safe-Run $hwp "MoveDocBegin"
+
+# 쪽번호 자동 삽입 (양식 베이스에 이미 있으면 중복될 수 있어 try만)
+try {
+    $act = $hwp.HAction
+    $pset = $hwp.HParameterSet.HPageNumPosition
+    $act.GetDefault("PageNumPos", $pset.HSet) | Out-Null
+    Try-SetProp $pset 'Pos' 7              # 7 = 가운데 아래
+    Try-SetProp $pset 'NumberFormat' 0     # 0 = 1, 2, 3
+    Try-SetProp $pset 'SideChar' 1         # 1 = "- 1 -" 형식
+    try { $act.Execute("PageNumPos", $pset.HSet) | Out-Null } catch {}
+} catch {}
 
 # 파일 저장 (원본 형식 그대로) - 실패해도 끝까지 시도
 $saved = $false

@@ -2729,13 +2729,17 @@ ipcMain.handle('hwp-apply-format', async () => {
   const scriptPath = isDev
     ? path.join(__dirname, 'hwp_engine', 'format_doc.ps1')
     : path.join(process.resourcesPath, 'hwp_engine', 'format_doc.ps1');
+  const templatePath = isDev
+    ? path.join(__dirname, 'hwp_engine', 'template.hwpx')
+    : path.join(process.resourcesPath, 'hwp_engine', 'template.hwpx');
 
   return await new Promise((resolve) => {
     const ps = spawn('powershell', [
       '-ExecutionPolicy', 'Bypass',
       '-NoProfile',
       '-File', scriptPath,
-      '-FilePath', filePath
+      '-FilePath', filePath,
+      '-TemplatePath', templatePath
     ], { windowsHide: true });
     let out = '';
     let err = '';
