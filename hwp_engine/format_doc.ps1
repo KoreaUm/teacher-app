@@ -16,6 +16,11 @@
 # 자동 레벨 감지: 문서에 Ⅰ가 있으면 Ⅰ=L1, 1.=L2, 가.=L3
 #               Ⅰ가 없으면 1.=L1, 가.=L2
 
+param(
+    [Parameter(Mandatory=$true)]
+    [string]$FilePath
+)
+
 $OutputEncoding = [System.Text.Encoding]::UTF8
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
@@ -23,29 +28,22 @@ function Write-Result($obj) {
     Write-Output ($obj | ConvertTo-Json -Compress)
 }
 
-# 한글 COM 연결 (여러 방법 시도)
+# 파일 존재 확인
+if (-not (Test-Path -LiteralPath $FilePath)) {
+    Write-Result @{ ok = $false; error = "파일을 찾을 수 없습니다: $FilePath" }
+    exit 1
+}
+$AbsPath = (Resolve-Path -LiteralPath $FilePath).Path
+
+# 한글 COM 인스턴스 생성 (New-Object로 새 인스턴스 만들기)
 $hwp = $null
 $connectErrors = @()
-
-# 시도 1: GetActiveObject (ROT 등록된 인스턴스)
-foreach ($progId in @("HWPFrame.HwpObject", "HWPFrame.HwpObject.1", "Hwp.Application")) {
+foreach ($progId in @("HWPFrame.HwpObject", "HWPFrame.HwpObject.1")) {
     try {
-        $hwp = [System.Runtime.InteropServices.Marshal]::GetActiveObject($progId)
+        $hwp = New-Object -ComObject $progId
         if ($hwp) { break }
     } catch {
-        $connectErrors += "GetActiveObject($progId): $($_.Exception.Message)"
-    }
-}
-
-# 시도 2: New-Object (HWP 2018+ 는 ROT 미등록이라 이걸로 attach)
-if (-not $hwp) {
-    foreach ($progId in @("HWPFrame.HwpObject", "HWPFrame.HwpObject.1")) {
-        try {
-            $hwp = New-Object -ComObject $progId
-            if ($hwp) { break }
-        } catch {
-            $connectErrors += "New-Object($progId): $($_.Exception.Message)"
-        }
+        $connectErrors += "New-Object($progId): $($_.Exception.Message)"
     }
 }
 
@@ -57,28 +55,24 @@ if (-not $hwp) {
 # 보안 모듈 등록 (한글 자동화 보안 팝업 우회)
 try {
     $hwp.RegisterModule("FilePathCheckerModuleExample", "FilePathCheckerModule") | Out-Null
+} catch {}
+
+# 파일 열기
+try {
+    $ext = [System.IO.Path]::GetExtension($AbsPath).ToLower()
+    $format = if ($ext -eq '.hwpx') { "HWPX" } else { "HWP" }
+    $hwp.Open($AbsPath, $format, "") | Out-Null
 } catch {
-    # 등록 실패해도 계속 진행 (이미 등록되어 있을 수 있음)
+    Write-Result @{ ok = $false; error = "파일 열기 실패: $_" }
+    exit 1
 }
 
-# 창 보이기 (New-Object로 생성된 경우)
+# 창 보이기
 try {
     if ($hwp.XHwpWindows.Count -gt 0) {
         $hwp.XHwpWindows.Item(0).Visible = $true
     }
 } catch {}
-
-# 문서가 비어있는지 확인 (New-Object로 새 인스턴스가 생성된 경우)
-try {
-    $docCount = 0
-    if ($hwp.XHwpDocuments) { $docCount = $hwp.XHwpDocuments.Count }
-    if ($docCount -eq 0) {
-        Write-Result @{ ok = $false; error = "한글에 열린 문서가 없습니다. 한글에서 텍스트가 작성된 문서를 먼저 열어주세요." }
-        exit 1
-    }
-} catch {
-    # XHwpDocuments 가 없는 구형 버전에서는 그냥 진행
-}
 
 # 문서 텍스트 읽기
 try {
@@ -334,8 +328,18 @@ try {
     }
 
     $hwp.HAction.Run("MoveDocBegin") | Out-Null
+
+    # 파일 저장 (원본 형식 그대로)
+    try {
+        $saveFormat = if ($ext -eq '.hwpx') { "HWPX" } else { "HWP" }
+        $hwp.SaveAs($AbsPath, $saveFormat, "") | Out-Null
+    } catch {
+        Write-Result @{ ok = $false; error = "저장 실패: $_" }
+        exit 1
+    }
+
     $topLevelName = if ($topIsRoman) { 'Roman' } else { 'Number' }
-    Write-Result @{ ok = $true; blocks = $nodes.Count; topLevel = $topLevelName }
+    Write-Result @{ ok = $true; blocks = $nodes.Count; topLevel = $topLevelName; savedTo = $AbsPath }
 } catch {
     Write-Result @{ ok = $false; error = "서식 적용 중 오류: $_" }
     exit 1

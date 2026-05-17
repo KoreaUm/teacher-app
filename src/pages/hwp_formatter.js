@@ -13,11 +13,15 @@ function render(container) {
       <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px">
         <div style="font-weight:600;margin-bottom:12px;font-size:14px">📋 사용 순서</div>
         <ol style="margin:0;padding-left:20px;line-height:2;color:var(--text2);font-size:13px">
-          <li>한글(HWP) 프로그램을 열고 서식을 적용할 문서를 엽니다</li>
-          <li>문서에 일반 텍스트 형태로 내용을 작성합니다 <span style="color:var(--accent)">(아래 예시 참고)</span></li>
-          <li>아래 <b>서식 적용</b> 버튼을 클릭합니다</li>
-          <li>한글 문서에 자동으로 스타일이 적용됩니다 ✨</li>
+          <li>한글에서 문서에 일반 텍스트로 내용 작성 <span style="color:var(--accent)">(아래 예시 참고)</span></li>
+          <li><b>Ctrl + S</b>로 .hwp 또는 .hwpx 파일로 저장</li>
+          <li>한글 프로그램을 <b>완전히 종료</b>합니다 <span style="color:#dc2626">(중요!)</span></li>
+          <li>아래 <b>서식 적용</b> 버튼 클릭 → 저장한 파일 선택</li>
+          <li>자동으로 서식이 적용되고 한글이 다시 열립니다 ✨</li>
         </ol>
+        <div style="margin-top:12px;padding:10px;background:#fef3c7;border-radius:8px;font-size:12px;color:#92400e">
+          ⚠️ <b>한글 프로그램이 켜져있으면 안 됩니다.</b> 파일이 이미 열려있으면 잠금 오류가 발생할 수 있어요. 작업 전 한글을 완전히 종료해주세요.
+        </div>
       </div>
 
       <!-- 한국 공문서 표준 항목 표시 체계 안내 -->
@@ -92,13 +96,13 @@ function render(container) {
       <div style="display:flex;flex-direction:column;align-items:center;gap:16px;padding:30px;background:var(--card);border:2px solid var(--border);border-radius:16px;margin-bottom:20px">
         <div id="hwpf-status-icon" style="font-size:48px">📄</div>
         <div id="hwpf-status-text" style="font-size:14px;color:var(--text2);text-align:center">
-          한글 프로그램을 열고 문서를 준비한 뒤<br>아래 버튼을 누르세요.
+          한글을 종료하고 저장된 .hwp 파일을 준비한 뒤<br>아래 버튼을 눌러 파일을 선택하세요.
         </div>
         <button class="btn btn-primary" id="hwpf-apply-btn" style="font-size:15px;padding:12px 36px;border-radius:10px">
           ✨ 서식 적용하기
         </button>
         <div id="hwpf-spinner" style="display:none;font-size:13px;color:var(--accent)">
-          ⏳ 한글 문서에 서식을 적용하는 중...
+          ⏳ 파일을 열어 서식을 적용하는 중...
         </div>
       </div>
 
@@ -150,9 +154,13 @@ function render(container) {
           <div style="background:#d1fae5;border:1px solid #6ee7b7;border-radius:10px;padding:16px;font-size:13px;color:#065f46">
             <b>✅ 서식 적용 완료!</b><br>
             총 ${result.blocks}개의 단락/표가 처리되었습니다.<br>
-            <span style="font-size:12px;color:#047857;margin-top:4px;display:block">한글 문서를 확인하세요. (Ctrl+Z로 되돌릴 수 있습니다)</span>
+            <span style="font-size:12px;color:#047857;margin-top:4px;display:block">파일이 저장되었습니다: ${escapeHtml(result.savedTo || '')}</span>
           </div>
         `;
+      } else if (result && result.canceled) {
+        icon.textContent = '📄';
+        statusText.textContent = '파일 선택이 취소되었습니다.';
+        resultDiv.style.display = 'none';
       } else {
         var errMsg = (result && result.error) ? result.error : '알 수 없는 오류가 발생했습니다.';
         icon.textContent = '❌';

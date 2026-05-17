@@ -2709,6 +2709,22 @@ ipcMain.handle('macro-fill-edufine-cdp', async (e, { wsUrl, items }) => {
 
 // ── 한글(HWP) 자동 서식 엔진 ─────────────────────────────────────
 ipcMain.handle('hwp-apply-format', async () => {
+  // 1. 파일 선택 다이얼로그
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: '서식을 적용할 한글 문서를 선택하세요',
+    properties: ['openFile'],
+    filters: [
+      { name: '한글 문서', extensions: ['hwp', 'hwpx'] },
+      { name: '모든 파일', extensions: ['*'] }
+    ]
+  });
+
+  if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+    return { ok: false, error: '파일 선택이 취소되었습니다.', canceled: true };
+  }
+
+  const filePath = result.filePaths[0];
+
   const isDev = !app.isPackaged;
   const scriptPath = isDev
     ? path.join(__dirname, 'hwp_engine', 'format_doc.ps1')
@@ -2718,7 +2734,8 @@ ipcMain.handle('hwp-apply-format', async () => {
     const ps = spawn('powershell', [
       '-ExecutionPolicy', 'Bypass',
       '-NoProfile',
-      '-File', scriptPath
+      '-File', scriptPath,
+      '-FilePath', filePath
     ], { windowsHide: true });
     let out = '';
     let err = '';
