@@ -636,31 +636,29 @@ function Set-ParaBorder($hwp, $top, $bottom) {
     } catch {}
 }
 
-# 행안부 업무계획 스타일 표지: 기관명(상단) / 주황바·제목·남색바 / 연도+기관명(하단)
+# 행안부 업무계획 스타일 표지 - 도형 COM API 없이 텍스트 기반으로만 구현 (안정성 우선)
 function Write-DecoratedTitle($hwp, $titleText, $institutionName="") {
     # 색상 (HWP BGR 정수)
     $orange = ((0x21) -shl 16) -bor ((0x69) -shl 8) -bor 0xE2   # #E26921 주황
     $navy   = ((0x87) -shl 16) -bor ((0x30) -shl 8) -bor 0x00   # #003087 남색
 
     # ① 상단 여백 (페이지 약 40%)
-    Write-BlankParas $hwp 13 12
+    Write-BlankParas $hwp 12 12
 
-    # ② 기관명 (상단, 가운데)
+    # ② 기관명 상단
     if (![string]::IsNullOrWhiteSpace($institutionName)) {
-        Set-ParaShape $hwp 0 160 1 0 400 0
-        Set-CharShape $hwp 'HY헤드라인M' 20 $false
+        Set-ParaShape $hwp 0 160 1 0 500 0
+        Set-CharShape $hwp 'HY헤드라인M' 18 $false
         Insert-Text $hwp $institutionName
         Safe-Run $hwp "BreakPara"
-        Write-BlankParas $hwp 2 12
+        Write-BlankParas $hwp 1 12
     }
 
-    # ③ 주황 장식 바 (두꺼운)
-    Set-ParaShape $hwp 0 100 1 0 300 0
-    if (-not (Insert-LineShape $hwp 43000 $orange 180)) {
-        Set-CharShape $hwp '함초롬바탕' 10 $true $orange
-        Insert-Text $hwp '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
-        Safe-Run $hwp "BreakPara"
-    }
+    # ③ 주황 막대 (텍스트 기반 - COM API 도형 없이 항상 동작)
+    Set-ParaShape $hwp 0 120 1 0 500 0
+    Set-CharShape $hwp '함초롬바탕' 20 $true $orange
+    Insert-Text $hwp '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+    Safe-Run $hwp "BreakPara"
 
     # ④ 대제목 (36pt, 가운데)
     Set-ParaShape $hwp 0 160 1 400 500 0
@@ -668,27 +666,25 @@ function Write-DecoratedTitle($hwp, $titleText, $institutionName="") {
     Insert-Text $hwp $titleText
     Safe-Run $hwp "BreakPara"
 
-    # ⑤ 남색 하단 바
-    Set-ParaShape $hwp 0 100 1 0 0 0
-    if (-not (Insert-LineShape $hwp 43000 $navy 80)) {
-        Set-CharShape $hwp '함초롬바탕' 10 $true $navy
-        Insert-Text $hwp '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
-        Safe-Run $hwp "BreakPara"
-    }
+    # ⑤ 남색 막대
+    Set-ParaShape $hwp 0 120 1 0 0 0
+    Set-CharShape $hwp '함초롬바탕' 20 $true $navy
+    Insert-Text $hwp '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+    Safe-Run $hwp "BreakPara"
 
     # ⑥ 하단 여백
     Write-BlankParas $hwp 7 12
 
-    # ⑦ 연도 (24pt, 가운데)
+    # ⑦ 연도
     Set-ParaShape $hwp 0 160 1 0 200 0
-    Set-CharShape $hwp 'HY헤드라인M' 24 $false
+    Set-CharShape $hwp 'HY헤드라인M' 22 $false
     Insert-Text $hwp ((Get-Date).ToString('yyyy. M.'))
     Safe-Run $hwp "BreakPara"
 
-    # ⑧ 기관명 (하단, 가운데)
+    # ⑧ 기관명 하단
     if (![string]::IsNullOrWhiteSpace($institutionName)) {
         Set-ParaShape $hwp 0 160 1 0 0 0
-        Set-CharShape $hwp 'HY헤드라인M' 20 $false
+        Set-CharShape $hwp 'HY헤드라인M' 18 $false
         Insert-Text $hwp $institutionName
         Safe-Run $hwp "BreakPara"
     }
@@ -699,9 +695,7 @@ function Write-DecoratedTitle($hwp, $titleText, $institutionName="") {
     $actR = $hwp.HAction
     $psR  = $hwp.HParameterSet.HParaShape
     $actR.GetDefault("ParagraphShape", $psR.HSet) | Out-Null
-    Try-SetProp $psR 'BorderTop'    0
-    Try-SetProp $psR 'BorderBottom' 0
-    Try-SetProp $psR 'AlignType'    0
+    Try-SetProp $psR 'AlignType' 0
     try { $actR.Execute("ParagraphShape", $psR.HSet) | Out-Null } catch {}
 }
 
