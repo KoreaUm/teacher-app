@@ -363,7 +363,7 @@ $STYLE = @{
     H5 = @{ font='휴먼명조';    size=15; bold=$false; indent=($INDENT_UNIT*2);   line=150; align=0; spaceBefore=0;   spaceAfter=0 }
     H6 = @{ font='휴먼명조';    size=15; bold=$false; indent=($INDENT_UNIT*3);   line=150; align=0; spaceBefore=0;   spaceAfter=0 }
     # 행안부 업무계획 기준: 본문 15pt 휴먼명조, ㅇ/- 위계, 소제목 파란색
-    BULLET_SQ   = @{ font='휴먼명조'; size=15; bold=$true;  color=0x0000FF; indent=0;            hanging=700; line=150; align=0; spaceBefore=1000; spaceAfter=0 }
+    BULLET_SQ   = @{ font='휴먼명조'; size=15; bold=$true;  color=0xFF0000; indent=0;            hanging=700; line=150; align=0; spaceBefore=1000; spaceAfter=0 }
     BULLET_CR   = @{ font='휴먼명조'; size=15; bold=$false; indent=0;                            hanging=700; line=150; align=0; spaceBefore=800;  spaceAfter=0 }
     BULLET_DASH = @{ font='휴먼명조'; size=15; bold=$false; indent=$INDENT_UNIT;                 hanging=500; line=150; align=0; spaceBefore=450;  spaceAfter=0 }
     BULLET_DOT  = @{ font='맑은 고딕'; size=12; bold=$false; indent=($INDENT_UNIT*1);            hanging=450; line=140; align=0; spaceBefore=250;  spaceAfter=0 }
@@ -371,7 +371,7 @@ $STYLE = @{
     NOTE        = @{ font='맑은 고딕'; size=12; bold=$false; indent=$INDENT_UNIT;                 line=140; align=0; spaceBefore=300; spaceAfter=0 }
     BODY        = @{ font='휴먼명조'; size=15; bold=$false; indent=0;                             line=150; align=0; spaceBefore=0; spaceAfter=0 }
     LEAD        = @{ font='휴먼명조'; size=15; bold=$false; indent=0;                             line=150; align=0; spaceBefore=0; spaceAfter=60 }
-    SECTION     = @{ font='휴먼명조'; size=15; bold=$true;  color=0x0000FF; indent=0; hanging=700; line=150; align=0; spaceBefore=1000; spaceAfter=0 }
+    SECTION     = @{ font='휴먼명조'; size=15; bold=$true;  color=0xFF0000; indent=0; hanging=700; line=150; align=0; spaceBefore=1000; spaceAfter=0 }
     TH          = @{ font='맑은 고딕'; size=12; bold=$true;  align=1 }
     TD          = @{ font='맑은 고딕'; size=12; bold=$false; align=0 }
 }
@@ -470,6 +470,21 @@ function Insert-Text($hwp, $text) {
     } catch {}
 }
 
+function Break-Page($hwp) {
+    foreach ($cmd in 'BreakPage','PageBreak') {
+        try { $hwp.HAction.Run($cmd) | Out-Null; return } catch {}
+    }
+    try {
+        $act = $hwp.HAction
+        $pset = $hwp.HParameterSet.HInsertText
+        $act.GetDefault("InsertText", $pset.HSet) | Out-Null
+        Try-SetProp $pset 'Text' ([char]12)
+        $act.Execute("InsertText", $pset.HSet) | Out-Null
+    } catch {
+        Safe-Run $hwp "BreakPara"
+    }
+}
+
 function Write-StyledPara($hwp, $text, $s) {
     try {
         $hanging = if ($s.ContainsKey('hanging')) { $s.hanging } else { 0 }
@@ -488,6 +503,14 @@ function Write-ColorRule($hwp, $color, $align=1, $spaceBefore=0, $spaceAfter=0) 
         Insert-Text $hwp '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
         Safe-Run $hwp "BreakPara"
     } catch {}
+}
+
+function Write-BlankParas($hwp, $count, $size=12) {
+    for ($i = 0; $i -lt $count; $i++) {
+        Set-ParaShape $hwp 0 120 0 0 0 0
+        Set-CharShape $hwp '휴먼명조' $size $false
+        Safe-Run $hwp "BreakPara"
+    }
 }
 
 function Write-LeadPara($hwp, $text, $isLastLead=$false) {
@@ -559,9 +582,9 @@ function Write-DecoratedTitle($hwp, $titleText) {
     $orange = ((0x21) -shl 16) -bor ((0x69) -shl 8) -bor 0xE2   # ≈ #E26921 주황
     $red    = ((0x33) -shl 16) -bor ((0x33) -shl 8) -bor 0xCC   # ≈ #CC3333 빨강
 
-    # HWP 버전에 따라 단락 테두리/도형 API가 조용히 실패하는 경우가 있어
-    # 실제 색상 글자선을 먼저 넣고, 테두리는 보조 장식으로만 시도한다.
-    Write-ColorRule $hwp $orange 1 150 80
+    # 행안부 업무계획 기준: 표지형 첫 페이지를 만든 뒤 본문을 다음 쪽부터 시작한다.
+    Write-BlankParas $hwp 9 12
+    Write-ColorRule $hwp $orange 1 0 900
 
     # 제목 단락 — 큰 글씨 + 가운데 정렬
     $act2 = $hwp.HAction
@@ -570,8 +593,8 @@ function Write-DecoratedTitle($hwp, $titleText) {
     Try-SetProp $ps2 'LeftMargin' 0
     Try-SetProp $ps2 'LineSpacing' 160
     Try-SetProp $ps2 'AlignType' 1                  # 가운데
-    Try-SetProp $ps2 'PrevSpacing' 220
-    Try-SetProp $ps2 'NextSpacing' 200
+    Try-SetProp $ps2 'PrevSpacing' 0
+    Try-SetProp $ps2 'NextSpacing' 900
     Try-SetProp $ps2 'BorderTop'       0
     Try-SetProp $ps2 'BorderBottom'    0
     try { $act2.Execute("ParagraphShape", $ps2.HSet) | Out-Null } catch {}
@@ -580,7 +603,15 @@ function Write-DecoratedTitle($hwp, $titleText) {
     Insert-Text $hwp $titleText
     Safe-Run $hwp "BreakPara"
 
-    Write-ColorRule $hwp $red 1 40 160
+    Write-ColorRule $hwp $red 1 0 3000
+
+    Set-ParaShape $hwp 0 160 1 0 0 0
+    Set-CharShape $hwp '휴먼명조' 24 $true
+    $coverDate = (Get-Date).ToString('yyyy. M.')
+    Insert-Text $hwp $coverDate
+    Safe-Run $hwp "BreakPara"
+
+    Break-Page $hwp
 
     # 테두리 해제 (다음 단락이 영향 안 받게)
     $act3 = $hwp.HAction
