@@ -423,6 +423,81 @@ function Write-StyledPara($hwp, $text, $s) {
     } catch {}
 }
 
+# ─── 단락 위/아래 컬러 테두리 (제목 장식용) ─────────────────────
+# 도형 객체 대신 단락의 위/아래 테두리를 사용 → COM API 안정적
+function Set-ParaBorder($hwp, $top, $bottom) {
+    # $top, $bottom = @{ color=BGR; width=0~7; type=0~17 }; null이면 미적용
+    try {
+        $act = $hwp.HAction
+        $pset = $hwp.HParameterSet.HParaShape
+        $act.GetDefault("ParagraphShape", $pset.HSet) | Out-Null
+
+        if ($top) {
+            Try-SetProp $pset 'BorderTop'       $top.type
+            Try-SetProp $pset 'BorderTopColor'  $top.color
+            Try-SetProp $pset 'BorderTopWidth'  $top.width
+        }
+        if ($bottom) {
+            Try-SetProp $pset 'BorderBottom'      $bottom.type
+            Try-SetProp $pset 'BorderBottomColor' $bottom.color
+            Try-SetProp $pset 'BorderBottomWidth' $bottom.width
+        }
+        try { $act.Execute("ParagraphShape", $pset.HSet) | Out-Null } catch {}
+    } catch {}
+}
+
+# 빨강/주황 가로 막대로 장식된 큰 제목 작성 (범정부 오피스 스타일)
+function Write-DecoratedTitle($hwp, $titleText) {
+    # 색상 (BGR 정수)
+    $orange = ((0x21) -shl 16) -bor ((0x69) -shl 8) -bor 0xE2   # ≈ #E26921 주황
+    $red    = ((0x33) -shl 16) -bor ((0x33) -shl 8) -bor 0xCC   # ≈ #CC3333 빨강
+
+    # 1) 위쪽 주황 막대 — 빈 단락 + 굵은 위 테두리
+    Set-CharShape $hwp '함초롬바탕' 1 $false
+    $act = $hwp.HAction
+    $ps = $hwp.HParameterSet.HParaShape
+    $act.GetDefault("ParagraphShape", $ps.HSet) | Out-Null
+    Try-SetProp $ps 'LeftMargin' 0
+    Try-SetProp $ps 'LineSpacing' 100
+    Try-SetProp $ps 'AlignType' 0
+    Try-SetProp $ps 'BorderTop'      0   # 위 테두리 없음
+    Try-SetProp $ps 'BorderBottom'   0   # (제목 단락에서 처리)
+    try { $act.Execute("ParagraphShape", $ps.HSet) | Out-Null } catch {}
+    Safe-Run $hwp "BreakPara"
+
+    # 2) 제목 단락 — 큰 글씨 + 위/아래 굵은 컬러 테두리
+    $act2 = $hwp.HAction
+    $ps2 = $hwp.HParameterSet.HParaShape
+    $act2.GetDefault("ParagraphShape", $ps2.HSet) | Out-Null
+    Try-SetProp $ps2 'LeftMargin' 0
+    Try-SetProp $ps2 'LineSpacing' 160
+    Try-SetProp $ps2 'AlignType' 1                  # 가운데
+    Try-SetProp $ps2 'PrevSpacing' 300
+    Try-SetProp $ps2 'NextSpacing' 200
+    # 위 주황 테두리
+    Try-SetProp $ps2 'BorderTop'       1            # 1 = 실선
+    Try-SetProp $ps2 'BorderTopColor'  $orange
+    Try-SetProp $ps2 'BorderTopWidth'  5            # 5 = 굵게
+    # 아래 빨강 테두리
+    Try-SetProp $ps2 'BorderBottom'      1
+    Try-SetProp $ps2 'BorderBottomColor' $red
+    Try-SetProp $ps2 'BorderBottomWidth' 5
+    try { $act2.Execute("ParagraphShape", $ps2.HSet) | Out-Null } catch {}
+
+    Set-CharShape $hwp 'HY헤드라인M' 22 $true
+    Insert-Text $hwp $titleText
+    Safe-Run $hwp "BreakPara"
+
+    # 3) 테두리 해제 (다음 단락이 영향 안 받게)
+    $act3 = $hwp.HAction
+    $ps3 = $hwp.HParameterSet.HParaShape
+    $act3.GetDefault("ParagraphShape", $ps3.HSet) | Out-Null
+    Try-SetProp $ps3 'BorderTop'    0
+    Try-SetProp $ps3 'BorderBottom' 0
+    Try-SetProp $ps3 'AlignType'    0
+    try { $act3.Execute("ParagraphShape", $ps3.HSet) | Out-Null } catch {}
+}
+
 function Write-Table($hwp, $rows) {
     $numRows = $rows.Count
     if ($numRows -eq 0) { return }
@@ -552,13 +627,19 @@ Safe-Run $hwp "MoveDocBegin"
 
 $errors = @()
 $processed = 0
+$firstH1Done = $false   # 문서 제목(첫 H1)에만 컬러 막대 장식 적용
 foreach ($node in $nodes) {
     try {
         switch ($node.kind) {
             'heading' {
-                $key = "H$($node.level)"
-                if (-not $STYLE.ContainsKey($key)) { $key = "H6" }
-                Write-StyledPara $hwp $node.text $STYLE[$key]
+                if ($node.level -eq 1 -and -not $firstH1Done) {
+                    Write-DecoratedTitle $hwp $node.text
+                    $firstH1Done = $true
+                } else {
+                    $key = "H$($node.level)"
+                    if (-not $STYLE.ContainsKey($key)) { $key = "H6" }
+                    Write-StyledPara $hwp $node.text $STYLE[$key]
+                }
             }
             'bullet_sq'   { Write-StyledPara $hwp $node.text $STYLE.BULLET_SQ }
             'bullet_cr'   { Write-StyledPara $hwp $node.text $STYLE.BULLET_CR }
