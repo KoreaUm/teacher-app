@@ -2707,34 +2707,19 @@ ipcMain.handle('macro-fill-edufine-cdp', async (e, { wsUrl, items }) => {
   }
 });
 
-// ── 한글(HWP) 자동 서식 엔진 ─────────────────────────────────────
-ipcMain.handle('hwp-apply-format', async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    title: '서식을 적용할 한글 문서를 선택하세요',
-    properties: ['openFile'],
-    filters: [
-      { name: '한글 문서', extensions: ['hwp', 'hwpx'] },
-      { name: '모든 파일', extensions: ['*'] }
-    ]
-  });
-
-  if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
-    return { ok: false, error: '파일 선택이 취소되었습니다.', canceled: true };
-  }
-
-  const filePath = result.filePaths[0];
-
+// ── 한글(HWP) 자동 서식: 공통 PowerShell 실행 함수 ───────────────
+function runHwpFormatPS(args) {
   const isDev = !app.isPackaged;
   const scriptPath = isDev
     ? path.join(__dirname, 'hwp_engine', 'format_doc.ps1')
     : path.join(process.resourcesPath, 'hwp_engine', 'format_doc.ps1');
 
-  return await new Promise((resolve) => {
+  return new Promise((resolve) => {
     const ps = spawn('powershell', [
       '-ExecutionPolicy', 'Bypass',
       '-NoProfile',
       '-File', scriptPath,
-      '-FilePath', filePath
+      ...args
     ], { windowsHide: true });
     let out = '';
     let err = '';
@@ -2752,4 +2737,118 @@ ipcMain.handle('hwp-apply-format', async () => {
       resolve({ ok: false, error: 'PowerShell 실행 실패: ' + e.message });
     });
   });
+}
+
+// ── 한글(HWP) 자동 서식: 기존 파일 선택 후 적용 ───────────────────
+ipcMain.handle('hwp-apply-format', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: '서식을 적용할 한글 문서를 선택하세요',
+    properties: ['openFile'],
+    filters: [
+      { name: '한글 문서', extensions: ['hwp', 'hwpx'] },
+      { name: '모든 파일', extensions: ['*'] }
+    ]
+  });
+  if (result.canceled || !result.filePaths.length) {
+    return { ok: false, error: '파일 선택이 취소되었습니다.', canceled: true };
+  }
+  return await runHwpFormatPS(['-FilePath', result.filePaths[0]]);
 });
+
+// ── 한글(HWP) 자동 서식: 마크다운 텍스트 → 새 한글 파일 ──────────
+ipcMain.handle('hwp-format-from-text', async (_evt, markdownText) => {
+  if (!markdownText || !String(markdownText).trim()) {
+    return { ok: false, error: '입력 텍스트가 비어있습니다.' };
+  }
+
+  // 저장 위치 선택
+  const saveRes = await dialog.showSaveDialog(mainWindow, {
+    title: '한글 파일 저장 위치',
+    defaultPath: '문서.hwpx',
+    filters: [
+      { name: '한글 문서', extensions: ['hwpx', 'hwp'] }
+    ]
+  });
+  if (saveRes.canceled || !saveRes.filePath) {
+    return { ok: false, error: '저장 취소되었습니다.', canceled: true };
+  }
+
+  // 텍스트를 임시 파일로 저장 (UTF-8 BOM 포함)
+  const tmpDir = os.tmpdir();
+  const tmpTxt = path.join(tmpDir, `hwp-input-${Date.now()}.txt`);
+  fs.writeFileSync(tmpTxt, '﻿' + markdownText, 'utf8');
+
+  try {
+    return await runHwpFormatPS([
+      '-FilePath', saveRes.filePath,
+      '-InputTextFile', tmpTxt
+    ]);
+  } finally {
+    try { fs.unlinkSync(tmpTxt); } catch (_) {}
+  }
+});
+
+// ── 한글(HWP) 자동 서식: 로컬 AI(Ollama)로 마크다운 생성 ──────────
+ipcMain.handle('hwp-generate-markdown', async (_evt, { topic, docType }) => {
+  if (!topic || !String(topic).trim()) {
+    return { ok: false, error: '주제를 입력해주세요.' };
+  }
+
+  // 현재 설정된 AI 엔진 → 모델 결정
+  const engine = db.getSetting('ai_engine', 'local_lite');
+  const model = getOllamaModelForEngine(engine);
+  if (!model) {
+    return { ok: false, error: 'AI 엔진이 설정되어 있지 않습니다. (설정 → AI 엔진)' };
+  }
+
+  const prompt = buildHwpMarkdownPrompt(topic, docType);
+  const result = await requestOllamaJson('/api/generate', {
+    model,
+    stream: false,
+    prompt,
+    options: { temperature: 0.3, num_predict: 2000 }
+  }, 120000);
+
+  if (!result.ok) {
+    return { ok: false, error: result.error || result.raw || 'AI 호출 실패' };
+  }
+
+  let md = String(result.data?.response || '').trim();
+  // 코드블럭 마커 제거
+  md = md.replace(/^```(?:markdown|md)?\s*/i, '').replace(/```\s*$/i, '').trim();
+  return { ok: true, markdown: md, model };
+});
+
+// ── 한글(HWP) 자동 서식: GPT/Claude용 프롬프트 생성 (복사용) ────
+ipcMain.handle('hwp-build-prompt', async (_evt, { topic, docType }) => {
+  return { ok: true, prompt: buildHwpMarkdownPrompt(topic || '', docType || '') };
+});
+
+function buildHwpMarkdownPrompt(topic, docType) {
+  const typeLabel = docType || '공문서';
+  return [
+    `당신은 한국 학교/공공기관의 공문서 작성 전문가입니다.`,
+    `아래 주제로 "${typeLabel}"를 작성해주세요.`,
+    ``,
+    `주제: ${topic}`,
+    ``,
+    `[출력 규칙 - 반드시 지켜주세요]`,
+    `- 마크다운으로만 작성 (다른 설명 없이 마크다운만 출력)`,
+    `- 첫 줄: # 문서 제목`,
+    `- 항목 단계 매핑 (행정안전부 「행정업무운영 편람」):`,
+    `  - ## 1. 대제목`,
+    `  - ### 가. 중제목`,
+    `  - #### 1) 소제목`,
+    `- 글머리 4단계 (들여쓰기로 위계 표현):`,
+    `  - "- 항목" (0칸 들여쓰기) = □ 1단계`,
+    `  - "  - 항목" (2칸) = ○ 2단계`,
+    `  - "    - 항목" (4칸) = - 3단계`,
+    `  - "      - 항목" (6칸) = · 4단계`,
+    `- 표는 마크다운 표 사용: | 컬럼 | 컬럼 |`,
+    `- 한국 공문서 표준 문체: 간결, 격식, 명사형 종결("~함", "~할 것")`,
+    `- 학교/교사 업무 맥락에 맞게 작성`,
+    ``,
+    `이제 마크다운만 출력하세요:`
+  ].join('\n');
+}
+

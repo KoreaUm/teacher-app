@@ -1,176 +1,257 @@
 (function () {
 'use strict';
 
+var DOC_TYPES = [
+  '계획서', '결과보고서', '평가계획서', '품의서',
+  '기안문', '공문(협조요청)', '가정통신문', '회의록', '연수보고서'
+];
+
+var EXAMPLE_MD = `# 학생 봉사활동 운영 계획
+
+## 1. 목적
+- 학생 봉사정신 함양
+  - 지역사회에 대한 책임감 인식
+- 공동체 의식 강화
+
+## 2. 방침
+- 학생 자율 참여로 운영
+- 안전교육 사전 실시
+
+## 3. 일정
+
+| 시간 | 활동 | 비고 |
+|------|------|------|
+| 09:00 | 집결 | 운동장 |
+| 10:00 | 봉사활동 | ○○공원 |
+| 12:00 | 정리 및 해산 |  |
+
+## 4. 행정 사항
+- 인솔교사 ○명
+- 봉사활동 확인서 발급
+`;
+
 function escapeHtml(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 async function render(container) {
+  var savedMd = (await api.getSetting('hwp_md_draft', '')) || EXAMPLE_MD;
+  var savedTopic = (await api.getSetting('hwp_topic', '')) || '';
+  var savedType = (await api.getSetting('hwp_doctype', DOC_TYPES[0])) || DOC_TYPES[0];
+
   container.innerHTML = `
     <div class="page-wrap">
       <div class="page-header">
         <h1 class="page-header-title">📄 한글 자동 서식</h1>
-        <p class="page-header-desc">ChatGPT/Claude 마크다운이나 일반 텍스트를 한국 공문서 서식으로 자동 변환</p>
+        <p class="page-header-desc">마크다운으로 작성 → 한글 공문서 표준 서식으로 자동 변환</p>
       </div>
 
-      <!-- 워크플로우 안내 -->
-      <div style="background:linear-gradient(135deg,#e0e7ff,#f3e8ff);border-radius:12px;padding:18px;margin-bottom:18px">
-        <div style="font-weight:600;margin-bottom:10px;font-size:14px">💡 추천 워크플로우</div>
-        <div style="display:flex;gap:12px;align-items:center;font-size:12px;color:#4b5563;flex-wrap:wrap">
-          <div style="background:#fff;padding:8px 14px;border-radius:20px;border:1px solid #c7d2fe">1️⃣ ChatGPT/Claude에 마크다운으로 받기</div>
-          <span>→</span>
-          <div style="background:#fff;padding:8px 14px;border-radius:20px;border:1px solid #c7d2fe">2️⃣ 한글에 붙여넣고 저장</div>
-          <span>→</span>
-          <div style="background:#fff;padding:8px 14px;border-radius:20px;border:1px solid #c7d2fe">3️⃣ 쌤포트에서 서식 적용</div>
-          <span>→</span>
-          <div style="background:#fff;padding:8px 14px;border-radius:20px;border:1px solid #c7d2fe">4️⃣ 깔끔한 공문서 완성</div>
-        </div>
+      <!-- 워크플로우 -->
+      <div style="background:linear-gradient(135deg,#e0e7ff,#f3e8ff);border-radius:12px;padding:16px;margin-bottom:18px;font-size:12px;color:#4338ca">
+        <b>📋 3가지 방법:</b>
+        ① 주제만 입력 → <b>로컬 AI</b>로 자동 생성  ·
+        ② 주제 입력 → <b>프롬프트 복사</b> → ChatGPT/Claude 활용  ·
+        ③ 마크다운을 <b>직접 작성/편집</b>
       </div>
 
-      <!-- 지원 구문 -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px">
-        <!-- 마크다운 -->
-        <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px">
-          <div style="font-weight:600;font-size:13px;margin-bottom:10px;color:#7c3aed">📝 마크다운 구문 (AI 출력 그대로)</div>
-          <pre style="background:#f9fafb;border-radius:6px;padding:10px;font-size:11px;line-height:1.6;margin:0;overflow-x:auto;color:#1f2937"># 대제목
-## 중제목 (→ 1.)
-### 소제목 (→ 가.)
-- 1단계 글머리 (→ □)
-  - 2단계 (→ ○)
-    - 3단계 (→ -)
-      - 4단계 (→ ·)
-**굵게**
-
-| 시간 | 활동 |
-|------|------|
-| 09:00 | 집결 |</pre>
+      <!-- Step 1: 주제 + 양식 -->
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:14px">
+        <div style="font-weight:600;font-size:14px;margin-bottom:10px">1️⃣ 주제 입력 + 양식 선택</div>
+        <div style="display:grid;grid-template-columns:160px 1fr;gap:8px;margin-bottom:10px">
+          <select id="hwpf-doctype" class="input" style="font-size:13px;padding:6px 8px">
+            ${DOC_TYPES.map(t => `<option ${t === savedType ? 'selected' : ''}>${escapeHtml(t)}</option>`).join('')}
+          </select>
+          <input id="hwpf-topic" class="input" type="text" placeholder="예: 2026 학생 봉사활동 운영" value="${escapeHtml(savedTopic)}" style="font-size:13px;padding:6px 8px">
         </div>
-
-        <!-- 한국 공문 -->
-        <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px">
-          <div style="font-weight:600;font-size:13px;margin-bottom:10px;color:#0891b2">📋 한국 공문 표시 체계</div>
-          <pre style="background:#f9fafb;border-radius:6px;padding:10px;font-size:11px;line-height:1.6;margin:0;overflow-x:auto;color:#1f2937">1. 대제목 (→ ##)
-가. 중제목 (→ ###)
-1) 소제목 (→ ####)
-가) 항
-(1) 호
-(가) 목
-
-□ 1단계 글머리
-○ 2단계 글머리
-- 3단계 글머리
-· 4단계 글머리
-※ 참고/주의</pre>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" id="hwpf-ai-gen">🤖 로컬 AI로 자동 생성</button>
+          <button class="btn btn-secondary btn-sm" id="hwpf-copy-prompt">📋 GPT/Claude용 프롬프트 복사</button>
+          <button class="btn btn-secondary btn-sm" id="hwpf-load-example">💡 예시 불러오기</button>
+          <span id="hwpf-ai-status" style="font-size:12px;color:var(--text2);align-self:center"></span>
         </div>
       </div>
 
-      <!-- 자동 적용되는 것들 -->
-      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:18px">
-        <div style="font-weight:600;margin-bottom:12px;font-size:14px">✨ 행정안전부 「행정업무운영 편람」 기준 자동 서식</div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;font-size:12px;color:var(--text2)">
-          <div>📐 <b>위계 자동 감지</b><br>1. → 가. → 1) → 가) → (1) → (가)</div>
-          <div>🔤 <b>폰트 표준화</b><br>함초롬바탕 15pt (편람 권고)</div>
-          <div>📏 <b>들여쓰기 자동</b><br>단계마다 1자(2타)씩 들여쓰기</div>
-          <div>📊 <b>표 자동 서식</b><br>테두리 + 헤더 회색 배경</div>
-          <div>📝 <b>줄간격 160%</b><br>한컴 정부 공문서 기본값</div>
-          <div>🧹 <b>마크다운 정리</b><br>**굵게** 마커 자동 제거</div>
+      <!-- Step 2: 마크다운 편집 -->
+      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-weight:600;font-size:14px">2️⃣ 마크다운 작성/편집</div>
+          <div style="font-size:11px;color:var(--text2)">
+            <code># 제목</code> · <code>## 1.</code> · <code>### 가.</code> · <code>- 글머리(들여쓰기로 위계)</code> · <code>| 표 |</code>
+          </div>
+        </div>
+        <textarea id="hwpf-md" style="width:100%;min-height:320px;padding:12px;font-family:'D2Coding',Consolas,monospace;font-size:13px;line-height:1.6;border:1px solid var(--border);border-radius:8px;resize:vertical;background:#fafafa">${escapeHtml(savedMd)}</textarea>
+        <div style="margin-top:6px;display:flex;justify-content:space-between;font-size:11px;color:var(--text2)">
+          <span>위계: ## 1. → ### 가. → #### 1) · 글머리: □→○→-→· (들여쓰기 0/2/4/6칸)</span>
+          <span><span id="hwpf-md-count">0</span>자</span>
         </div>
       </div>
 
-      <!-- 사용 순서 -->
-      <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:18px">
-        <div style="font-weight:600;margin-bottom:10px;font-size:14px">📋 사용 순서</div>
-        <ol style="margin:0;padding-left:20px;line-height:2;color:var(--text2);font-size:13px">
-          <li>한글에서 텍스트 작성 (마크다운 또는 한국 공문 형식)</li>
-          <li><b>Ctrl+S</b>로 .hwp 또는 .hwpx 저장</li>
-          <li>한글 프로그램 <b>완전 종료</b> (파일 잠금 방지)</li>
-          <li>아래 <b>서식 적용</b> 클릭 → 저장한 파일 선택</li>
-          <li>한글에서 결과 확인 (자동 열림)</li>
-        </ol>
-      </div>
-
-      <!-- 메인 버튼 -->
-      <div style="display:flex;flex-direction:column;align-items:center;gap:14px;padding:28px;background:var(--card);border:2px solid var(--border);border-radius:16px;margin-bottom:18px">
-        <div id="hwpf-status-icon" style="font-size:44px">📄</div>
-        <div id="hwpf-status-text" style="font-size:13px;color:var(--text2);text-align:center">
-          한글을 종료한 뒤 아래 버튼을 누르고 .hwp/.hwpx 파일을 선택하세요.
+      <!-- Step 3: 한글 변환 -->
+      <div style="background:var(--card);border:2px solid var(--border);border-radius:12px;padding:20px;margin-bottom:14px;display:flex;flex-direction:column;align-items:center;gap:12px">
+        <div style="font-weight:600;font-size:14px">3️⃣ 한글 파일로 저장 + 서식 적용</div>
+        <div id="hwpf-status-text" style="font-size:12px;color:var(--text2);text-align:center">
+          위 마크다운을 한글 공문서 표준 서식으로 변환합니다.
         </div>
-        <button class="btn btn-primary" id="hwpf-apply-btn" style="font-size:15px;padding:12px 36px;border-radius:10px">
-          ✨ 서식 적용하기
-        </button>
-        <div id="hwpf-spinner" style="display:none;font-size:13px;color:var(--accent)">
-          ⏳ 적용 중...
+        <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
+          <button class="btn btn-primary" id="hwpf-convert-text" style="font-size:14px;padding:10px 28px;border-radius:10px">
+            ✨ 한글 파일로 변환 (저장 위치 선택)
+          </button>
+          <button class="btn btn-secondary" id="hwpf-apply-existing" style="font-size:14px;padding:10px 28px;border-radius:10px">
+            📂 기존 한글 파일에 서식 적용
+          </button>
         </div>
+        <div id="hwpf-spinner" style="display:none;font-size:13px;color:var(--accent)">⏳ 처리 중...</div>
       </div>
 
       <!-- 결과 -->
-      <div id="hwpf-result" style="display:none;margin-bottom:18px"></div>
+      <div id="hwpf-result" style="display:none;margin-bottom:14px"></div>
+
+      <!-- 표준 안내 -->
+      <details style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:12px;color:var(--text2);margin-bottom:10px">
+        <summary style="cursor:pointer;font-weight:600;color:var(--text1)">📐 적용되는 공문서 표준 (행정안전부 「행정업무운영 편람」)</summary>
+        <div style="margin-top:10px;line-height:1.9">
+          • <b>본문 폰트</b>: 함초롬바탕 15pt<br>
+          • <b>줄간격</b>: 160%<br>
+          • <b>들여쓰기</b>: 단계마다 1자(2타)씩<br>
+          • <b>항목 단계</b>: 1. → 가. → 1) → 가) → (1) → (가)<br>
+          • <b>글머리 4단계</b>: □ → ○ → - → ·<br>
+          • <b>표</b>: 검정 테두리 + 첫 행 회색 배경<br>
+          • <b>마크다운 정리</b>: **굵게** 마커 자동 제거
+        </div>
+      </details>
 
       <!-- 주의 -->
-      <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:12px;color:var(--text2)">
-        <div style="font-weight:600;color:var(--text1);margin-bottom:6px">⚠️ 주의</div>
-        <ul style="margin:0;padding-left:18px;line-height:1.9">
-          <li>Windows + 한글(HWP) 2018+ 필요</li>
-          <li>적용 전 한글 프로그램 완전 종료</li>
-          <li>기존 서식은 모두 초기화되고 새로 적용됨 (Ctrl+Z로 한글에서 되돌리기 가능)</li>
-          <li>표지 페이지 자동 생성은 제거됨 (양식 파일 직접 활용 권장)</li>
-        </ul>
+      <div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:10px;padding:12px;font-size:12px;color:#92400e">
+        ⚠️ Windows + 한글(HWP) 2018+ 필요 · 적용 전 한글 프로그램 완전 종료
       </div>
     </div>
   `;
 
-  container.querySelector('#hwpf-apply-btn').addEventListener('click', async function () {
-    var btn     = container.querySelector('#hwpf-apply-btn');
-    var spinner = container.querySelector('#hwpf-spinner');
-    var icon    = container.querySelector('#hwpf-status-icon');
-    var statusText = container.querySelector('#hwpf-status-text');
-    var resultDiv  = container.querySelector('#hwpf-result');
+  var ta       = container.querySelector('#hwpf-md');
+  var topicEl  = container.querySelector('#hwpf-topic');
+  var typeEl   = container.querySelector('#hwpf-doctype');
+  var statusEl = container.querySelector('#hwpf-ai-status');
+  var statusText = container.querySelector('#hwpf-status-text');
+  var resultDiv  = container.querySelector('#hwpf-result');
+  var spinner    = container.querySelector('#hwpf-spinner');
+  var mdCount    = container.querySelector('#hwpf-md-count');
 
+  function updateCount() { mdCount.textContent = ta.value.length.toLocaleString(); }
+  updateCount();
+
+  ta.addEventListener('input', function () {
+    updateCount();
+    api.setSetting('hwp_md_draft', ta.value);
+  });
+  topicEl.addEventListener('input', function () { api.setSetting('hwp_topic', topicEl.value); });
+  typeEl.addEventListener('change', function () { api.setSetting('hwp_doctype', typeEl.value); });
+
+  // 예시 불러오기
+  container.querySelector('#hwpf-load-example').addEventListener('click', function () {
+    ta.value = EXAMPLE_MD;
+    updateCount();
+    api.setSetting('hwp_md_draft', EXAMPLE_MD);
+  });
+
+  // 프롬프트 복사
+  container.querySelector('#hwpf-copy-prompt').addEventListener('click', async function () {
+    var r = await window.api.hwpBuildPrompt({ topic: topicEl.value.trim(), docType: typeEl.value });
+    if (r && r.ok) {
+      try {
+        await navigator.clipboard.writeText(r.prompt);
+        statusEl.textContent = '✓ 복사됨! GPT/Claude에 붙여넣으세요';
+        statusEl.style.color = '#059669';
+        setTimeout(() => { statusEl.textContent = ''; }, 3000);
+      } catch (e) {
+        statusEl.textContent = '복사 실패: ' + e.message;
+        statusEl.style.color = '#dc2626';
+      }
+    }
+  });
+
+  // 로컬 AI 생성
+  container.querySelector('#hwpf-ai-gen').addEventListener('click', async function () {
+    var topic = topicEl.value.trim();
+    if (!topic) {
+      statusEl.textContent = '⚠ 주제를 먼저 입력하세요';
+      statusEl.style.color = '#dc2626';
+      return;
+    }
+    var btn = container.querySelector('#hwpf-ai-gen');
     btn.disabled = true;
-    spinner.style.display = 'block';
-    resultDiv.style.display = 'none';
-    icon.textContent = '⏳';
-    statusText.textContent = '파일을 열어 서식을 적용하는 중...';
+    statusEl.textContent = '🤖 로컬 AI 생성 중... (수십 초 걸릴 수 있음)';
+    statusEl.style.color = 'var(--accent)';
 
     try {
-      var result = await window.api.hwpApplyFormat();
-
-      if (result && result.ok) {
-        icon.textContent = '✅';
-        statusText.textContent = '서식 적용 완료!';
-        var typeLabel = {
-          'markdown': '마크다운',
-          'korean-roman': '한국 공문 (Ⅰ 기준)',
-          'korean-num': '한국 공문 (1. 기준)'
-        }[result.inputType] || '자동 감지';
-        resultDiv.style.display = 'block';
-        resultDiv.innerHTML = `
-          <div style="background:#d1fae5;border:1px solid #6ee7b7;border-radius:10px;padding:14px;font-size:13px;color:#065f46">
-            <b>✅ 완료!</b> ${result.blocks}개 단락/표 처리됨 (입력 형식: ${escapeHtml(typeLabel)})
-            ${result.warnings && result.warnings.length ? '<br><span style="font-size:11px">⚠ ' + result.warnings.length + '개 경고</span>' : ''}
-          </div>`;
-      } else if (result && result.canceled) {
-        icon.textContent = '📄';
-        statusText.textContent = '취소되었습니다.';
+      var r = await window.api.hwpGenerateMarkdown({ topic: topic, docType: typeEl.value });
+      if (r && r.ok && r.markdown) {
+        ta.value = r.markdown;
+        updateCount();
+        api.setSetting('hwp_md_draft', r.markdown);
+        statusEl.textContent = '✓ 생성 완료 (' + (r.model || '') + ')';
+        statusEl.style.color = '#059669';
       } else {
-        var errMsg = (result && result.error) ? result.error : '알 수 없는 오류';
-        icon.textContent = '❌';
-        statusText.textContent = '오류 발생';
-        resultDiv.style.display = 'block';
-        resultDiv.innerHTML = `
-          <div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:10px;padding:14px;font-size:13px;color:#991b1b">
-            <b>❌ 오류</b><br>${escapeHtml(errMsg)}
-          </div>`;
+        statusEl.textContent = '❌ ' + (r.error || '생성 실패');
+        statusEl.style.color = '#dc2626';
       }
     } catch (e) {
-      icon.textContent = '❌';
-      statusText.textContent = '연결 오류';
-      resultDiv.style.display = 'block';
-      resultDiv.innerHTML = `<div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:10px;padding:14px;font-size:13px;color:#991b1b"><b>❌</b> ${escapeHtml(String(e))}</div>`;
+      statusEl.textContent = '❌ ' + String(e);
+      statusEl.style.color = '#dc2626';
     } finally {
       btn.disabled = false;
-      spinner.style.display = 'none';
+    }
+  });
+
+  function showResult(result) {
+    resultDiv.style.display = 'block';
+    if (result && result.ok) {
+      statusText.textContent = '서식 적용 완료!';
+      resultDiv.innerHTML = `
+        <div style="background:#d1fae5;border:1px solid #6ee7b7;border-radius:10px;padding:14px;font-size:13px;color:#065f46">
+          <b>✅ 완료!</b> ${result.blocks || 0}개 단락/표 처리됨${result.savedTo ? '<br><span style="font-size:11px">저장: ' + escapeHtml(result.savedTo) + '</span>' : ''}
+        </div>`;
+    } else if (result && result.canceled) {
+      resultDiv.style.display = 'none';
+    } else {
+      var errMsg = (result && result.error) ? result.error : '알 수 없는 오류';
+      statusText.textContent = '오류 발생';
+      resultDiv.innerHTML = `
+        <div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:10px;padding:14px;font-size:13px;color:#991b1b">
+          <b>❌ 오류</b><br>${escapeHtml(errMsg)}
+        </div>`;
+    }
+  }
+
+  // 마크다운 → 한글 변환
+  container.querySelector('#hwpf-convert-text').addEventListener('click', async function () {
+    var md = ta.value.trim();
+    if (!md) { alert('마크다운을 작성해주세요.'); return; }
+    var btn = container.querySelector('#hwpf-convert-text');
+    btn.disabled = true; spinner.style.display = 'block'; resultDiv.style.display = 'none';
+    statusText.textContent = '한글 파일 생성 및 서식 적용 중...';
+    try {
+      var r = await window.api.hwpFormatFromText(md);
+      showResult(r);
+    } catch (e) {
+      showResult({ ok: false, error: String(e) });
+    } finally {
+      btn.disabled = false; spinner.style.display = 'none';
+    }
+  });
+
+  // 기존 한글 파일에 적용
+  container.querySelector('#hwpf-apply-existing').addEventListener('click', async function () {
+    var btn = container.querySelector('#hwpf-apply-existing');
+    btn.disabled = true; spinner.style.display = 'block'; resultDiv.style.display = 'none';
+    statusText.textContent = '파일 선택 후 적용 중...';
+    try {
+      var r = await window.api.hwpApplyFormat();
+      showResult(r);
+    } catch (e) {
+      showResult({ ok: false, error: String(e) });
+    } finally {
+      btn.disabled = false; spinner.style.display = 'none';
     }
   });
 }

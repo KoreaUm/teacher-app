@@ -28,7 +28,8 @@
 
 param(
     [Parameter(Mandatory=$true)]
-    [string]$FilePath
+    [string]$FilePath,
+    [string]$InputTextFile = ""    # 텍스트 입력 모드: 이 파일의 텍스트를 새 한글 문서로 작성 후 서식 적용
 )
 
 $OutputEncoding = [System.Text.Encoding]::UTF8
@@ -38,13 +39,28 @@ function Write-Result($obj) {
     Write-Output ($obj | ConvertTo-Json -Compress)
 }
 
-# 파일 확인
-if (-not (Test-Path -LiteralPath $FilePath)) {
+# 텍스트 입력 모드: $FilePath는 결과를 저장할 경로 (없으면 새로 생성)
+$IsTextInputMode = ($InputTextFile -ne "" -and (Test-Path -LiteralPath $InputTextFile))
+
+# 일반 모드: 기존 파일 존재해야 함
+if (-not $IsTextInputMode -and -not (Test-Path -LiteralPath $FilePath)) {
     Write-Result @{ ok = $false; error = "파일을 찾을 수 없습니다: $FilePath" }
     exit 1
 }
-$AbsPath = (Resolve-Path -LiteralPath $FilePath).Path
+
+# 텍스트 입력 모드면 FilePath가 아직 존재 안 할 수 있으니 디렉터리만 확인
+if ($IsTextInputMode) {
+    $parent = [System.IO.Path]::GetDirectoryName($FilePath)
+    if ($parent -and -not (Test-Path -LiteralPath $parent)) {
+        Write-Result @{ ok = $false; error = "저장 폴더가 없습니다: $parent" }
+        exit 1
+    }
+    $AbsPath = [System.IO.Path]::GetFullPath($FilePath)
+} else {
+    $AbsPath = (Resolve-Path -LiteralPath $FilePath).Path
+}
 $ext = [System.IO.Path]::GetExtension($AbsPath).ToLower()
+if ($ext -eq "") { $ext = ".hwpx"; $AbsPath = $AbsPath + ".hwpx" }
 $format = if ($ext -eq '.hwpx') { "HWPX" } else { "HWP" }
 
 # ── 한글 COM 연결 ─────────────────────────────────────────────
@@ -64,16 +80,33 @@ if (-not $hwp) {
 }
 try { $hwp.RegisterModule("FilePathCheckerModuleExample", "FilePathCheckerModule") | Out-Null } catch {}
 
-# 파일 열기
-try { $hwp.Open($AbsPath, $format, "") | Out-Null }
-catch {
-    Write-Result @{ ok = $false; error = "파일 열기 실패: $_" }
-    exit 1
+# 파일 열기 또는 빈 문서 시작
+if (-not $IsTextInputMode) {
+    try { $hwp.Open($AbsPath, $format, "") | Out-Null }
+    catch {
+        Write-Result @{ ok = $false; error = "파일 열기 실패: $_" }
+        exit 1
+    }
 }
 try { if ($hwp.XHwpWindows.Count -gt 0) { $hwp.XHwpWindows.Item(0).Visible = $true } } catch {}
 
 # ── 문서 텍스트 추출 (인코딩 자동 감지) ──────────────────────────
 $rawText = $null
+
+if ($IsTextInputMode) {
+    # 텍스트 입력 모드: 입력 파일에서 직접 읽음
+    try {
+        $bytes = [System.IO.File]::ReadAllBytes($InputTextFile)
+        if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+            $rawText = [System.Text.Encoding]::UTF8.GetString($bytes, 3, $bytes.Length - 3)
+        } else {
+            $rawText = [System.Text.Encoding]::UTF8.GetString($bytes)
+        }
+    } catch {
+        Write-Result @{ ok = $false; error = "입력 텍스트 파일 읽기 실패: $_" }
+        exit 1
+    }
+} else {
 try {
     $tmp = [System.IO.Path]::GetTempFileName() + ".txt"
     $hwp.SaveAs($tmp, "TEXT", "") | Out-Null
@@ -102,6 +135,7 @@ try {
     Write-Result @{ ok = $false; error = "문서 읽기 실패: $_" }
     exit 1
 }
+}   # end of else (text-input-mode else)
 
 if ([string]::IsNullOrWhiteSpace($rawText)) {
     Write-Result @{ ok = $false; error = "문서가 비어있습니다." }
