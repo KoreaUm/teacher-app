@@ -112,6 +112,8 @@ if ([string]::IsNullOrWhiteSpace($rawText)) {
 $lines = $rawText -split "`r?`n"
 
 # 한국 공문 패턴
+# - 항목 단계 (1./가./1)/가)/(1)/(가)) - 행안부 편람 기준
+# - 글머리표 (□/○/-/·) - 공문서 표준 보조 위계
 $PATTERNS = @{
     L_ROMAN     = '^\s*([ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩ])\.?\s*(.*)$'
     L_NUM_DOT   = '^\s*(\d{1,2})\.\s+(.+)$'
@@ -119,9 +121,11 @@ $PATTERNS = @{
     L_NUM_PAREN = '^\s*(\d{1,2})\)\s+(.+)$'
     L_HAN_PAREN = '^\s*([가나다라마바사아자차카타파하])\)\s+(.+)$'
     L_PARENNUM  = '^\s*\(\s*(\d{1,2})\s*\)\s+(.+)$'
-    BULLET_O    = '^\s*[◦○]\s*(.+)$'
-    BULLET_DASH = '^\s*[-–—]\s+(.+)$'
-    EMPH        = '^\s*[▪▶▷■◆]\s*(.+)$'
+    BULLET_SQ   = '^\s*[□■]\s*(.+)$'        # 1단계 □
+    BULLET_CR   = '^\s*[○●◦]\s*(.+)$'        # 2단계 ○
+    BULLET_DASH = '^\s*[-–—]\s+(.+)$'        # 3단계 -
+    BULLET_DOT  = '^\s*[·•]\s*(.+)$'         # 4단계 ·
+    EMPH        = '^\s*[▪▶▷◆]\s*(.+)$'
     NOTE        = '^\s*※\s*(.+)$'
 }
 
@@ -162,13 +166,15 @@ function Classify-Line($line) {
     if ($s -match '^##\s+(.+)$')   { return @{ type = 'MD_H2'; text = Strip-MdMarkers $matches[1] } }
     if ($s -match '^#\s+(.+)$')    { return @{ type = 'MD_H1'; text = Strip-MdMarkers $matches[1] } }
 
-    # 마크다운 글머리 (들여쓰기로 하위 구분)
-    if ($line -match '^(\s+)[-*]\s+(.+)$') {
-        # 들여쓰기 있음 → 하위 글머리
-        return @{ type = 'BULLET_DASH'; text = '- ' + (Strip-MdMarkers $matches[2]) }
-    }
-    if ($s -match '^[-*]\s+(.+)$') {
-        return @{ type = 'BULLET_O'; text = '◦ ' + (Strip-MdMarkers $matches[1]) }
+    # 마크다운 글머리 — 들여쓰기 깊이로 4단계 위계 매핑 (공문서 표준)
+    # 0칸: □ (1단계), 2칸: ○ (2단계), 4칸: - (3단계), 6칸+: · (4단계)
+    if ($line -match '^(\s*)[-*]\s+(.+)$') {
+        $indent = $matches[1].Length
+        $txt = Strip-MdMarkers $matches[2]
+        if ($indent -ge 6)      { return @{ type = 'BULLET_DOT';  text = '· ' + $txt } }
+        elseif ($indent -ge 4)  { return @{ type = 'BULLET_DASH'; text = '- ' + $txt } }
+        elseif ($indent -ge 2)  { return @{ type = 'BULLET_CR';   text = '○ ' + $txt } }
+        else                    { return @{ type = 'BULLET_SQ';   text = '□ ' + $txt } }
     }
 
     # 한국 공문 패턴
@@ -177,7 +183,7 @@ function Classify-Line($line) {
             return @{ type = $key; text = Strip-MdMarkers $s }
         }
     }
-    foreach ($key in 'BULLET_O','BULLET_DASH','EMPH','NOTE') {
+    foreach ($key in 'BULLET_SQ','BULLET_CR','BULLET_DASH','BULLET_DOT','EMPH','NOTE') {
         if ($s -match $PATTERNS[$key]) {
             return @{ type = $key; text = Strip-MdMarkers $s }
         }
@@ -254,17 +260,13 @@ while ($i -lt $labeled.Count) {
     $lvl = Get-HeadingLevel $item.type
     if ($lvl -gt 0) {
         [void]$nodes.Add(@{ kind = 'heading'; level = $lvl; text = $item.text })
-    } elseif ($item.type -eq 'BULLET_O') {
-        [void]$nodes.Add(@{ kind = 'bullet_o'; text = $item.text })
-    } elseif ($item.type -eq 'BULLET_DASH') {
-        [void]$nodes.Add(@{ kind = 'bullet_dash'; text = $item.text })
-    } elseif ($item.type -eq 'EMPH') {
-        [void]$nodes.Add(@{ kind = 'emph'; text = $item.text })
-    } elseif ($item.type -eq 'NOTE') {
-        [void]$nodes.Add(@{ kind = 'note'; text = $item.text })
-    } else {
-        [void]$nodes.Add(@{ kind = 'body'; text = $item.text })
-    }
+    } elseif ($item.type -eq 'BULLET_SQ')   { [void]$nodes.Add(@{ kind = 'bullet_sq';   text = $item.text }) }
+    elseif ($item.type -eq 'BULLET_CR')     { [void]$nodes.Add(@{ kind = 'bullet_cr';   text = $item.text }) }
+    elseif ($item.type -eq 'BULLET_DASH')   { [void]$nodes.Add(@{ kind = 'bullet_dash'; text = $item.text }) }
+    elseif ($item.type -eq 'BULLET_DOT')    { [void]$nodes.Add(@{ kind = 'bullet_dot';  text = $item.text }) }
+    elseif ($item.type -eq 'EMPH')          { [void]$nodes.Add(@{ kind = 'emph';        text = $item.text }) }
+    elseif ($item.type -eq 'NOTE')          { [void]$nodes.Add(@{ kind = 'note';        text = $item.text }) }
+    else                                    { [void]$nodes.Add(@{ kind = 'body';        text = $item.text }) }
     $i++
 }
 
@@ -280,8 +282,11 @@ $STYLE = @{
     H4 = @{ font='함초롬바탕'; size=15; bold=$false; indent=($INDENT_UNIT*3);   line=$LINE_SPACE; align=0; spaceBefore=0;   spaceAfter=0 }     # 4단계: 가)
     H5 = @{ font='함초롬바탕'; size=15; bold=$false; indent=($INDENT_UNIT*4);   line=$LINE_SPACE; align=0; spaceBefore=0;   spaceAfter=0 }     # 5단계: (1)
     H6 = @{ font='함초롬바탕'; size=15; bold=$false; indent=($INDENT_UNIT*5);   line=$LINE_SPACE; align=0; spaceBefore=0;   spaceAfter=0 }     # 6단계: (가)
-    BULLET_O    = @{ font='함초롬바탕'; size=15; bold=$false; indent=$INDENT_UNIT;       line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
+    # 글머리표 4단계 위계 (□ → ○ → - → ·, 공문서 표준)
+    BULLET_SQ   = @{ font='함초롬바탕'; size=15; bold=$false; indent=0;                  line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
+    BULLET_CR   = @{ font='함초롬바탕'; size=15; bold=$false; indent=$INDENT_UNIT;       line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
     BULLET_DASH = @{ font='함초롬바탕'; size=15; bold=$false; indent=($INDENT_UNIT*2);   line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
+    BULLET_DOT  = @{ font='함초롬바탕'; size=15; bold=$false; indent=($INDENT_UNIT*3);   line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
     EMPH        = @{ font='함초롬바탕'; size=15; bold=$true;  indent=$INDENT_UNIT;       line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
     NOTE        = @{ font='함초롬바탕'; size=13; bold=$false; indent=$INDENT_UNIT;       line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
     BODY        = @{ font='함초롬바탕'; size=15; bold=$false; indent=0;                  line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
@@ -521,8 +526,10 @@ foreach ($node in $nodes) {
                 if (-not $STYLE.ContainsKey($key)) { $key = "H6" }
                 Write-StyledPara $hwp $node.text $STYLE[$key]
             }
-            'bullet_o'    { Write-StyledPara $hwp $node.text $STYLE.BULLET_O }
+            'bullet_sq'   { Write-StyledPara $hwp $node.text $STYLE.BULLET_SQ }
+            'bullet_cr'   { Write-StyledPara $hwp $node.text $STYLE.BULLET_CR }
             'bullet_dash' { Write-StyledPara $hwp $node.text $STYLE.BULLET_DASH }
+            'bullet_dot'  { Write-StyledPara $hwp $node.text $STYLE.BULLET_DOT }
             'emph'        { Write-StyledPara $hwp $node.text $STYLE.EMPH }
             'note'        { Write-StyledPara $hwp $node.text $STYLE.NOTE }
             'body'        { Write-StyledPara $hwp $node.text $STYLE.BODY }

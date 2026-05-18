@@ -34,10 +34,12 @@ async function render(container) {
         <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px">
           <div style="font-weight:600;font-size:13px;margin-bottom:10px;color:#7c3aed">📝 마크다운 구문 (AI 출력 그대로)</div>
           <pre style="background:#f9fafb;border-radius:6px;padding:10px;font-size:11px;line-height:1.6;margin:0;overflow-x:auto;color:#1f2937"># 대제목
-## 중제목
-### 소제목
-- 글머리 항목
-  - 하위 항목
+## 중제목 (→ 1.)
+### 소제목 (→ 가.)
+- 1단계 글머리 (→ □)
+  - 2단계 (→ ○)
+    - 3단계 (→ -)
+      - 4단계 (→ ·)
 **굵게**
 
 | 시간 | 활동 |
@@ -48,16 +50,18 @@ async function render(container) {
         <!-- 한국 공문 -->
         <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px">
           <div style="font-weight:600;font-size:13px;margin-bottom:10px;color:#0891b2">📋 한국 공문 표시 체계</div>
-          <pre style="background:#f9fafb;border-radius:6px;padding:10px;font-size:11px;line-height:1.6;margin:0;overflow-x:auto;color:#1f2937">Ⅰ. 대제목 (또는 # )
-1. 중제목 (또는 ##)
-가. 소제목 (또는 ###)
-1) 항
-가) 호
-(1) 목
-◦ 글머리
-- 하위
-▪ 강조
-※ 참고</pre>
+          <pre style="background:#f9fafb;border-radius:6px;padding:10px;font-size:11px;line-height:1.6;margin:0;overflow-x:auto;color:#1f2937">1. 대제목 (→ ##)
+가. 중제목 (→ ###)
+1) 소제목 (→ ####)
+가) 항
+(1) 호
+(가) 목
+
+□ 1단계 글머리
+○ 2단계 글머리
+- 3단계 글머리
+· 4단계 글머리
+※ 참고/주의</pre>
         </div>
       </div>
 
