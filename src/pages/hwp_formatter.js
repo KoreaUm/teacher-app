@@ -6,8 +6,7 @@ var DOC_TYPES = [
   '기안문', '공문(협조요청)', '가정통신문', '회의록', '연수보고서'
 ];
 
-var EXAMPLE_MD = `기관: ○○중학교
-제목: 충남도-청년센터 청년정책 간담회 개최 계획
+var EXAMPLE_MD = `제목: 충남도-청년센터 청년정책 간담회 개최 계획
 서론: 도-청년센터 간 협력체계 강화 및 청년정책 현장 의견 수렴 필요에 따라 정책 간담회 개최 추진함
 
 네모: 간담회 개요
@@ -38,6 +37,7 @@ async function render(container) {
   var savedMd = (await api.getSetting('hwp_md_draft', '')) || EXAMPLE_MD;
   var savedTopic = (await api.getSetting('hwp_topic', '')) || '';
   var savedType = (await api.getSetting('hwp_doctype', DOC_TYPES[0])) || DOC_TYPES[0];
+  var savedSchool = (await api.getSetting('hwp_school', '')) || '';
 
   container.innerHTML = `
     <div class="page-wrap">
@@ -57,6 +57,9 @@ async function render(container) {
       <!-- Step 1: 주제 + 양식 -->
       <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:14px">
         <div style="font-weight:600;font-size:14px;margin-bottom:10px">1️⃣ 주제 입력 + 양식 선택</div>
+        <div style="margin-bottom:8px">
+          <input id="hwpf-school" class="input" type="text" placeholder="학교(기관)명 — 표지 상단/하단에 자동 삽입 (예: ○○중학교)" value="${escapeHtml(savedSchool)}" style="width:100%;font-size:13px;padding:6px 8px;box-sizing:border-box">
+        </div>
         <div style="display:grid;grid-template-columns:160px 1fr;gap:8px;margin-bottom:10px">
           <select id="hwpf-doctype" class="input" style="font-size:13px;padding:6px 8px">
             ${DOC_TYPES.map(t => `<option ${t === savedType ? 'selected' : ''}>${escapeHtml(t)}</option>`).join('')}
@@ -131,11 +134,21 @@ async function render(container) {
   var ta       = container.querySelector('#hwpf-md');
   var topicEl  = container.querySelector('#hwpf-topic');
   var typeEl   = container.querySelector('#hwpf-doctype');
+  var schoolEl = container.querySelector('#hwpf-school');
   var statusEl = container.querySelector('#hwpf-ai-status');
   var statusText = container.querySelector('#hwpf-status-text');
   var resultDiv  = container.querySelector('#hwpf-result');
   var spinner    = container.querySelector('#hwpf-spinner');
   var mdCount    = container.querySelector('#hwpf-md-count');
+
+  function buildMdWithSchool() {
+    var school = schoolEl.value.trim();
+    var md = ta.value.trim();
+    if (!school) return md;
+    // 이미 기관: 태그가 있으면 앞에 추가하지 않음
+    if (/^\s*(기관|학교|기관명|학교명|소속|부서)\s*[:：]/m.test(md)) return md;
+    return '기관: ' + school + '\n' + md;
+  }
 
   function updateCount() { mdCount.textContent = ta.value.length.toLocaleString(); }
   updateCount();
@@ -146,6 +159,7 @@ async function render(container) {
   });
   topicEl.addEventListener('input', function () { api.setSetting('hwp_topic', topicEl.value); });
   typeEl.addEventListener('change', function () { api.setSetting('hwp_doctype', typeEl.value); });
+  schoolEl.addEventListener('input', function () { api.setSetting('hwp_school', schoolEl.value); });
 
   // 예시 불러오기
   container.querySelector('#hwpf-load-example').addEventListener('click', function () {
@@ -225,7 +239,7 @@ async function render(container) {
 
   // 마크다운 → 한글 변환
   container.querySelector('#hwpf-convert-text').addEventListener('click', async function () {
-    var md = ta.value.trim();
+    var md = buildMdWithSchool();
     if (!md) { alert('마크다운을 작성해주세요.'); return; }
     var btn = container.querySelector('#hwpf-convert-text');
     btn.disabled = true; spinner.style.display = 'block'; resultDiv.style.display = 'none';
