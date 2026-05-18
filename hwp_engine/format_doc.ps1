@@ -362,10 +362,10 @@ $STYLE = @{
     H5 = @{ font='함초롬바탕'; size=15; bold=$false; indent=($INDENT_UNIT*4);   line=$LINE_SPACE; align=0; spaceBefore=0;   spaceAfter=0 }     # 5단계: (1)
     H6 = @{ font='함초롬바탕'; size=15; bold=$false; indent=($INDENT_UNIT*5);   line=$LINE_SPACE; align=0; spaceBefore=0;   spaceAfter=0 }     # 6단계: (가)
     # 글머리표 4단계 위계 (□ → ○ → - → ·, 공문서 표준)
-    BULLET_SQ   = @{ font='함초롬바탕'; size=15; bold=$false; indent=0;                  line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
-    BULLET_CR   = @{ font='함초롬바탕'; size=15; bold=$false; indent=$INDENT_UNIT;       line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
-    BULLET_DASH = @{ font='함초롬바탕'; size=15; bold=$false; indent=($INDENT_UNIT*2);   line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
-    BULLET_DOT  = @{ font='함초롬바탕'; size=15; bold=$false; indent=($INDENT_UNIT*3);   line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
+    BULLET_SQ   = @{ font='함초롬바탕'; size=15; bold=$false; indent=0;                  hanging=520; line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
+    BULLET_CR   = @{ font='함초롬바탕'; size=15; bold=$false; indent=0;                  hanging=520; line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
+    BULLET_DASH = @{ font='함초롬바탕'; size=15; bold=$false; indent=$INDENT_UNIT;       hanging=420; line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
+    BULLET_DOT  = @{ font='함초롬바탕'; size=15; bold=$false; indent=($INDENT_UNIT*2);   hanging=420; line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
     EMPH        = @{ font='함초롬바탕'; size=15; bold=$true;  indent=$INDENT_UNIT;       line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
     NOTE        = @{ font='함초롬바탕'; size=13; bold=$false; indent=$INDENT_UNIT;       line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
     BODY        = @{ font='함초롬바탕'; size=15; bold=$false; indent=0;                  line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
@@ -422,7 +422,7 @@ function Insert-Rectangle($hwp, $widthHwp, $heightHwp, $fillRgb) {
     }
 }
 
-function Set-CharShape($hwp, $font, $sizePt, $bold) {
+function Set-CharShape($hwp, $font, $sizePt, $bold, $color=$null) {
     try {
         $act = $hwp.HAction
         $pset = $hwp.HParameterSet.HCharShape
@@ -431,17 +431,25 @@ function Set-CharShape($hwp, $font, $sizePt, $bold) {
         Try-SetProp $pset 'Height' ($sizePt * 100)
         $boldVal = if ($bold) { 1 } else { 0 }
         Try-SetProp $pset 'Bold' $boldVal
+        if ($null -ne $color) {
+            Try-SetProp $pset 'TextColor' $color
+            Try-SetProp $pset 'CharColor' $color
+        } else {
+            Try-SetProp $pset 'TextColor' 0
+            Try-SetProp $pset 'CharColor' 0
+        }
         try { $act.Execute("CharShape", $pset.HSet) | Out-Null } catch {}
     } catch {}
 }
 
-function Set-ParaShape($hwp, $indent, $line, $align, $spaceBefore=0, $spaceAfter=0) {
+function Set-ParaShape($hwp, $indent, $line, $align, $spaceBefore=0, $spaceAfter=0, $hanging=0) {
     try {
         $act = $hwp.HAction
         $pset = $hwp.HParameterSet.HParaShape
         $act.GetDefault("ParagraphShape", $pset.HSet) | Out-Null
-        Try-SetProp $pset 'LeftMargin'      $indent
-        Try-SetProp $pset 'Indent'          0
+        $left = $indent + $hanging
+        Try-SetProp $pset 'LeftMargin'      $left
+        Try-SetProp $pset 'Indent'          (-1 * $hanging)
         Try-SetProp $pset 'LineSpacing'     $line
         Try-SetProp $pset 'LineSpacingType' 0
         Try-SetProp $pset 'AlignType'       $align
@@ -463,9 +471,19 @@ function Insert-Text($hwp, $text) {
 
 function Write-StyledPara($hwp, $text, $s) {
     try {
-        Set-ParaShape $hwp $s.indent $s.line $s.align $s.spaceBefore $s.spaceAfter
+        $hanging = if ($s.ContainsKey('hanging')) { $s.hanging } else { 0 }
+        Set-ParaShape $hwp $s.indent $s.line $s.align $s.spaceBefore $s.spaceAfter $hanging
         Set-CharShape $hwp $s.font $s.size $s.bold
         Insert-Text $hwp $text
+        Safe-Run $hwp "BreakPara"
+    } catch {}
+}
+
+function Write-ColorRule($hwp, $color, $align=1, $spaceBefore=0, $spaceAfter=0) {
+    try {
+        Set-ParaShape $hwp 0 100 $align $spaceBefore $spaceAfter 0
+        Set-CharShape $hwp '함초롬바탕' 10 $true $color
+        Insert-Text $hwp '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
         Safe-Run $hwp "BreakPara"
     } catch {}
 }
@@ -483,24 +501,14 @@ function Write-LeadPara($hwp, $text, $isLastLead=$false) {
         Try-SetProp $ps 'AlignType' 0
         Try-SetProp $ps 'PrevSpacing' 0
         Try-SetProp $ps 'NextSpacing' 60
-        if ($isLastLead) {
-            Try-SetProp $ps 'BorderBottom' 1
-            Try-SetProp $ps 'BorderBottomColor' $gray
-            Try-SetProp $ps 'BorderBottomWidth' 2
-        } else {
-            Try-SetProp $ps 'BorderBottom' 0
-        }
+        Try-SetProp $ps 'BorderBottom' 0
         try { $act.Execute("ParagraphShape", $ps.HSet) | Out-Null } catch {}
         Set-CharShape $hwp $STYLE.LEAD.font $STYLE.LEAD.size $STYLE.LEAD.bold
         Insert-Text $hwp $text
         Safe-Run $hwp "BreakPara"
 
         if ($isLastLead) {
-            $act2 = $hwp.HAction
-            $ps2 = $hwp.HParameterSet.HParaShape
-            $act2.GetDefault("ParagraphShape", $ps2.HSet) | Out-Null
-            Try-SetProp $ps2 'BorderBottom' 0
-            try { $act2.Execute("ParagraphShape", $ps2.HSet) | Out-Null } catch {}
+            Write-ColorRule $hwp $gray 0 0 200
         }
     } catch {
         Write-StyledPara $hwp $text $STYLE.LEAD
@@ -549,20 +557,11 @@ function Write-DecoratedTitle($hwp, $titleText) {
     $orange = ((0x21) -shl 16) -bor ((0x69) -shl 8) -bor 0xE2   # ≈ #E26921 주황
     $red    = ((0x33) -shl 16) -bor ((0x33) -shl 8) -bor 0xCC   # ≈ #CC3333 빨강
 
-    # 1) 위쪽 주황 막대 — 빈 단락 + 굵은 위 테두리
-    Set-CharShape $hwp '함초롬바탕' 1 $false
-    $act = $hwp.HAction
-    $ps = $hwp.HParameterSet.HParaShape
-    $act.GetDefault("ParagraphShape", $ps.HSet) | Out-Null
-    Try-SetProp $ps 'LeftMargin' 0
-    Try-SetProp $ps 'LineSpacing' 100
-    Try-SetProp $ps 'AlignType' 0
-    Try-SetProp $ps 'BorderTop'      0   # 위 테두리 없음
-    Try-SetProp $ps 'BorderBottom'   0   # (제목 단락에서 처리)
-    try { $act.Execute("ParagraphShape", $ps.HSet) | Out-Null } catch {}
-    Safe-Run $hwp "BreakPara"
+    # HWP 버전에 따라 단락 테두리/도형 API가 조용히 실패하는 경우가 있어
+    # 실제 색상 글자선을 먼저 넣고, 테두리는 보조 장식으로만 시도한다.
+    Write-ColorRule $hwp $orange 1 150 80
 
-    # 2) 제목 단락 — 큰 글씨 + 위/아래 굵은 컬러 테두리
+    # 제목 단락 — 큰 글씨 + 가운데 정렬
     $act2 = $hwp.HAction
     $ps2 = $hwp.HParameterSet.HParaShape
     $act2.GetDefault("ParagraphShape", $ps2.HSet) | Out-Null
@@ -571,21 +570,17 @@ function Write-DecoratedTitle($hwp, $titleText) {
     Try-SetProp $ps2 'AlignType' 1                  # 가운데
     Try-SetProp $ps2 'PrevSpacing' 220
     Try-SetProp $ps2 'NextSpacing' 200
-    # 위 주황 테두리
-    Try-SetProp $ps2 'BorderTop'       1            # 1 = 실선
-    Try-SetProp $ps2 'BorderTopColor'  $orange
-    Try-SetProp $ps2 'BorderTopWidth'  5            # 5 = 굵게
-    # 아래 빨강 테두리
-    Try-SetProp $ps2 'BorderBottom'      1
-    Try-SetProp $ps2 'BorderBottomColor' $red
-    Try-SetProp $ps2 'BorderBottomWidth' 5
+    Try-SetProp $ps2 'BorderTop'       0
+    Try-SetProp $ps2 'BorderBottom'    0
     try { $act2.Execute("ParagraphShape", $ps2.HSet) | Out-Null } catch {}
 
     Set-CharShape $hwp 'HY헤드라인M' 23 $true
     Insert-Text $hwp $titleText
     Safe-Run $hwp "BreakPara"
 
-    # 3) 테두리 해제 (다음 단락이 영향 안 받게)
+    Write-ColorRule $hwp $red 1 40 160
+
+    # 테두리 해제 (다음 단락이 영향 안 받게)
     $act3 = $hwp.HAction
     $ps3 = $hwp.HParameterSet.HParaShape
     $act3.GetDefault("ParagraphShape", $ps3.HSet) | Out-Null
@@ -600,6 +595,14 @@ function Write-Table($hwp, $rows) {
     if ($numRows -eq 0) { return }
     $numCols = ($rows[0]).Count
     if ($numCols -eq 0) { return }
+
+    # 한글 COM 표 생성은 PC/한글 버전에 따라 셀 이동·테두리 적용이 불안정하다.
+    # 기본은 안정적인 텍스트 표로 출력하고, 실제 HWP 표 테스트가 필요할 때만
+    # SSAMPORT_HWP_REAL_TABLE=1 환경변수로 COM 표 생성을 켠다.
+    if ($env:SSAMPORT_HWP_REAL_TABLE -ne '1') {
+        Write-TextTableFallback $hwp $rows
+        return
+    }
 
     $totalWidth = 36000
     $colW = [int]($totalWidth / $numCols)
@@ -704,16 +707,73 @@ function Write-Table($hwp, $rows) {
         Safe-Run $hwp "MoveDocEnd"
         Safe-Run $hwp "BreakPara"
     } else {
-        # 폴백: 텍스트로
-        for ($r = 0; $r -lt $numRows; $r++) {
-            $cellStyle = if ($r -eq 0) { $STYLE.TH } else { $STYLE.TD }
-            $line = ($rows[$r] -join "  |  ")
-            Set-CharShape $hwp $cellStyle.font $cellStyle.size $cellStyle.bold
-            Set-ParaShape $hwp 400 170 0 0 0
-            try { Insert-Text $hwp $line } catch {}
-            Safe-Run $hwp "BreakPara"
+        Write-TextTableFallback $hwp $rows
+    }
+}
+
+function Measure-CellWidth($value) {
+    $sum = 0
+    foreach ($ch in ([string]$value).ToCharArray()) {
+        $code = [int][char]$ch
+        if (($code -ge 0xAC00 -and $code -le 0xD7A3) -or ($code -ge 0x3130 -and $code -le 0x318F)) {
+            $sum += 2
+        } else {
+            $sum += 1
         }
     }
+    return $sum
+}
+
+function Pad-Cell($value, $width) {
+    $text = [string]$value
+    $need = [Math]::Max(0, $width - (Measure-CellWidth $text))
+    return $text + (' ' * $need)
+}
+
+function Write-TextTableFallback($hwp, $rows) {
+    try {
+        $numRows = $rows.Count
+        if ($numRows -eq 0) { return }
+        $numCols = ($rows[0]).Count
+        $widths = @()
+        for ($c = 0; $c -lt $numCols; $c++) {
+            $max = 4
+            for ($r = 0; $r -lt $numRows; $r++) {
+                $cell = if ($c -lt $rows[$r].Count) { [string]$rows[$r][$c] } else { "" }
+                $max = [Math]::Max($max, [Math]::Min(32, (Measure-CellWidth $cell)))
+            }
+            $widths += ($max + 2)
+        }
+        $sepParts = @()
+        foreach ($w in $widths) { $sepParts += ('-' * $w) }
+        $sep = '+' + ($sepParts -join '+') + '+'
+
+        Set-ParaShape $hwp 0 145 0 120 60 0
+        Set-CharShape $hwp 'D2Coding' 11 $false
+        Insert-Text $hwp $sep
+        Safe-Run $hwp "BreakPara"
+
+        for ($r = 0; $r -lt $numRows; $r++) {
+            $parts = @()
+            for ($c = 0; $c -lt $numCols; $c++) {
+                $cell = if ($c -lt $rows[$r].Count) { [string]$rows[$r][$c] } else { "" }
+                $parts += (' ' + (Pad-Cell $cell ($widths[$c] - 1)))
+            }
+            Set-ParaShape $hwp 0 145 0 0 0 0
+            Set-CharShape $hwp 'D2Coding' 11 ($r -eq 0)
+            Insert-Text $hwp ('|' + ($parts -join '|') + '|')
+            Safe-Run $hwp "BreakPara"
+            if ($r -eq 0) {
+                Set-CharShape $hwp 'D2Coding' 11 $false
+                Insert-Text $hwp $sep
+                Safe-Run $hwp "BreakPara"
+            }
+        }
+        Set-CharShape $hwp 'D2Coding' 11 $false
+        Insert-Text $hwp $sep
+        Safe-Run $hwp "BreakPara"
+        Safe-Run $hwp "BreakPara"
+    } catch {}
 }
 
 # ── 5단계: 문서 지우고 다시 쓰기 ─────────────────────────────
