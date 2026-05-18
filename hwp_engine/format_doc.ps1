@@ -423,6 +423,35 @@ function Insert-Rectangle($hwp, $widthHwp, $heightHwp, $fillRgb) {
     }
 }
 
+function Insert-LineShape($hwp, $widthHwp, $colorRgb, $heightHwp=80) {
+    # 한글 선/도형 COM 명령은 버전별 차이가 있어 여러 명령을 순차 시도한다.
+    foreach ($actionName in 'DrawLineCreator','LineCreator') {
+        try {
+            $act = $hwp.HAction
+            $set = $hwp.HParameterSet.HShapeObject
+            $act.GetDefault($actionName, $set.HSet) | Out-Null
+            Try-SetProp $set 'Width'       $widthHwp
+            Try-SetProp $set 'Height'      $heightHwp
+            Try-SetProp $set 'TreatAsChar' $true
+            try {
+                $line = $set.HSet.CreateItemSet("LineShape", "LineShape")
+                $line.Color = $colorRgb
+                $line.Width = 5
+            } catch {}
+            try {
+                $set.LineShape.Color = $colorRgb
+                $set.LineShape.Width = 5
+            } catch {}
+            $act.Execute($actionName, $set.HSet) | Out-Null
+            Safe-Run $hwp "BreakPara"
+            return $true
+        } catch {}
+    }
+
+    # 선 객체가 실패하면 납작한 직사각형을 도형선으로 사용한다.
+    return (Insert-Rectangle $hwp $widthHwp $heightHwp $colorRgb)
+}
+
 function Set-CharShape($hwp, $font, $sizePt, $bold, $color=$null) {
     try {
         $act = $hwp.HAction
@@ -499,6 +528,7 @@ function Write-StyledPara($hwp, $text, $s) {
 function Write-ColorRule($hwp, $color, $align=1, $spaceBefore=0, $spaceAfter=0) {
     try {
         Set-ParaShape $hwp 0 100 $align $spaceBefore $spaceAfter 0
+        if (Insert-LineShape $hwp 43000 $color 80) { return }
         Set-CharShape $hwp '함초롬바탕' 10 $true $color
         Insert-Text $hwp '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
         Safe-Run $hwp "BreakPara"
@@ -509,6 +539,33 @@ function Write-BlankParas($hwp, $count, $size=12) {
     for ($i = 0; $i -lt $count; $i++) {
         Set-ParaShape $hwp 0 120 0 0 0 0
         Set-CharShape $hwp '휴먼명조' $size $false
+        Safe-Run $hwp "BreakPara"
+    }
+}
+
+function Write-CoverDate($hwp) {
+    try {
+        $act = $hwp.HAction
+        $ps = $hwp.HParameterSet.HParaShape
+        $act.GetDefault("ParagraphShape", $ps.HSet) | Out-Null
+        Try-SetProp $ps 'LeftMargin' 0
+        Try-SetProp $ps 'RightMargin' 0
+        Try-SetProp $ps 'Indent' 0
+        Try-SetProp $ps 'LineSpacing' 160
+        Try-SetProp $ps 'LineSpacingType' 0
+        Try-SetProp $ps 'AlignType' 1
+        Try-SetProp $ps 'PrevSpacing' 0
+        Try-SetProp $ps 'NextSpacing' 0
+        Try-SetProp $ps 'BorderTop' 0
+        Try-SetProp $ps 'BorderBottom' 0
+        try { $act.Execute("ParagraphShape", $ps.HSet) | Out-Null } catch {}
+        Set-CharShape $hwp '휴먼명조' 24 $true
+        Insert-Text $hwp ((Get-Date).ToString('yyyy. M.'))
+        Safe-Run $hwp "BreakPara"
+    } catch {
+        Set-ParaShape $hwp 0 160 1 0 0 0
+        Set-CharShape $hwp '휴먼명조' 24 $true
+        Insert-Text $hwp ((Get-Date).ToString('yyyy. M.'))
         Safe-Run $hwp "BreakPara"
     }
 }
@@ -605,11 +662,7 @@ function Write-DecoratedTitle($hwp, $titleText) {
 
     Write-ColorRule $hwp $red 1 0 3000
 
-    Set-ParaShape $hwp 0 160 1 0 0 0
-    Set-CharShape $hwp '휴먼명조' 24 $true
-    $coverDate = (Get-Date).ToString('yyyy. M.')
-    Insert-Text $hwp $coverDate
-    Safe-Run $hwp "BreakPara"
+    Write-CoverDate $hwp
 
     Break-Page $hwp
 
