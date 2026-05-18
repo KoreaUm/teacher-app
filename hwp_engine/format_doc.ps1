@@ -165,6 +165,7 @@ $PATTERNS = @{
 
 $TAG_PATTERNS = @{
     TITLE       = '^\s*제목\s*[:：]\s*(.+)$'
+    INSTITUTION = '^\s*(기관|학교|기관명|학교명|소속|부서)\s*[:：]\s*(.+)$'
     LEAD        = '^\s*(서론|요약|개요문)\s*[:：]\s*(.+)$'
     SECTION     = '^\s*(네모|중제목)\s*[:：]\s*(.+)$'
     CIRCLE      = '^\s*(원|동그라미)\s*[:：]\s*(.+)$'
@@ -187,8 +188,9 @@ function Classify-Line($line) {
     $s = $line.Trim()
     if ([string]::IsNullOrEmpty($s)) { return @{ type = 'BLANK' } }
 
-    if ($s -match $TAG_PATTERNS.TITLE)   { return @{ type = 'MD_H1'; text = Strip-MdMarkers $matches[1] } }
-    if ($s -match $TAG_PATTERNS.LEAD)    { return @{ type = 'LEAD'; text = Strip-MdMarkers $matches[2] } }
+    if ($s -match $TAG_PATTERNS.TITLE)       { return @{ type = 'MD_H1';      text = Strip-MdMarkers $matches[1] } }
+    if ($s -match $TAG_PATTERNS.INSTITUTION) { return @{ type = 'INSTITUTION'; text = Strip-MdMarkers $matches[2] } }
+    if ($s -match $TAG_PATTERNS.LEAD)        { return @{ type = 'LEAD';        text = Strip-MdMarkers $matches[2] } }
     if ($s -match $TAG_PATTERNS.SECTION) { return @{ type = 'TAG_SECTION'; text = Strip-MdMarkers $matches[2] } }
     if ($s -match $TAG_PATTERNS.CIRCLE)  { return @{ type = 'BULLET_CR'; text = 'ㅇ ' + (Strip-MdMarkers $matches[2]) } }
     if ($s -match $TAG_PATTERNS.DASH)    { return @{ type = 'BULLET_DASH'; text = '- ' + (Strip-MdMarkers $matches[2]) } }
@@ -338,7 +340,8 @@ while ($i -lt $labeled.Count) {
     $lvl = Get-HeadingLevel $item.type
     if ($lvl -gt 0) {
         [void]$nodes.Add(@{ kind = 'heading'; level = $lvl; text = $item.text })
-    } elseif ($item.type -eq 'LEAD')        { [void]$nodes.Add(@{ kind = 'lead';        text = $item.text }) }
+    } elseif ($item.type -eq 'INSTITUTION')  { [void]$nodes.Add(@{ kind = 'institution'; text = $item.text }) }
+    elseif ($item.type -eq 'LEAD')        { [void]$nodes.Add(@{ kind = 'lead';        text = $item.text }) }
     elseif ($item.type -eq 'TAG_SECTION')   { [void]$nodes.Add(@{ kind = 'section';     text = $item.text }) }
     elseif ($item.type -eq 'BULLET_SQ')     { [void]$nodes.Add(@{ kind = 'bullet_sq';   text = $item.text }) }
     elseif ($item.type -eq 'BULLET_CR')     { [void]$nodes.Add(@{ kind = 'bullet_cr';   text = $item.text }) }
@@ -633,47 +636,73 @@ function Set-ParaBorder($hwp, $top, $bottom) {
     } catch {}
 }
 
-# 빨강/주황 가로 막대로 장식된 큰 제목 작성 (범정부 오피스 스타일)
-function Write-DecoratedTitle($hwp, $titleText) {
-    # 색상 (BGR 정수)
-    $orange = ((0x21) -shl 16) -bor ((0x69) -shl 8) -bor 0xE2   # ≈ #E26921 주황
-    $red    = ((0x33) -shl 16) -bor ((0x33) -shl 8) -bor 0xCC   # ≈ #CC3333 빨강
+# 행안부 업무계획 스타일 표지: 기관명(상단) / 주황바·제목·남색바 / 연도+기관명(하단)
+function Write-DecoratedTitle($hwp, $titleText, $institutionName="") {
+    # 색상 (HWP BGR 정수)
+    $orange = ((0x21) -shl 16) -bor ((0x69) -shl 8) -bor 0xE2   # #E26921 주황
+    $navy   = ((0x87) -shl 16) -bor ((0x30) -shl 8) -bor 0x00   # #003087 남색
 
-    # 행안부 업무계획 기준: 표지형 첫 페이지를 만든 뒤 본문을 다음 쪽부터 시작한다.
-    Write-BlankParas $hwp 9 12
-    Write-ColorRule $hwp $orange 1 0 900
+    # ① 상단 여백 (페이지 약 40%)
+    Write-BlankParas $hwp 13 12
 
-    # 제목 단락 — 큰 글씨 + 가운데 정렬
-    $act2 = $hwp.HAction
-    $ps2 = $hwp.HParameterSet.HParaShape
-    $act2.GetDefault("ParagraphShape", $ps2.HSet) | Out-Null
-    Try-SetProp $ps2 'LeftMargin' 0
-    Try-SetProp $ps2 'LineSpacing' 160
-    Try-SetProp $ps2 'AlignType' 1                  # 가운데
-    Try-SetProp $ps2 'PrevSpacing' 0
-    Try-SetProp $ps2 'NextSpacing' 900
-    Try-SetProp $ps2 'BorderTop'       0
-    Try-SetProp $ps2 'BorderBottom'    0
-    try { $act2.Execute("ParagraphShape", $ps2.HSet) | Out-Null } catch {}
+    # ② 기관명 (상단, 가운데)
+    if (![string]::IsNullOrWhiteSpace($institutionName)) {
+        Set-ParaShape $hwp 0 160 1 0 400 0
+        Set-CharShape $hwp 'HY헤드라인M' 20 $false
+        Insert-Text $hwp $institutionName
+        Safe-Run $hwp "BreakPara"
+        Write-BlankParas $hwp 2 12
+    }
 
-    Set-CharShape $hwp 'HY헤드라인M' 32 $false
+    # ③ 주황 장식 바 (두꺼운)
+    Set-ParaShape $hwp 0 100 1 0 300 0
+    if (-not (Insert-LineShape $hwp 43000 $orange 180)) {
+        Set-CharShape $hwp '함초롬바탕' 10 $true $orange
+        Insert-Text $hwp '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+        Safe-Run $hwp "BreakPara"
+    }
+
+    # ④ 대제목 (36pt, 가운데)
+    Set-ParaShape $hwp 0 160 1 400 500 0
+    Set-CharShape $hwp 'HY헤드라인M' 36 $false
     Insert-Text $hwp $titleText
     Safe-Run $hwp "BreakPara"
 
-    Write-ColorRule $hwp $red 1 0 3000
+    # ⑤ 남색 하단 바
+    Set-ParaShape $hwp 0 100 1 0 0 0
+    if (-not (Insert-LineShape $hwp 43000 $navy 80)) {
+        Set-CharShape $hwp '함초롬바탕' 10 $true $navy
+        Insert-Text $hwp '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+        Safe-Run $hwp "BreakPara"
+    }
 
-    Write-CoverDate $hwp
+    # ⑥ 하단 여백
+    Write-BlankParas $hwp 7 12
+
+    # ⑦ 연도 (24pt, 가운데)
+    Set-ParaShape $hwp 0 160 1 0 200 0
+    Set-CharShape $hwp 'HY헤드라인M' 24 $false
+    Insert-Text $hwp ((Get-Date).ToString('yyyy. M.'))
+    Safe-Run $hwp "BreakPara"
+
+    # ⑧ 기관명 (하단, 가운데)
+    if (![string]::IsNullOrWhiteSpace($institutionName)) {
+        Set-ParaShape $hwp 0 160 1 0 0 0
+        Set-CharShape $hwp 'HY헤드라인M' 20 $false
+        Insert-Text $hwp $institutionName
+        Safe-Run $hwp "BreakPara"
+    }
 
     Break-Page $hwp
 
-    # 테두리 해제 (다음 단락이 영향 안 받게)
-    $act3 = $hwp.HAction
-    $ps3 = $hwp.HParameterSet.HParaShape
-    $act3.GetDefault("ParagraphShape", $ps3.HSet) | Out-Null
-    Try-SetProp $ps3 'BorderTop'    0
-    Try-SetProp $ps3 'BorderBottom' 0
-    Try-SetProp $ps3 'AlignType'    0
-    try { $act3.Execute("ParagraphShape", $ps3.HSet) | Out-Null } catch {}
+    # 다음 단락 서식 초기화
+    $actR = $hwp.HAction
+    $psR  = $hwp.HParameterSet.HParaShape
+    $actR.GetDefault("ParagraphShape", $psR.HSet) | Out-Null
+    Try-SetProp $psR 'BorderTop'    0
+    Try-SetProp $psR 'BorderBottom' 0
+    Try-SetProp $psR 'AlignType'    0
+    try { $actR.Execute("ParagraphShape", $psR.HSet) | Out-Null } catch {}
 }
 
 function Write-Table($hwp, $rows) {
@@ -724,14 +753,41 @@ function Write-Table($hwp, $rows) {
     } catch {}
 
     if ($tableCreated) {
+        # 남색(#003087) BGR = 0x873000 = 8859648
+        $navyBGR  = 8859648
+        $whiteBGR = 0xFFFFFF
+
         for ($r = 0; $r -lt $numRows; $r++) {
             for ($c = 0; $c -lt $numCols; $c++) {
-                $cellStyle = if ($r -eq 0) { $STYLE.TH } else { $STYLE.TD }
-                $cellText = if ($c -lt $rows[$r].Count) { [string]$rows[$r][$c] } else { "" }
+                $isHeader  = ($r -eq 0)
+                $cellStyle = if ($isHeader) { $STYLE.TH } else { $STYLE.TD }
+                $cellText  = if ($c -lt $rows[$r].Count) { [string]$rows[$r][$c] } else { "" }
 
-                Set-CharShape $hwp $cellStyle.font $cellStyle.size $cellStyle.bold
+                # 글자색: 헤더=흰색, 본문=검정
+                $textColor = if ($isHeader) { $whiteBGR } else { $null }
+                Set-CharShape $hwp $cellStyle.font $cellStyle.size $cellStyle.bold $textColor
                 Set-ParaShape $hwp 0 140 $cellStyle.align 0 0
                 try { Insert-Text $hwp $cellText } catch {}
+
+                # 헤더 셀 배경: 남색 (셀마다 바로 적용 → 선택 오류 회피)
+                if ($isHeader) {
+                    try {
+                        $act = $hwp.HAction
+                        $pset = $hwp.HParameterSet.HCellBorderFill
+                        $act.GetDefault("CellBorderFill", $pset.HSet) | Out-Null
+                        Try-SetProp $pset 'HasFill' $true
+                        Try-SetProp $pset 'FillType' 1
+                        try {
+                            $fill = $pset.HSet.CreateItemSet("FillBrush", "FillBrush")
+                            $fill.WinBrush.FaceColor = $navyBGR
+                        } catch {
+                            foreach ($p in 'ColorFillFG','ColorFG','FaceColor','Color') {
+                                Try-SetProp $pset $p $navyBGR
+                            }
+                        }
+                        try { $act.Execute("CellBorderFill", $pset.HSet) | Out-Null } catch {}
+                    } catch {}
+                }
 
                 if (-not ($r -eq ($numRows-1) -and $c -eq ($numCols-1))) {
                     Safe-Run $hwp "TableRightCell"
@@ -739,46 +795,24 @@ function Write-Table($hwp, $rows) {
             }
         }
 
-        # 모든 셀 테두리 + 헤더 행 배경색
+        # 전체 셀 테두리
         try {
             Safe-Run $hwp "TableColBegin"
             Safe-Run $hwp "TableSelTable"
-            $act = $hwp.HAction
-            $pset = $hwp.HParameterSet.HCellBorderFill
-            $act.GetDefault("CellBorderFill", $pset.HSet) | Out-Null
-            Try-SetProp $pset 'HasBorder' $true
+            $actB = $hwp.HAction
+            $psetB = $hwp.HParameterSet.HCellBorderFill
+            $actB.GetDefault("CellBorderFill", $psetB.HSet) | Out-Null
+            Try-SetProp $psetB 'HasBorder' $true
             foreach ($dir in 'BorderTypeLeft','BorderTypeRight','BorderTypeTop','BorderTypeBottom','BorderTypeInsideHorz','BorderTypeInsideVert') {
-                Try-SetProp $pset $dir 1
+                Try-SetProp $psetB $dir 1
             }
             foreach ($w in 'BorderWidthLeft','BorderWidthRight','BorderWidthTop','BorderWidthBottom','BorderWidthInsideHorz','BorderWidthInsideVert') {
-                Try-SetProp $pset $w 3
+                Try-SetProp $psetB $w 3
             }
             foreach ($col in 'BorderColorLeft','BorderColorRight','BorderColorTop','BorderColorBottom','BorderColorInsideHorz','BorderColorInsideVert') {
-                Try-SetProp $pset $col 0
+                Try-SetProp $psetB $col 0
             }
-            try { $act.Execute("CellBorderFill", $pset.HSet) | Out-Null } catch {}
-        } catch {}
-
-        # 헤더 행 배경색 (FillBrush 하위셋 정식 API)
-        try {
-            Safe-Run $hwp "TableColBegin"
-            Safe-Run $hwp "TableSelRow"
-            $act2 = $hwp.HAction
-            $pset2 = $hwp.HParameterSet.HCellBorderFill
-            $act2.GetDefault("CellBorderFill", $pset2.HSet) | Out-Null
-            Try-SetProp $pset2 'HasFill' $true
-            Try-SetProp $pset2 'FillType' 1
-            # FillBrush 하위셋으로 색상 설정 (정식 API)
-            try {
-                $fill = $pset2.HSet.CreateItemSet("FillBrush", "FillBrush")
-                $fill.WinBrush.FaceColor = 15921906   # RGB(242,242,242) = #F2F2F2
-            } catch {
-                # 폴백: 직접 속성 시도
-                foreach ($p in 'ColorFillFG','ColorFG','FaceColor','Color') {
-                    Try-SetProp $pset2 $p 15921906
-                }
-            }
-            try { $act2.Execute("CellBorderFill", $pset2.HSet) | Out-Null } catch {}
+            try { $actB.Execute("CellBorderFill", $psetB.HSet) | Out-Null } catch {}
         } catch {}
 
         Safe-Run $hwp "CloseEx"
@@ -860,6 +894,12 @@ Safe-Run $hwp "SelectAll"
 Safe-Run $hwp "Delete"
 Safe-Run $hwp "MoveDocBegin"
 
+# 기관명 사전 추출 (institution 노드가 있으면 표지에 사용)
+$institutionName = ""
+foreach ($node in $nodes) {
+    if ($node.kind -eq 'institution') { $institutionName = $node.text; break }
+}
+
 $errors = @()
 $processed = 0
 $firstH1Done = $false   # 문서 제목(첫 H1)에만 컬러 막대 장식 적용
@@ -867,9 +907,10 @@ $firstSectionDone = $false
 foreach ($node in $nodes) {
     try {
         switch ($node.kind) {
+            'institution' { $processed++; continue }   # 표지에서 이미 사용, 본문 출력 스킵
             'heading' {
                 if ($node.level -eq 1 -and -not $firstH1Done) {
-                    Write-DecoratedTitle $hwp $node.text
+                    Write-DecoratedTitle $hwp $node.text $institutionName
                     $firstH1Done = $true
                 } else {
                     if (($topIsMdH1 -and $node.level -eq 2) -or ((-not $topIsMdH1) -and $node.level -eq 1)) {
