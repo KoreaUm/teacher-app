@@ -321,15 +321,16 @@ while ($i -lt $labeled.Count) {
         }
         if ($rows.Count -gt 0) {
             $maxCols = ($rows | ForEach-Object { $_.Count } | Measure-Object -Maximum).Maximum
-            $normRows = $rows | ForEach-Object {
-                $r = @($_)
+            $normRows = [System.Collections.ArrayList]::new()
+            foreach ($row in $rows) {
+                $r = @($row)
                 while ($r.Count -lt $maxCols) { $r += "" }
-                ,$r[0..($maxCols-1)]
+                [void]$normRows.Add([object[]]($r[0..($maxCols-1)]))
             }
             if ($maxCols -eq 3 -and $normRows.Count -gt 0 -and ([string]$normRows[0][0]) -match '^\d{1,2}:\d{2}\s*[~∼\-–]') {
-                $normRows = @(@('시간', '내용', '비고')) + @($normRows)
+                [void]$normRows.Insert(0, [object[]]@('시간', '내용', '비고'))
             }
-            [void]$nodes.Add(@{ kind = 'table'; rows = @($normRows) })
+            [void]$nodes.Add(@{ kind = 'table'; rows = $normRows })
         }
         continue
     }
@@ -595,14 +596,6 @@ function Write-Table($hwp, $rows) {
     if ($numRows -eq 0) { return }
     $numCols = ($rows[0]).Count
     if ($numCols -eq 0) { return }
-
-    # 한글 COM 표 생성은 PC/한글 버전에 따라 셀 이동·테두리 적용이 불안정하다.
-    # 기본은 안정적인 텍스트 표로 출력하고, 실제 HWP 표 테스트가 필요할 때만
-    # SSAMPORT_HWP_REAL_TABLE=1 환경변수로 COM 표 생성을 켠다.
-    if ($env:SSAMPORT_HWP_REAL_TABLE -ne '1') {
-        Write-TextTableFallback $hwp $rows
-        return
-    }
 
     $totalWidth = 36000
     $colW = [int]($totalWidth / $numCols)
