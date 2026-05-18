@@ -63,13 +63,13 @@ async function render(container) {
 
       <!-- 자동 적용되는 것들 -->
       <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:18px">
-        <div style="font-weight:600;margin-bottom:12px;font-size:14px">✨ 자동으로 적용되는 서식</div>
+        <div style="font-weight:600;margin-bottom:12px;font-size:14px">✨ 행정안전부 「행정업무운영 편람」 기준 자동 서식</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;font-size:12px;color:var(--text2)">
-          <div>📐 <b>위계 자동 감지</b><br>Ⅰ 있으면 대제목, 없으면 1.이 대제목</div>
-          <div>🔤 <b>폰트 일괄 통일</b><br>제목: HY견고딕/HY헤드라인M<br>본문: 맑은고딕</div>
-          <div>📏 <b>들여쓰기 자동</b><br>레벨에 맞춰 정확한 들여쓰기</div>
-          <div>📊 <b>표 자동 서식</b><br>테두리 + 헤더 행 강조</div>
-          <div>📝 <b>줄간격 170%</b><br>공문서 표준</div>
+          <div>📐 <b>위계 자동 감지</b><br>1. → 가. → 1) → 가) → (1) → (가)</div>
+          <div>🔤 <b>폰트 표준화</b><br>함초롬바탕 15pt (편람 권고)</div>
+          <div>📏 <b>들여쓰기 자동</b><br>단계마다 1자(2타)씩 들여쓰기</div>
+          <div>📊 <b>표 자동 서식</b><br>테두리 + 헤더 회색 배경</div>
+          <div>📝 <b>줄간격 160%</b><br>한컴 정부 공문서 기본값</div>
           <div>🧹 <b>마크다운 정리</b><br>**굵게** 마커 자동 제거</div>
         </div>
       </div>

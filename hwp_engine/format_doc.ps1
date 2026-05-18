@@ -268,21 +268,25 @@ while ($i -lt $labeled.Count) {
     $i++
 }
 
-# ── 4단계: 스타일 사전 (한국 공문서 표준) ────────────────────
+# ── 4단계: 스타일 사전 (행정안전부 「행정업무운영 편람」 기준) ──
+# 본문 폰트: 함초롬바탕 15pt / 줄간격 160% / 들여쓰기 1자(약 600 HWPUNIT)씩
+# 한컴 한/글 "정부 공문서" 기본 스타일 준용
+$INDENT_UNIT = 600   # 1자 들여쓰기 ≈ 600 HWPUNIT
+$LINE_SPACE  = 160   # 표준 줄간격 %
 $STYLE = @{
-    H1 = @{ font='HY헤드라인M'; size=15; bold=$true;  indent=0;    line=170; align=0; spaceBefore=400; spaceAfter=150 }   # Ⅰ./# (대제목)
-    H2 = @{ font='HY견고딕';   size=13; bold=$true;  indent=0;    line=170; align=0; spaceBefore=300; spaceAfter=100 }   # 1./##
-    H3 = @{ font='HY견고딕';   size=12; bold=$true;  indent=300;  line=170; align=0; spaceBefore=200; spaceAfter=0 }     # 가./###
-    H4 = @{ font='맑은 고딕'; size=11; bold=$true;  indent=600;  line=170; align=0; spaceBefore=100; spaceAfter=0 }
-    H5 = @{ font='맑은 고딕'; size=11; bold=$false; indent=900;  line=170; align=0; spaceBefore=0;   spaceAfter=0 }
-    H6 = @{ font='맑은 고딕'; size=11; bold=$false; indent=1200; line=170; align=0; spaceBefore=0;   spaceAfter=0 }
-    BULLET_O    = @{ font='맑은 고딕'; size=11; bold=$false; indent=400;  line=170; align=0; spaceBefore=0; spaceAfter=0 }
-    BULLET_DASH = @{ font='맑은 고딕'; size=11; bold=$false; indent=800;  line=170; align=0; spaceBefore=0; spaceAfter=0 }
-    EMPH        = @{ font='맑은 고딕'; size=11; bold=$true;  indent=400;  line=170; align=0; spaceBefore=0; spaceAfter=0 }
-    NOTE        = @{ font='맑은 고딕'; size=10; bold=$false; indent=400;  line=160; align=0; spaceBefore=0; spaceAfter=0 }
-    BODY        = @{ font='맑은 고딕'; size=11; bold=$false; indent=200;  line=170; align=0; spaceBefore=0; spaceAfter=0 }
-    TH          = @{ font='맑은 고딕'; size=10; bold=$true;  align=1 }
-    TD          = @{ font='맑은 고딕'; size=10; bold=$false; align=0 }
+    H1 = @{ font='함초롬바탕'; size=16; bold=$true;  indent=0;                  line=$LINE_SPACE; align=0; spaceBefore=400; spaceAfter=150 }   # 1단계: 1.
+    H2 = @{ font='함초롬바탕'; size=15; bold=$true;  indent=($INDENT_UNIT*1);   line=$LINE_SPACE; align=0; spaceBefore=200; spaceAfter=100 }   # 2단계: 가.
+    H3 = @{ font='함초롬바탕'; size=15; bold=$false; indent=($INDENT_UNIT*2);   line=$LINE_SPACE; align=0; spaceBefore=100; spaceAfter=0 }     # 3단계: 1)
+    H4 = @{ font='함초롬바탕'; size=15; bold=$false; indent=($INDENT_UNIT*3);   line=$LINE_SPACE; align=0; spaceBefore=0;   spaceAfter=0 }     # 4단계: 가)
+    H5 = @{ font='함초롬바탕'; size=15; bold=$false; indent=($INDENT_UNIT*4);   line=$LINE_SPACE; align=0; spaceBefore=0;   spaceAfter=0 }     # 5단계: (1)
+    H6 = @{ font='함초롬바탕'; size=15; bold=$false; indent=($INDENT_UNIT*5);   line=$LINE_SPACE; align=0; spaceBefore=0;   spaceAfter=0 }     # 6단계: (가)
+    BULLET_O    = @{ font='함초롬바탕'; size=15; bold=$false; indent=$INDENT_UNIT;       line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
+    BULLET_DASH = @{ font='함초롬바탕'; size=15; bold=$false; indent=($INDENT_UNIT*2);   line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
+    EMPH        = @{ font='함초롬바탕'; size=15; bold=$true;  indent=$INDENT_UNIT;       line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
+    NOTE        = @{ font='함초롬바탕'; size=13; bold=$false; indent=$INDENT_UNIT;       line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
+    BODY        = @{ font='함초롬바탕'; size=15; bold=$false; indent=0;                  line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
+    TH          = @{ font='함초롬바탕'; size=14; bold=$true;  align=1 }
+    TD          = @{ font='함초롬바탕'; size=14; bold=$false; align=0 }
 }
 
 $FONT_ATTRS = @('FaceNameHangul','FaceNameLatin','FaceNameHanja','FaceNameJapanese','FaceNameOther','FaceNameSymbol','FaceNameUser')
@@ -293,6 +297,43 @@ function Try-SetProp($obj, $name, $value) {
 
 function Safe-Run($hwp, $cmd) {
     try { $hwp.HAction.Run($cmd) | Out-Null } catch {}
+}
+
+# ─── 도형(직사각형) 삽입 - 정식 API ─────────────────────────────
+# 한컴 공식 API + pyhwpx 레퍼런스 기반
+# CreationType=ShapeType("RectAngle"), Width/Height, FillBrush 하위셋
+function Insert-Rectangle($hwp, $widthHwp, $heightHwp, $fillRgb) {
+    try {
+        $act = $hwp.HAction
+        $set = $hwp.HParameterSet.HShapeObject
+        $act.GetDefault("DrawObjCreator", $set.HSet) | Out-Null
+
+        # ShapeType("RectAngle") 으로 enum 값 획득 (정확한 한컴 표기는 'RectAngle')
+        $shapeOk = $false
+        foreach ($name in 'RectAngle','Rectangle','RECTANGLE','rectangle') {
+            try {
+                $set.CreationType = $set.ShapeType($name)
+                $shapeOk = $true; break
+            } catch {}
+        }
+        if (-not $shapeOk) { return $false }
+
+        Try-SetProp $set 'Width'       $widthHwp
+        Try-SetProp $set 'Height'      $heightHwp
+        Try-SetProp $set 'TreatAsChar' $true   # 글자처럼 취급 → 단락 흐름
+
+        # 채우기: FillBrush 하위셋 + WinBrush.FaceColor
+        try {
+            $fill = $set.HSet.CreateItemSet("FillBrush", "FillBrush")
+            $fill.WinBrush.FaceColor = $fillRgb
+        } catch {}
+
+        $act.Execute("DrawObjCreator", $set.HSet) | Out-Null
+        Safe-Run $hwp "BreakPara"
+        return $true
+    } catch {
+        return $false
+    }
 }
 
 function Set-CharShape($hwp, $font, $sizePt, $bold) {
@@ -426,6 +467,7 @@ function Write-Table($hwp, $rows) {
             try { $act.Execute("CellBorderFill", $pset.HSet) | Out-Null } catch {}
         } catch {}
 
+        # 헤더 행 배경색 (FillBrush 하위셋 정식 API)
         try {
             Safe-Run $hwp "TableColBegin"
             Safe-Run $hwp "TableSelRow"
@@ -434,8 +476,15 @@ function Write-Table($hwp, $rows) {
             $act2.GetDefault("CellBorderFill", $pset2.HSet) | Out-Null
             Try-SetProp $pset2 'HasFill' $true
             Try-SetProp $pset2 'FillType' 1
-            foreach ($p in 'ColorFillFG','ColorFG','FaceColor','Color','BackColor') {
-                Try-SetProp $pset2 $p 15132390  # 옅은 회색 BGR
+            # FillBrush 하위셋으로 색상 설정 (정식 API)
+            try {
+                $fill = $pset2.HSet.CreateItemSet("FillBrush", "FillBrush")
+                $fill.WinBrush.FaceColor = 14474460   # RGB(220,220,220) = 0xDCDCDC
+            } catch {
+                # 폴백: 직접 속성 시도
+                foreach ($p in 'ColorFillFG','ColorFG','FaceColor','Color') {
+                    Try-SetProp $pset2 $p 14474460
+                }
             }
             try { $act2.Execute("CellBorderFill", $pset2.HSet) | Out-Null } catch {}
         } catch {}
