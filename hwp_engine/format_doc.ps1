@@ -163,6 +163,17 @@ $PATTERNS = @{
     NOTE        = '^\s*※\s*(.+)$'
 }
 
+$TAG_PATTERNS = @{
+    TITLE       = '^\s*제목\s*[:：]\s*(.+)$'
+    LEAD        = '^\s*(서론|요약|개요문)\s*[:：]\s*(.+)$'
+    SECTION     = '^\s*(네모|중제목)\s*[:：]\s*(.+)$'
+    CIRCLE      = '^\s*(원|동그라미)\s*[:：]\s*(.+)$'
+    DASH        = '^\s*(바|하이픈)\s*[:：]\s*(.+)$'
+    STAR        = '^\s*(별|별표)\s*[:：]\s*(.+)$'
+    SCHEDULE    = '^\s*(시간계획표|일정표|시간표)\s*[:：]\s*(.+)$'
+    ACTIONS     = '^\s*(지사님하실일|지사님 하실 일|기관장하실일|기관장 하실 일|하실일|하실 일)\s*[:：]\s*(.+)$'
+}
+
 # 마크다운에서 **bold** 마커 제거
 function Strip-MdMarkers($text) {
     $t = $text
@@ -175,6 +186,19 @@ function Strip-MdMarkers($text) {
 function Classify-Line($line) {
     $s = $line.Trim()
     if ([string]::IsNullOrEmpty($s)) { return @{ type = 'BLANK' } }
+
+    if ($s -match $TAG_PATTERNS.TITLE)   { return @{ type = 'MD_H1'; text = Strip-MdMarkers $matches[1] } }
+    if ($s -match $TAG_PATTERNS.LEAD)    { return @{ type = 'LEAD'; text = Strip-MdMarkers $matches[2] } }
+    if ($s -match $TAG_PATTERNS.SECTION) { return @{ type = 'TAG_SECTION'; text = Strip-MdMarkers $matches[2] } }
+    if ($s -match $TAG_PATTERNS.CIRCLE)  { return @{ type = 'BULLET_CR'; text = '○ ' + (Strip-MdMarkers $matches[2]) } }
+    if ($s -match $TAG_PATTERNS.DASH)    { return @{ type = 'BULLET_DASH'; text = '- ' + (Strip-MdMarkers $matches[2]) } }
+    if ($s -match $TAG_PATTERNS.STAR)    { return @{ type = 'BULLET_DOT'; text = '* ' + (Strip-MdMarkers $matches[2]) } }
+    if ($s -match $TAG_PATTERNS.ACTIONS) { return @{ type = 'BODY'; text = (Strip-MdMarkers ($matches[1] + ': ' + $matches[2])) } }
+    if ($s -match $TAG_PATTERNS.SCHEDULE) {
+        $payload = Strip-MdMarkers $matches[2]
+        $cells = Convert-ScheduleLineToCells $payload
+        return @{ type = 'TABLE_ROW'; cells = $cells }
+    }
 
     # 마크다운 표 행 (| a | b | c |)
     if ($s -match '^\|.*\|\s*$') {
@@ -223,6 +247,22 @@ function Classify-Line($line) {
         }
     }
     return @{ type = 'BODY'; text = Strip-MdMarkers $s }
+}
+
+function Convert-ScheduleLineToCells($text) {
+    $t = ([string]$text).Trim()
+    $m = [regex]::Match($t, '^\s*(\d{1,2}:\d{2})\s*[:~∼\-–]\s*(\d{1,2}:\d{2})\s*[:：]\s*(.+)$')
+    if ($m.Success) {
+        $rest = $m.Groups[3].Value.Trim()
+        $parts = @($rest -split '\s*[:：]\s*' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' })
+        $activity = if ($parts.Count -ge 1) { $parts[0] } else { $rest }
+        $note = if ($parts.Count -ge 2) { ($parts[1..($parts.Count-1)] -join ' / ') } else { '' }
+        return @("$($m.Groups[1].Value) ~ $($m.Groups[2].Value)", $activity, $note)
+    }
+    $parts2 = @($t -split '\s*[:：]\s*' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' })
+    if ($parts2.Count -ge 3) { return @($parts2[0], $parts2[1], ($parts2[2..($parts2.Count-1)] -join ' / ')) }
+    if ($parts2.Count -eq 2) { return @($parts2[0], $parts2[1], '') }
+    return @($t, '', '')
 }
 
 $labeled = $lines | ForEach-Object { Classify-Line $_ }
@@ -286,6 +326,9 @@ while ($i -lt $labeled.Count) {
                 while ($r.Count -lt $maxCols) { $r += "" }
                 ,$r[0..($maxCols-1)]
             }
+            if ($maxCols -eq 3 -and $normRows.Count -gt 0 -and ([string]$normRows[0][0]) -match '^\d{1,2}:\d{2}\s*[~∼\-–]') {
+                $normRows = @(@('시간', '내용', '비고')) + @($normRows)
+            }
             [void]$nodes.Add(@{ kind = 'table'; rows = @($normRows) })
         }
         continue
@@ -294,7 +337,9 @@ while ($i -lt $labeled.Count) {
     $lvl = Get-HeadingLevel $item.type
     if ($lvl -gt 0) {
         [void]$nodes.Add(@{ kind = 'heading'; level = $lvl; text = $item.text })
-    } elseif ($item.type -eq 'BULLET_SQ')   { [void]$nodes.Add(@{ kind = 'bullet_sq';   text = $item.text }) }
+    } elseif ($item.type -eq 'LEAD')        { [void]$nodes.Add(@{ kind = 'lead';        text = $item.text }) }
+    elseif ($item.type -eq 'TAG_SECTION')   { [void]$nodes.Add(@{ kind = 'section';     text = $item.text }) }
+    elseif ($item.type -eq 'BULLET_SQ')     { [void]$nodes.Add(@{ kind = 'bullet_sq';   text = $item.text }) }
     elseif ($item.type -eq 'BULLET_CR')     { [void]$nodes.Add(@{ kind = 'bullet_cr';   text = $item.text }) }
     elseif ($item.type -eq 'BULLET_DASH')   { [void]$nodes.Add(@{ kind = 'bullet_dash'; text = $item.text }) }
     elseif ($item.type -eq 'BULLET_DOT')    { [void]$nodes.Add(@{ kind = 'bullet_dot';  text = $item.text }) }
@@ -324,6 +369,8 @@ $STYLE = @{
     EMPH        = @{ font='함초롬바탕'; size=15; bold=$true;  indent=$INDENT_UNIT;       line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
     NOTE        = @{ font='함초롬바탕'; size=13; bold=$false; indent=$INDENT_UNIT;       line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
     BODY        = @{ font='함초롬바탕'; size=15; bold=$false; indent=0;                  line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
+    LEAD        = @{ font='함초롬바탕'; size=15; bold=$false; indent=0;                  line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=60 }
+    SECTION     = @{ font='함초롬바탕'; size=17; bold=$true;  indent=0;                  line=$LINE_SPACE; align=0; spaceBefore=520; spaceAfter=120 }
     TH          = @{ font='함초롬바탕'; size=14; bold=$true;  align=1 }
     TD          = @{ font='함초롬바탕'; size=14; bold=$false; align=0 }
 }
@@ -423,6 +470,56 @@ function Write-StyledPara($hwp, $text, $s) {
     } catch {}
 }
 
+function Write-LeadPara($hwp, $text, $isLastLead=$false) {
+    try {
+        $gray = 0x808080
+        $act = $hwp.HAction
+        $ps = $hwp.HParameterSet.HParaShape
+        $act.GetDefault("ParagraphShape", $ps.HSet) | Out-Null
+        Try-SetProp $ps 'LeftMargin' 0
+        Try-SetProp $ps 'Indent' 0
+        Try-SetProp $ps 'LineSpacing' 160
+        Try-SetProp $ps 'LineSpacingType' 0
+        Try-SetProp $ps 'AlignType' 0
+        Try-SetProp $ps 'PrevSpacing' 0
+        Try-SetProp $ps 'NextSpacing' 60
+        if ($isLastLead) {
+            Try-SetProp $ps 'BorderBottom' 1
+            Try-SetProp $ps 'BorderBottomColor' $gray
+            Try-SetProp $ps 'BorderBottomWidth' 2
+        } else {
+            Try-SetProp $ps 'BorderBottom' 0
+        }
+        try { $act.Execute("ParagraphShape", $ps.HSet) | Out-Null } catch {}
+        Set-CharShape $hwp $STYLE.LEAD.font $STYLE.LEAD.size $STYLE.LEAD.bold
+        Insert-Text $hwp $text
+        Safe-Run $hwp "BreakPara"
+
+        if ($isLastLead) {
+            $act2 = $hwp.HAction
+            $ps2 = $hwp.HParameterSet.HParaShape
+            $act2.GetDefault("ParagraphShape", $ps2.HSet) | Out-Null
+            Try-SetProp $ps2 'BorderBottom' 0
+            try { $act2.Execute("ParagraphShape", $ps2.HSet) | Out-Null } catch {}
+        }
+    } catch {
+        Write-StyledPara $hwp $text $STYLE.LEAD
+    }
+}
+
+function Normalize-SectionTitle($text) {
+    $t = [string]$text
+    $t = $t -replace '^\s*[□■]\s*', ''
+    $t = $t -replace '^\s*\d{1,2}\.\s*', ''
+    return $t.Trim()
+}
+
+function Write-SectionHeading($hwp, $text) {
+    $title = Normalize-SectionTitle $text
+    if ([string]::IsNullOrWhiteSpace($title)) { $title = [string]$text }
+    Write-StyledPara $hwp ("□ " + $title) $STYLE.SECTION
+}
+
 # ─── 단락 위/아래 컬러 테두리 (제목 장식용) ─────────────────────
 # 도형 객체 대신 단락의 위/아래 테두리를 사용 → COM API 안정적
 function Set-ParaBorder($hwp, $top, $bottom) {
@@ -472,7 +569,7 @@ function Write-DecoratedTitle($hwp, $titleText) {
     Try-SetProp $ps2 'LeftMargin' 0
     Try-SetProp $ps2 'LineSpacing' 160
     Try-SetProp $ps2 'AlignType' 1                  # 가운데
-    Try-SetProp $ps2 'PrevSpacing' 300
+    Try-SetProp $ps2 'PrevSpacing' 220
     Try-SetProp $ps2 'NextSpacing' 200
     # 위 주황 테두리
     Try-SetProp $ps2 'BorderTop'       1            # 1 = 실선
@@ -484,7 +581,7 @@ function Write-DecoratedTitle($hwp, $titleText) {
     Try-SetProp $ps2 'BorderBottomWidth' 5
     try { $act2.Execute("ParagraphShape", $ps2.HSet) | Out-Null } catch {}
 
-    Set-CharShape $hwp 'HY헤드라인M' 22 $true
+    Set-CharShape $hwp 'HY헤드라인M' 23 $true
     Insert-Text $hwp $titleText
     Safe-Run $hwp "BreakPara"
 
@@ -628,6 +725,7 @@ Safe-Run $hwp "MoveDocBegin"
 $errors = @()
 $processed = 0
 $firstH1Done = $false   # 문서 제목(첫 H1)에만 컬러 막대 장식 적용
+$firstSectionDone = $false
 foreach ($node in $nodes) {
     try {
         switch ($node.kind) {
@@ -636,10 +734,23 @@ foreach ($node in $nodes) {
                     Write-DecoratedTitle $hwp $node.text
                     $firstH1Done = $true
                 } else {
-                    $key = "H$($node.level)"
-                    if (-not $STYLE.ContainsKey($key)) { $key = "H6" }
-                    Write-StyledPara $hwp $node.text $STYLE[$key]
+                    if (($topIsMdH1 -and $node.level -eq 2) -or ((-not $topIsMdH1) -and $node.level -eq 1)) {
+                        Write-SectionHeading $hwp $node.text
+                        $firstSectionDone = $true
+                    } else {
+                        $key = "H$($node.level)"
+                        if (-not $STYLE.ContainsKey($key)) { $key = "H6" }
+                        Write-StyledPara $hwp $node.text $STYLE[$key]
+                        $firstSectionDone = $true
+                    }
                 }
+            }
+            'lead'        {
+                Write-LeadPara $hwp $node.text $true
+            }
+            'section'     {
+                Write-SectionHeading $hwp $node.text
+                $firstSectionDone = $true
             }
             'bullet_sq'   { Write-StyledPara $hwp $node.text $STYLE.BULLET_SQ }
             'bullet_cr'   { Write-StyledPara $hwp $node.text $STYLE.BULLET_CR }
@@ -647,8 +758,14 @@ foreach ($node in $nodes) {
             'bullet_dot'  { Write-StyledPara $hwp $node.text $STYLE.BULLET_DOT }
             'emph'        { Write-StyledPara $hwp $node.text $STYLE.EMPH }
             'note'        { Write-StyledPara $hwp $node.text $STYLE.NOTE }
-            'body'        { Write-StyledPara $hwp $node.text $STYLE.BODY }
-            'table'       { Write-Table $hwp $node.rows }
+            'body'        {
+                if ($firstH1Done -and -not $firstSectionDone) {
+                    Write-LeadPara $hwp $node.text $true
+                } else {
+                    Write-StyledPara $hwp $node.text $STYLE.BODY
+                }
+            }
+            'table'       { Write-Table $hwp $node.rows; $firstSectionDone = $true }
         }
         $processed++
     } catch {

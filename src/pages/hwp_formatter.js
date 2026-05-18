@@ -6,28 +6,26 @@ var DOC_TYPES = [
   '기안문', '공문(협조요청)', '가정통신문', '회의록', '연수보고서'
 ];
 
-var EXAMPLE_MD = `# 학생 봉사활동 운영 계획
+var EXAMPLE_MD = `제목: 충남도-청년센터 청년정책 간담회 개최 계획
+서론: 도-청년센터 간 협력체계 강화 및 청년정책 현장 의견 수렴 필요에 따라 정책 간담회 개최 추진함
 
-## 1. 목적
-- 학생 봉사정신 함양
-  - 지역사회에 대한 책임감 인식
-- 공동체 의식 강화
+네모: 간담회 개요
+원: 때 와 곳: 2026. 03. 09.(월) 14:00 ~ 15:00 / 충남도청 중회의실
+원: 참석대상: 충남도 관계자, 청년센터 관계자 등 15명
+원: 주요내용: 충남 청년정책 추진현황 공유 및 청년센터 협력방안 논의 추진
+바: 충남 청년정책 추진 현황 공유 및 정책 방향 설명
+바: 청년센터 현장 의견 수렴 및 협력사업 발굴 검토
+별: 청년정책 추진체계 강화 및 도-청년센터 협력 네트워크 구축 필요
 
-## 2. 방침
-- 학생 자율 참여로 운영
-- 안전교육 사전 실시
+네모: 세부 일정
+시간계획표: 14:00:14:10: 참석자 소개 및 인사 : 사회자
+시간계획표: 14:10:14:35: 청년정책 추진현황 공유 : 담당자
+시간계획표: 14:35:14:55: 협력방안 논의 및 의견 수렴 : 참석자
+시간계획표: 14:55:15:00: 마무리 : 사회자
 
-## 3. 일정
-
-| 시간 | 활동 | 비고 |
-|------|------|------|
-| 09:00 | 집결 | 운동장 |
-| 10:00 | 봉사활동 | ○○공원 |
-| 12:00 | 정리 및 해산 |  |
-
-## 4. 행정 사항
-- 인솔교사 ○명
-- 봉사활동 확인서 발급
+네모: 협조 사항
+원: 회의자료 사전 준비 및 참석자 안내 철저
+원: 간담회 결과 정리 후 향후 협력사업 검토 자료로 활용
 `;
 
 function escapeHtml(s) {
@@ -77,12 +75,12 @@ async function render(container) {
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
           <div style="font-weight:600;font-size:14px">2️⃣ 마크다운 작성/편집</div>
           <div style="font-size:11px;color:var(--text2)">
-            <code># 제목</code> · <code>## 1.</code> · <code>### 가.</code> · <code>- 글머리(들여쓰기로 위계)</code> · <code>| 표 |</code>
+            <code>제목:</code> · <code>서론:</code> · <code>네모:</code> · <code>원/바/별:</code> · <code>시간계획표:</code>
           </div>
         </div>
         <textarea id="hwpf-md" style="width:100%;min-height:320px;padding:12px;font-family:'D2Coding',Consolas,monospace;font-size:13px;line-height:1.6;border:1px solid var(--border);border-radius:8px;resize:vertical;background:#fafafa">${escapeHtml(savedMd)}</textarea>
         <div style="margin-top:6px;display:flex;justify-content:space-between;font-size:11px;color:var(--text2)">
-          <span>위계: ## 1. → ### 가. → #### 1) · 글머리: □→○→-→· (들여쓰기 0/2/4/6칸)</span>
+          <span>위계: 제목 → 서론 → 네모(□ 섹션) → 원(○) → 바(-) → 별(*) → 시간계획표(표)</span>
           <span><span id="hwpf-md-count">0</span>자</span>
         </div>
       </div>
