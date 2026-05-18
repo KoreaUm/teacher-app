@@ -80,7 +80,7 @@ async function render(container) {
         </div>
         <textarea id="hwpf-md" style="width:100%;min-height:320px;padding:12px;font-family:'D2Coding',Consolas,monospace;font-size:13px;line-height:1.6;border:1px solid var(--border);border-radius:8px;resize:vertical;background:#fafafa">${escapeHtml(savedMd)}</textarea>
         <div style="margin-top:6px;display:flex;justify-content:space-between;font-size:11px;color:var(--text2)">
-          <span>위계: 제목 → 서론 → 네모(□ 섹션) → 원(○) → 바(-) → 별(*) → 시간계획표(표)</span>
+          <span>위계: 제목 → 서론 → 네모(파란 □) → 원(ㅇ) → 바(-) → 별(￭) → 시간계획표(표)</span>
           <span><span id="hwpf-md-count">0</span>자</span>
         </div>
       </div>

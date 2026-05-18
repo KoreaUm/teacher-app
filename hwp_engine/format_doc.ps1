@@ -190,9 +190,9 @@ function Classify-Line($line) {
     if ($s -match $TAG_PATTERNS.TITLE)   { return @{ type = 'MD_H1'; text = Strip-MdMarkers $matches[1] } }
     if ($s -match $TAG_PATTERNS.LEAD)    { return @{ type = 'LEAD'; text = Strip-MdMarkers $matches[2] } }
     if ($s -match $TAG_PATTERNS.SECTION) { return @{ type = 'TAG_SECTION'; text = Strip-MdMarkers $matches[2] } }
-    if ($s -match $TAG_PATTERNS.CIRCLE)  { return @{ type = 'BULLET_CR'; text = '○ ' + (Strip-MdMarkers $matches[2]) } }
+    if ($s -match $TAG_PATTERNS.CIRCLE)  { return @{ type = 'BULLET_CR'; text = 'ㅇ ' + (Strip-MdMarkers $matches[2]) } }
     if ($s -match $TAG_PATTERNS.DASH)    { return @{ type = 'BULLET_DASH'; text = '- ' + (Strip-MdMarkers $matches[2]) } }
-    if ($s -match $TAG_PATTERNS.STAR)    { return @{ type = 'BULLET_DOT'; text = '* ' + (Strip-MdMarkers $matches[2]) } }
+    if ($s -match $TAG_PATTERNS.STAR)    { return @{ type = 'BULLET_DOT'; text = '￭ ' + (Strip-MdMarkers $matches[2]) } }
     if ($s -match $TAG_PATTERNS.ACTIONS) { return @{ type = 'BODY'; text = (Strip-MdMarkers ($matches[1] + ': ' + $matches[2])) } }
     if ($s -match $TAG_PATTERNS.SCHEDULE) {
         $payload = Strip-MdMarkers $matches[2]
@@ -229,9 +229,9 @@ function Classify-Line($line) {
     if ($line -match '^(\s*)[-*]\s+(.+)$') {
         $indent = $matches[1].Length
         $txt = Strip-MdMarkers $matches[2]
-        if ($indent -ge 6)      { return @{ type = 'BULLET_DOT';  text = '· ' + $txt } }
+        if ($indent -ge 6)      { return @{ type = 'BULLET_DOT';  text = '￭ ' + $txt } }
         elseif ($indent -ge 4)  { return @{ type = 'BULLET_DASH'; text = '- ' + $txt } }
-        elseif ($indent -ge 2)  { return @{ type = 'BULLET_CR';   text = '○ ' + $txt } }
+        elseif ($indent -ge 2)  { return @{ type = 'BULLET_CR';   text = 'ㅇ ' + $txt } }
         else                    { return @{ type = 'BULLET_SQ';   text = '□ ' + $txt } }
     }
 
@@ -356,24 +356,24 @@ while ($i -lt $labeled.Count) {
 $INDENT_UNIT = 600   # 1자 들여쓰기 ≈ 600 HWPUNIT
 $LINE_SPACE  = 160   # 표준 줄간격 %
 $STYLE = @{
-    H1 = @{ font='함초롬바탕'; size=16; bold=$true;  indent=0;                  line=$LINE_SPACE; align=0; spaceBefore=400; spaceAfter=150 }   # 1단계: 1.
-    H2 = @{ font='함초롬바탕'; size=15; bold=$true;  indent=($INDENT_UNIT*1);   line=$LINE_SPACE; align=0; spaceBefore=200; spaceAfter=100 }   # 2단계: 가.
-    H3 = @{ font='함초롬바탕'; size=15; bold=$false; indent=($INDENT_UNIT*2);   line=$LINE_SPACE; align=0; spaceBefore=100; spaceAfter=0 }     # 3단계: 1)
-    H4 = @{ font='함초롬바탕'; size=15; bold=$false; indent=($INDENT_UNIT*3);   line=$LINE_SPACE; align=0; spaceBefore=0;   spaceAfter=0 }     # 4단계: 가)
-    H5 = @{ font='함초롬바탕'; size=15; bold=$false; indent=($INDENT_UNIT*4);   line=$LINE_SPACE; align=0; spaceBefore=0;   spaceAfter=0 }     # 5단계: (1)
-    H6 = @{ font='함초롬바탕'; size=15; bold=$false; indent=($INDENT_UNIT*5);   line=$LINE_SPACE; align=0; spaceBefore=0;   spaceAfter=0 }     # 6단계: (가)
-    # 글머리표 4단계 위계 (□ → ○ → - → ·, 공문서 표준)
-    BULLET_SQ   = @{ font='함초롬바탕'; size=15; bold=$false; indent=0;                  hanging=520; line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
-    BULLET_CR   = @{ font='함초롬바탕'; size=15; bold=$false; indent=0;                  hanging=520; line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
-    BULLET_DASH = @{ font='함초롬바탕'; size=15; bold=$false; indent=$INDENT_UNIT;       hanging=420; line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
-    BULLET_DOT  = @{ font='함초롬바탕'; size=15; bold=$false; indent=($INDENT_UNIT*2);   hanging=420; line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
-    EMPH        = @{ font='함초롬바탕'; size=15; bold=$true;  indent=$INDENT_UNIT;       line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
-    NOTE        = @{ font='함초롬바탕'; size=13; bold=$false; indent=$INDENT_UNIT;       line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
-    BODY        = @{ font='함초롬바탕'; size=15; bold=$false; indent=0;                  line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=0 }
-    LEAD        = @{ font='함초롬바탕'; size=15; bold=$false; indent=0;                  line=$LINE_SPACE; align=0; spaceBefore=0; spaceAfter=60 }
-    SECTION     = @{ font='함초롬바탕'; size=17; bold=$true;  indent=0;                  line=$LINE_SPACE; align=0; spaceBefore=520; spaceAfter=120 }
-    TH          = @{ font='함초롬바탕'; size=14; bold=$true;  align=1 }
-    TD          = @{ font='함초롬바탕'; size=14; bold=$false; align=0 }
+    H1 = @{ font='HY헤드라인M'; size=16; bold=$false; indent=400;                line=160; align=0; spaceBefore=500; spaceAfter=120 }   # Ⅰ. 장 제목
+    H2 = @{ font='HY헤드라인M'; size=16; bold=$false; indent=0;                  line=160; align=0; spaceBefore=420; spaceAfter=100 }   # 1. 제목
+    H3 = @{ font='휴먼명조';    size=15; bold=$true;  indent=0;                  line=150; align=0; spaceBefore=300; spaceAfter=0 }     # 가.
+    H4 = @{ font='휴먼명조';    size=15; bold=$false; indent=$INDENT_UNIT;       line=150; align=0; spaceBefore=0;   spaceAfter=0 }
+    H5 = @{ font='휴먼명조';    size=15; bold=$false; indent=($INDENT_UNIT*2);   line=150; align=0; spaceBefore=0;   spaceAfter=0 }
+    H6 = @{ font='휴먼명조';    size=15; bold=$false; indent=($INDENT_UNIT*3);   line=150; align=0; spaceBefore=0;   spaceAfter=0 }
+    # 행안부 업무계획 기준: 본문 15pt 휴먼명조, ㅇ/- 위계, 소제목 파란색
+    BULLET_SQ   = @{ font='휴먼명조'; size=15; bold=$true;  color=0x0000FF; indent=0;            hanging=700; line=150; align=0; spaceBefore=1000; spaceAfter=0 }
+    BULLET_CR   = @{ font='휴먼명조'; size=15; bold=$false; indent=0;                            hanging=700; line=150; align=0; spaceBefore=800;  spaceAfter=0 }
+    BULLET_DASH = @{ font='휴먼명조'; size=15; bold=$false; indent=$INDENT_UNIT;                 hanging=500; line=150; align=0; spaceBefore=450;  spaceAfter=0 }
+    BULLET_DOT  = @{ font='맑은 고딕'; size=12; bold=$false; indent=($INDENT_UNIT*1);            hanging=450; line=140; align=0; spaceBefore=250;  spaceAfter=0 }
+    EMPH        = @{ font='맑은 고딕'; size=14; bold=$true;  indent=0;                            hanging=700; line=150; align=0; spaceBefore=300;  spaceAfter=0 }
+    NOTE        = @{ font='맑은 고딕'; size=12; bold=$false; indent=$INDENT_UNIT;                 line=140; align=0; spaceBefore=300; spaceAfter=0 }
+    BODY        = @{ font='휴먼명조'; size=15; bold=$false; indent=0;                             line=150; align=0; spaceBefore=0; spaceAfter=0 }
+    LEAD        = @{ font='휴먼명조'; size=15; bold=$false; indent=0;                             line=150; align=0; spaceBefore=0; spaceAfter=60 }
+    SECTION     = @{ font='휴먼명조'; size=15; bold=$true;  color=0x0000FF; indent=0; hanging=700; line=150; align=0; spaceBefore=1000; spaceAfter=0 }
+    TH          = @{ font='맑은 고딕'; size=12; bold=$true;  align=1 }
+    TD          = @{ font='맑은 고딕'; size=12; bold=$false; align=0 }
 }
 
 $FONT_ATTRS = @('FaceNameHangul','FaceNameLatin','FaceNameHanja','FaceNameJapanese','FaceNameOther','FaceNameSymbol','FaceNameUser')
@@ -473,8 +473,9 @@ function Insert-Text($hwp, $text) {
 function Write-StyledPara($hwp, $text, $s) {
     try {
         $hanging = if ($s.ContainsKey('hanging')) { $s.hanging } else { 0 }
+        $color = if ($s.ContainsKey('color')) { $s.color } else { $null }
         Set-ParaShape $hwp $s.indent $s.line $s.align $s.spaceBefore $s.spaceAfter $hanging
-        Set-CharShape $hwp $s.font $s.size $s.bold
+        Set-CharShape $hwp $s.font $s.size $s.bold $color
         Insert-Text $hwp $text
         Safe-Run $hwp "BreakPara"
     } catch {}
@@ -575,7 +576,7 @@ function Write-DecoratedTitle($hwp, $titleText) {
     Try-SetProp $ps2 'BorderBottom'    0
     try { $act2.Execute("ParagraphShape", $ps2.HSet) | Out-Null } catch {}
 
-    Set-CharShape $hwp 'HY헤드라인M' 23 $true
+    Set-CharShape $hwp 'HY헤드라인M' 32 $false
     Insert-Text $hwp $titleText
     Safe-Run $hwp "BreakPara"
 
@@ -645,7 +646,7 @@ function Write-Table($hwp, $rows) {
                 $cellText = if ($c -lt $rows[$r].Count) { [string]$rows[$r][$c] } else { "" }
 
                 Set-CharShape $hwp $cellStyle.font $cellStyle.size $cellStyle.bold
-                Set-ParaShape $hwp 0 150 $cellStyle.align 0 0
+                Set-ParaShape $hwp 0 140 $cellStyle.align 0 0
                 try { Insert-Text $hwp $cellText } catch {}
 
                 if (-not ($r -eq ($numRows-1) -and $c -eq ($numCols-1))) {
@@ -686,11 +687,11 @@ function Write-Table($hwp, $rows) {
             # FillBrush 하위셋으로 색상 설정 (정식 API)
             try {
                 $fill = $pset2.HSet.CreateItemSet("FillBrush", "FillBrush")
-                $fill.WinBrush.FaceColor = 14474460   # RGB(220,220,220) = 0xDCDCDC
+                $fill.WinBrush.FaceColor = 15921906   # RGB(242,242,242) = #F2F2F2
             } catch {
                 # 폴백: 직접 속성 시도
                 foreach ($p in 'ColorFillFG','ColorFG','FaceColor','Color') {
-                    Try-SetProp $pset2 $p 14474460
+                    Try-SetProp $pset2 $p 15921906
                 }
             }
             try { $act2.Execute("CellBorderFill", $pset2.HSet) | Out-Null } catch {}
