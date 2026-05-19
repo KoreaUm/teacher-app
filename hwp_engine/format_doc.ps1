@@ -341,7 +341,11 @@ while ($i -lt $labeled.Count) {
                 [void]$normRows.Add([object[]]($r[0..($maxCols-1)]))
             }
             if ($maxCols -eq 3 -and $normRows.Count -gt 0 -and ([string]$normRows[0][0]) -match '^\d{1,2}:\d{2}\s*[~∼\-–]') {
-                [void]$normRows.Insert(0, [object[]]@('시간', '내용', '비고'))
+                $headerRow = New-Object 'object[]' 3
+                $headerRow[0] = '시간'
+                $headerRow[1] = '내용'
+                $headerRow[2] = '비고'
+                [void]$normRows.Insert(0, $headerRow)
             }
             [void]$nodes.Add(@{ kind = 'table'; rows = $normRows })
         }
@@ -675,7 +679,7 @@ function Write-DecoratedTitle($hwp, $titleText, $institutionName="") {
     # ③ 주황 막대 (텍스트 기반 - COM API 도형 없이 항상 동작)
     Set-ParaShape $hwp 0 120 1 0 500 0
     Set-CharShape $hwp '함초롬바탕' 20 $true $orange
-    Insert-Text $hwp '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+    Insert-Text $hwp '━━━━━━━━━━━━━━━━━━━━━━━━━━━'
     Safe-Run $hwp "BreakPara"
 
     # ④ 대제목 (36pt, 가운데)
@@ -687,7 +691,7 @@ function Write-DecoratedTitle($hwp, $titleText, $institutionName="") {
     # ⑤ 남색 막대
     Set-ParaShape $hwp 0 120 1 0 0 0
     Set-CharShape $hwp '함초롬바탕' 20 $true $navy
-    Insert-Text $hwp '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+    Insert-Text $hwp '━━━━━━━━━━━━━━━━━━━━━━━━━━━'
     Safe-Run $hwp "BreakPara"
 
     # ⑥ 하단 여백
@@ -723,9 +727,11 @@ function Write-DecoratedTitle($hwp, $titleText, $institutionName="") {
 #   오른쪽 셀 = 흰 바탕 + 굵은 제목 + 하단 진한 테두리
 # 결과적으로 행안부 보고서의 "붙임 2"·"6 학생..." 박스 외형
 function Write-LabeledHeading($hwp, $labelText, $titleText, $opts) {
-    $totalWidth = 38000
+    # A4 본문 영역에 안전하게 들어가는 폭 (약 14cm)
+    $totalWidth = 40000
     $labelW = $opts.labelWidth
     $titleW = $totalWidth - $labelW
+    if ($titleW -lt 10000) { $titleW = 10000; $labelW = $totalWidth - $titleW }
     $rowH   = $opts.rowHeight
 
     # 단락 위 여백 (제목과 본문 분리)
@@ -763,20 +769,23 @@ function Write-LabeledHeading($hwp, $labelText, $titleText, $opts) {
         return
     }
 
-    # ── 왼쪽 셀: 남색 채움 + 흰 라벨 ───────────────────
-    Set-CharShape $hwp 'HY헤드라인M' $opts.labelSize $true 0xFFFFFF
+    # ── 왼쪽 셀: 남색 채움 시도 + 검은색 굵은 라벨 ────────
+    # (배경 채움이 실패해도 검은 글자라 가독성 유지)
+    Set-CharShape $hwp 'HY헤드라인M' $opts.labelSize $true 0
     Set-ParaShape $hwp 0 130 1 0 0 0   # 가운데 정렬
     try { Insert-Text $hwp $labelText } catch {}
 
+    # 셀 전체 선택 후 배경 채움 (CellFill 방식 — 한컴 권장 패턴)
     try {
-        $actFill = $hwp.CreateAction('CellBorderFill')
+        Safe-Run $hwp "TableCellBlock"
+        $actFill = $hwp.CreateAction('CellFill')
         $psetFill = $actFill.CreateSet()
         $actFill.GetDefault($psetFill) | Out-Null
-        $psetFill.SetItem('FillType', 1)
-        $psetFill.SetItem('FillColorR', 0)
-        $psetFill.SetItem('FillColorG', 48)
-        $psetFill.SetItem('FillColorB', 135)
+        $psetFill.SetItem('FillColorR', 220)
+        $psetFill.SetItem('FillColorG', 230)
+        $psetFill.SetItem('FillColorB', 241)
         $actFill.Execute($psetFill) | Out-Null
+        Safe-Run $hwp "Cancel"
     } catch {}
 
     Safe-Run $hwp "TableRightCell"
@@ -797,7 +806,7 @@ function Write-LabeledHeading($hwp, $labelText, $titleText, $opts) {
         $navy = 8859648
         if (-not (Insert-LineShape $hwp $totalWidth $navy 60)) {
             Set-CharShape $hwp '함초롬바탕' 9 $true $navy
-            Insert-Text $hwp '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+            Insert-Text $hwp '━━━━━━━━━━━━━━━━━━━━━━━━━━━'
         }
         Safe-Run $hwp "BreakPara"
     } else {
@@ -1033,21 +1042,21 @@ foreach ($node in $nodes) {
             }
             'attach'      {
                 Write-LabeledHeading $hwp $node.label $node.text @{
-                    labelWidth=5500; rowHeight=1700; labelSize=14; titleSize=16;
+                    labelWidth=8000; rowHeight=1700; labelSize=14; titleSize=14;
                     underline=$false; spaceBefore=400
                 }
                 $firstSectionDone = $true
             }
             'bigsec'      {
                 Write-LabeledHeading $hwp $node.label $node.text @{
-                    labelWidth=2200; rowHeight=1900; labelSize=18; titleSize=18;
+                    labelWidth=4500; rowHeight=1900; labelSize=18; titleSize=18;
                     underline=$true; spaceBefore=600
                 }
                 $firstSectionDone = $true
             }
             'midsec'      {
                 Write-LabeledHeading $hwp $node.label $node.text @{
-                    labelWidth=1800; rowHeight=1500; labelSize=14; titleSize=14;
+                    labelWidth=4000; rowHeight=1500; labelSize=14; titleSize=14;
                     underline=$true; spaceBefore=400
                 }
                 $firstSectionDone = $true
