@@ -5,17 +5,30 @@ hwpx_builder.py — 깔끔 템플릿 기반 hwpx 자동 생성
 한글 프로그램 설치 없이 hwpx 파일을 생성한다.
 원리:
   1) template_master.hwpx 예시를 wrapper로 사용
+     (예시 파일이 각 디자인 요소를 라벨링한 상태로 제공됨)
   2) section0.xml의 최상위 <hp:p> 블록을 fragment library로 추출
   3) 사용자 마크다운을 fragment에 매핑 + 텍스트 치환
   4) 새 section0.xml로 교체하여 re-zip
 
 CLI:
   python3 hwpx_builder.py INPUT_MARKDOWN_TXT OUTPUT_HWPX
+
+마크다운 태그:
+  제목:        → 단순 문서 제목 (네모: 처럼 처리)
+  대제목: 제목  → 큰 박스 (#0 fragment)
+  중제목: 제목  → 중박스 + 부서명 부제 가능 (#3 fragment)
+  소제목: 제목  → Ⅰ 박스 (#5 fragment) — 자동 로마숫자
+  서론/배경/상단박스: 본문 → 글상자 (#7 fragment)
+  네모: 텍스트   → □ 라벨 본문
+  원/바/별/당구/주석: → 들여쓰기 본문
+  표: a:b:c     → 표 (#10 fragment, 동적 행 수)
+  시간계획표:   → 같음 (HH:MM 보존)
+  | a | b |     → markdown 표 (#10 fragment)
 """
 import os, sys, re, json, copy, shutil, zipfile
 from xml.etree import ElementTree as ET
 
-# ─── 네임스페이스 (template_master.hwpx 의 section0 선언 그대로) ───
+# ─── 네임스페이스 ────────────────────────────────────────
 NS_DECLS = [
     ('ha',          'http://www.hancom.co.kr/hwpml/2011/app'),
     ('hp',          'http://www.hancom.co.kr/hwpml/2011/paragraph'),
@@ -36,53 +49,59 @@ NS_DECLS = [
 for prefix, uri in NS_DECLS:
     ET.register_namespace(prefix, uri)
 
-HP  = NS_DECLS[1][1]   # paragraph ns
-HS  = NS_DECLS[3][1]   # section ns
+HP = NS_DECLS[1][1]   # paragraph ns
+HS = NS_DECLS[3][1]   # section ns
 
 TEMPLATE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'template_master.hwpx')
 
 ROMAN = ['', 'Ⅰ','Ⅱ','Ⅲ','Ⅳ','Ⅴ','Ⅵ','Ⅶ','Ⅷ','Ⅸ','Ⅹ','Ⅺ','Ⅻ']
 
 
-# ─── 1. Fragment 추출 ─────────────────────────────────────────
+# ─── 1. Fragment 로더 (template_master.hwpx의 라벨된 블록 기준) ──
+# 예시1.hwpx 의 top-level <hp:p> 인덱스 → 의미
+#   #0  대제목 (3×2 표, 큰 디자인)
+#   #3  중제목 (4×2 표, 부서명 부제 포함)
+#   #5  소제목 (1×3 표, Ⅰ 박스 + 제목)
+#   #7  글상자 (1×1 표) — 강조 상단박스용
+#   #10 일반 표 (3×4) — 추진업무 표
+#   #19 본문 라벨 (단순 단락, □ 운영 절차)
+#   #20 큰 표 (13×4) — 운영 절차 표
 def load_fragments():
-    """template_master.hwpx 의 section0.xml 에서 최상위 <hp:p> 블록을 인덱스별로 반환"""
     with zipfile.ZipFile(TEMPLATE_PATH) as z:
         raw = z.read('Contents/section0.xml')
     root = ET.fromstring(raw)
     top_ps = [c for c in root if c.tag == f'{{{HP}}}p']
+    if len(top_ps) < 21:
+        raise RuntimeError(f'템플릿 fragment 부족: top_ps={len(top_ps)}')
     return {
-        'cover':           top_ps[0],   # 4색 막대 + 표지 제목 + 부제목 (4x2 표)
-        'subtitle_box':    top_ps[1],   # 학교시행 박스 (3x2 표)
-        'top_box':         top_ps[2],   # 녹색 상단박스 (1x1 표)
-        'overview_table':  top_ps[3],   # 개요 표 (3x4 표)
-        'section_heading': top_ps[4],   # Ⅰ 목적 박스 (1x3 표)
-        'body_label':      top_ps[5],   # □ 본문 라벨 (단순 단락)
-        'big_table':       top_ps[6],   # 큰 표 (13x4)
-        'end_box':         top_ps[7] if len(top_ps) > 7 else None,
+        'daejemok':   top_ps[0],    # 대제목
+        'jungjemok':  top_ps[3],    # 중제목 (+ 부서명)
+        'sojemok':    top_ps[5],    # 소제목 (Ⅰ 박스)
+        'geulsangja': top_ps[7],    # 글상자
+        'overview_table': top_ps[10],  # 일반 표 (3×4)
+        'body_label': top_ps[19],   # 단락 (□ 운영 절차)
+        'big_table':  top_ps[20],   # 큰 표 (13×4)
     }, root
 
 
 def text_runs(elem):
-    """elem 안의 모든 <hp:t> 텍스트 노드를 순서대로 반환"""
     return list(elem.iter(f'{{{HP}}}t'))
 
 
-def set_run(elem, index, value):
-    """N번째 <hp:t>의 텍스트를 value로 설정 (없으면 무시)"""
-    rs = text_runs(elem)
-    if 0 <= index < len(rs):
-        rs[index].text = value
+def replace_nonempty(elem, values):
+    """elem 안 hp:t 중 strip 후 비어있지 않은 것만 순서대로 values로 교체.
+    placeholder/빈 셀은 건드리지 않음."""
+    idx = 0
+    for t in elem.iter(f'{{{HP}}}t'):
+        cur = (t.text or '').strip()
+        if cur:
+            if idx < len(values):
+                v = values[idx]
+                t.text = v if v else ' '
+                idx += 1
 
 
-def strip_lineseg(elem):
-    """<hp:linesegarray> 캐시를 모두 제거 — 한글이 다시 계산하도록"""
-    for p in elem.iter(f'{{{HP}}}p'):
-        for lsa in list(p.findall(f'{{{HP}}}linesegarray')):
-            p.remove(lsa)
-
-
-# ─── 고유 ID 생성기 (fragment 클론 시 ID 중복 방지) ─────────────
+# ─── 2. 고유 ID 생성기 ───────────────────────────────────
 _id_counter = [2000000000]
 def _next_id():
     _id_counter[0] += 1
@@ -93,181 +112,155 @@ def _next_zorder():
     _zorder_counter[0] += 1
     return str(_zorder_counter[0])
 
-# HWP가 ID 중복으로 hang하는 것을 방지: 클론한 fragment의 모든
-# id/zOrder/instId 속성을 새 값으로 교체. 표·도형·셀 모두 포함.
-ID_ATTR_NAMES = ('id', 'instId')
 def reassign_ids(elem):
-    # tbl 의 id + zOrder
+    """fragment 클론 시 모든 표/도형 id + zOrder를 새로 부여 (HWP hang 방지)"""
     for tbl in elem.iter(f'{{{HP}}}tbl'):
         tbl.set('id', _next_id())
         if tbl.get('zOrder') is not None:
             tbl.set('zOrder', _next_zorder())
-    # 도형 (rect/line/pic 등) — hp:* 도형류
     for tag in ('rect','line','pic','curve','polygon','ellipse','connectLine','container','ole','equation','compose'):
-        for shape in elem.iter(f'{{{HP}}}{tag}'):
-            shape.set('id', _next_id())
-            if shape.get('zOrder') is not None:
-                shape.set('zOrder', _next_zorder())
-    # 일반 단락도 id 속성 보유 — 충돌은 잘 안나지만 안전하게
+        for sh in elem.iter(f'{{{HP}}}{tag}'):
+            sh.set('id', _next_id())
+            if sh.get('zOrder') is not None:
+                sh.set('zOrder', _next_zorder())
     for p in elem.iter(f'{{{HP}}}p'):
         if p.get('id') and p.get('id') != '0':
             p.set('id', _next_id())
 
 
 def _clone(elem):
-    """fragment deepcopy + 모든 ID 재할당 (HWP hang 방지)"""
     f = copy.deepcopy(elem)
     reassign_ids(f)
     return f
 
 
-# ─── 2. Fragment 빌더 ────────────────────────────────────────
-def build_cover(frag_lib, title, subtitle):
-    f = _clone(frag_lib['cover'])
-    rs = text_runs(f)
-    # rs[0] = 제목, rs[1] = 부제목 (오른쪽 정렬)
-    if len(rs) >= 1: rs[0].text = title or ''
-    if len(rs) >= 2: rs[1].text = subtitle or ''
-    strip_lineseg(f)
+# ─── 3. Fragment 빌더 ────────────────────────────────────
+def _set_text(t_elem, value):
+    """빈 문자열 방지 (Windows HWP가 <hp:t/> 거부)"""
+    t_elem.text = value if value else ' '
+
+
+def build_daejemok(frag_lib, title):
+    """대제목 (#0): 원본 '대제목' 위치에 제목"""
+    f = _clone(frag_lib['daejemok'])
+    replace_nonempty(f, [title])
     return f
 
 
-def build_subtitle_box(frag_lib, title, sub):
-    f = _clone(frag_lib['subtitle_box'])
-    rs = text_runs(f)
-    if len(rs) >= 1: rs[0].text = title or ''
-    # rs[1] is just spacer between title and (sub)
-    if len(rs) >= 3 and sub: rs[2].text = f'({sub})'
-    elif len(rs) >= 3: rs[2].text = ''
-    strip_lineseg(f)
+def build_jungjemok(frag_lib, title, dept=''):
+    """중제목 (#3): 원본 '중제목'·'부서명' 두 곳"""
+    f = _clone(frag_lib['jungjemok'])
+    replace_nonempty(f, [title, dept or ' '])
     return f
 
 
-def build_top_box(frag_lib, quoted, body):
-    """녹색 상단박스. quoted = 큰따옴표로 강조될 키워드, body = 본문"""
-    f = _clone(frag_lib['top_box'])
-    rs = text_runs(f)
-    # 원본 fragment: rs[0]=따옴표 강조어, rs[1]=접미부, rs[2]=본문 설명
-    if len(rs) >= 1: rs[0].text = f'  "{quoted}"' if quoted else '  '
-    if len(rs) >= 2: rs[1].text = ''     # "란?" 접미부 제거 (사용자 본문에 통합)
-    if len(rs) >= 3: rs[2].text = f'   {body}'
-    strip_lineseg(f)
+def build_sojemok(frag_lib, num_label, title):
+    """소제목 (#5): 원본 'Ⅰ'·' 소제목' 두 곳"""
+    f = _clone(frag_lib['sojemok'])
+    replace_nonempty(f, [num_label, f' {title}' if title else ' '])
     return f
 
 
-def build_section_heading(frag_lib, num_label, title):
-    """소제목 박스 (Ⅰ 목적 스타일). num_label = 'Ⅰ' '1' '붙임1' 등"""
-    f = _clone(frag_lib['section_heading'])
-    rs = text_runs(f)
-    if len(rs) >= 1: rs[0].text = num_label or ''
-    if len(rs) >= 2: rs[1].text = f' {title}' if title else ''
-    strip_lineseg(f)
+def build_geulsangja(frag_lib, body):
+    """글상자 (#7): 원본 ' 글상자' 한 곳"""
+    f = _clone(frag_lib['geulsangja'])
+    replace_nonempty(f, [f' {body}'])
     return f
 
 
 def build_body_label(frag_lib, text):
-    """본문 □ 라벨 — body_label fragment 사용, 텍스트를 ' □ 텍스트' 형태로"""
+    """본문 □ 라벨 (#19): 원본 '□ 운영 절차 (이건 운영절차 예시 표)' 한 곳"""
     f = _clone(frag_lib['body_label'])
-    rs = text_runs(f)
-    if len(rs) >= 1: rs[0].text = f' □ {text}'
-    strip_lineseg(f)
+    replace_nonempty(f, [f'□ {text}'])
     return f
 
 
 def build_body_text(frag_lib, text):
-    """그냥 본문 단락 (body_label fragment 재사용, □ 없이)"""
+    """일반 본문 단락 (□ 없이)"""
     f = _clone(frag_lib['body_label'])
-    rs = text_runs(f)
-    if len(rs) >= 1: rs[0].text = text
-    strip_lineseg(f)
+    replace_nonempty(f, [text])
     return f
 
 
-def build_table(frag_lib, rows):
+def _fill_table_cells(tbl, rows, src_col_count):
+    """표 셀에 행 데이터 채우기.
+    rows: 사용자 데이터, src_col_count: 템플릿 표의 열 개수
+    템플릿의 셀 순서대로 텍스트 run을 찾아 채움.
     """
-    개요 표 fragment를 행 개수에 맞춰 복제·치환.
-    rows: list of list of str  (첫 행은 헤더로 취급)
-    원본 fragment는 3행 × 4열 (헤더 1 + 데이터 2).
-    """
-    src = frag_lib['overview_table']
-    f = _clone(src)
-    tbl = f.find(f'.//{{{HP}}}tbl')
-    if tbl is None or not rows:
-        return build_body_text(frag_lib, ' | '.join([' | '.join(r) for r in rows]))
-
     trs = tbl.findall(f'{{{HP}}}tr')
-    if len(trs) < 2:
-        return build_body_text(frag_lib, ' | '.join([' | '.join(r) for r in rows]))
-
-    header_tr = trs[0]
-    data_tr_template = trs[1]
-    src_col_count = int(tbl.get('colCnt', '4'))
-    user_col_count = max((len(r) for r in rows), default=src_col_count)
-    # 열 개수가 다르면 fallback (셀 너비 정의가 깨질 수 있음) — MVP에선 src_col_count 로 잘라/패딩
     def normalize(row):
         r = list(row) + [''] * max(0, src_col_count - len(row))
         return r[:src_col_count]
-
-    # 헤더 행 채우기
-    header_cells = header_tr.findall(f'{{{HP}}}tc')
-    header_vals = normalize(rows[0])
-    for tc, val in zip(header_cells, header_vals):
-        ts = text_runs(tc)
-        if ts:
-            ts[0].text = val
-            for t in ts[1:]:
-                t.text = ''
-
-    # 데이터 행: 기존 데이터 행 모두 제거 → 사용자 데이터로 클론
-    for tr in trs[1:]:
-        tbl.remove(tr)
-
-    for row in rows[1:]:
-        new_tr = copy.deepcopy(data_tr_template)
-        reassign_ids(new_tr)
-        cells = new_tr.findall(f'{{{HP}}}tc')
-        vals = normalize(row)
+    for ri, tr in enumerate(trs):
+        if ri >= len(rows): break
+        cells = tr.findall(f'{{{HP}}}tc')
+        vals = normalize(rows[ri])
         for tc, val in zip(cells, vals):
             ts = text_runs(tc)
             if ts:
-                ts[0].text = val
+                ts[0].text = val if val else ' '
                 for t in ts[1:]:
-                    t.text = ''
-        tbl.append(new_tr)
+                    t.text = ' '
 
-    # rowCnt 속성 업데이트
+
+def build_table(frag_lib, rows):
+    """일반 표 — fragment #10 (3×4)
+    템플릿의 행 수에 사용자 데이터 행 수 맞춰 클론/추가.
+    """
+    if not rows:
+        return build_body_text(frag_lib, '')
+    f = _clone(frag_lib['overview_table'])
+    tbl = f.find(f'.//{{{HP}}}tbl')
+    if tbl is None:
+        return build_body_text(frag_lib, ' | '.join(' | '.join(r) for r in rows))
+
+    src_col_count = int(tbl.get('colCnt', '4'))
+    trs = tbl.findall(f'{{{HP}}}tr')
+
+    # 데이터 행이 부족하면 마지막 데이터 행을 클론해서 추가
+    if len(trs) >= 2 and len(rows) > len(trs):
+        template_data_tr = trs[-1]
+        need = len(rows) - len(trs)
+        for _ in range(need):
+            new_tr = copy.deepcopy(template_data_tr)
+            reassign_ids(new_tr)
+            # 새 tr 안의 텍스트 비우기 (다음 _fill_table_cells가 채움)
+            for t in new_tr.iter(f'{{{HP}}}t'):
+                t.text = ' '
+            tbl.append(new_tr)
+    # 데이터 행이 남으면 잘라냄
+    elif len(trs) > len(rows):
+        for tr in trs[len(rows):]:
+            tbl.remove(tr)
+
+    _fill_table_cells(tbl, rows, src_col_count)
     tbl.set('rowCnt', str(len(rows)))
-
-    strip_lineseg(f)
     return f
 
 
-# ─── 3. 마크다운 파서 ────────────────────────────────────────
+# ─── 4. 마크다운 파서 ────────────────────────────────────
 TAG_RE = re.compile(
     r'^(제목|기관|학교|학교명|기관명|소속|부서'
-    r'|서론|배경|상단박스'
-    r'|소제목|대제목|중제목번호|로마소제목'
-    r'|네모|중제목'
-    r'|원|동그라미|바|별|당구|주석|주석1|주석2'
-    r'|붙임|시간계획표|표)\s*[:：]\s*(.*)$'
+    r'|대제목|중제목|소제목|로마소제목|중제목번호'
+    r'|서론|배경|상단박스|글상자'
+    r'|네모|원|동그라미|바|별|당구|주석|주석1|주석2'
+    r'|붙임|시간계획표|표|개요표)\s*[:：]\s*(.*)$'
 )
 TABLE_ROW_RE = re.compile(r'^\|(.+)\|\s*$')
 
 def parse_markdown(text):
-    """라인별 (kind, payload) 리스트로 변환"""
     blocks = []
     for raw in text.split('\n'):
         s = raw.strip()
         if not s:
             blocks.append(('blank', ''))
             continue
-        # markdown table row
         m = TABLE_ROW_RE.match(s)
         if m and not re.match(r'^[\s\-:|]+$', m.group(1)):
             cells = [c.strip() for c in m.group(1).split('|')]
             blocks.append(('table_row', cells))
             continue
-        if m:  # separator | --- |
+        if m:
             continue
         m = TAG_RE.match(s)
         if m:
@@ -277,31 +270,45 @@ def parse_markdown(text):
     return blocks
 
 
-# ─── 4. 빌드 (전체 파이프라인) ────────────────────────────────
+def parse_schedule_row(text):
+    """시간계획표/표 행 파싱: HH:MM 시간 보호"""
+    s = text.strip()
+    m = re.match(r'^\s*(\d{1,2}:\d{2})\s*[:~∼\-]\s*(\d{1,2}:\d{2})\s*[:：]\s*(.+)$', s)
+    if m:
+        rest = m.group(3).strip()
+        parts = [p.strip() for p in re.split(r'\s*[:：]\s*', rest) if p.strip()]
+        activity = parts[0] if parts else rest
+        note = ' / '.join(parts[1:]) if len(parts) > 1 else ''
+        return [f'{m.group(1)} ~ {m.group(2)}', activity, note]
+    # HH:MM 패턴 보호 후 ':' 분리
+    protected = re.sub(r'(\d{1,2}):(\d{2})', r'\1\x00\2', s)
+    cells = [p.strip().replace('\x00', ':') for p in protected.split(':')]
+    return [c for c in cells if c is not None]
+
+
+# ─── 5. 빌드 메인 ────────────────────────────────────────
 def build_hwpx(markdown_text, output_path):
     frag_lib, src_root = load_fragments()
     blocks = parse_markdown(markdown_text)
 
-    # 사전 스캔: 제목·기관
-    title = ''
-    subtitle = ''
+    # 사전 스캔: 기관/학교 정보
+    institution = ''
     for k, v in blocks:
-        if k == '제목' and not title:
-            title = v
-        elif k in ('기관','학교','학교명','기관명','소속','부서') and not subtitle:
-            subtitle = v
+        if k in ('기관','학교','학교명','기관명','소속','부서') and not institution:
+            institution = v
 
-    # 새 section0: 빈 root 복제 + 자식 모두 제거 후 다시 채움
+    # 새 root: 빈 root 복제 후 자식 모두 제거
     new_root = copy.deepcopy(src_root)
     for child in list(new_root):
         if child.tag == f'{{{HP}}}p':
             new_root.remove(child)
 
     used_cover = False
-    sec_counter = 0
-    # 표 모드 누적
+    dae_counter = 0
+    jung_counter = 0
+    so_counter = 0
     pending_table = []
-    pending_table_keys = ('표','시간계획표')
+    pending_table_keys = ('표','시간계획표','개요표')
 
     def flush_table():
         nonlocal pending_table
@@ -310,49 +317,67 @@ def build_hwpx(markdown_text, output_path):
             pending_table = []
 
     for kind, val in blocks:
-        # 표 라인 누적 처리
+        # 표 라인 누적
         if kind == 'table_row':
             pending_table.append(val)
             continue
         elif kind in pending_table_keys:
-            parts = [p.strip() for p in val.split(':')]
-            pending_table.append(parts)
+            pending_table.append(parse_schedule_row(val))
             continue
         else:
             flush_table()
 
+        # 디스패치
         if kind == '제목':
+            # 단순 제목 — 대제목으로 처리 (한 번만)
             if not used_cover:
-                new_root.append(build_cover(frag_lib, val, subtitle))
-                new_root.append(build_subtitle_box(frag_lib, val, '본문'))
+                new_root.append(build_daejemok(frag_lib, val))
                 used_cover = True
-        elif kind in ('기관','학교','학교명','기관명','소속','부서'):
-            pass  # 이미 부제목으로 사용됨
-        elif kind in ('서론','배경','상단박스'):
-            new_root.append(build_top_box(frag_lib, '핵심', val))
-        elif kind in ('소제목','대제목','로마소제목','중제목번호'):
-            sec_counter += 1
-            label = ROMAN[min(sec_counter, len(ROMAN)-1)] if kind in ('소제목','로마소제목') else str(sec_counter)
-            # 만약 val 이 'N:제목' 형태면 (대제목:6:제목) 우선
+            else:
+                new_root.append(build_body_label(frag_lib, val))
+        elif kind == '대제목':
+            dae_counter += 1
+            mm = re.match(r'^(\S+)\s*[:：]\s*(.+)$', val)
+            label, body = (mm.group(1), mm.group(2)) if mm else (str(dae_counter), val)
+            # 대제목은 단일 큰 박스 — 번호는 제목에 prefix
+            display = f'{label}. {body}' if mm else body
+            new_root.append(build_daejemok(frag_lib, display))
+        elif kind == '중제목':
+            jung_counter += 1
             mm = re.match(r'^(\S+)\s*[:：]\s*(.+)$', val)
             if mm:
-                label, val = mm.group(1), mm.group(2)
-            new_root.append(build_section_heading(frag_lib, label, val))
-        elif kind in ('네모','중제목'):
+                # '중제목: 부서: 제목' 형식 — label은 부서명으로
+                new_root.append(build_jungjemok(frag_lib, mm.group(2), mm.group(1)))
+            else:
+                new_root.append(build_jungjemok(frag_lib, val, institution))
+        elif kind in ('소제목','로마소제목','중제목번호'):
+            so_counter += 1
+            mm = re.match(r'^(\S+)\s*[:：]\s*(.+)$', val)
+            if mm:
+                label, body = mm.group(1), mm.group(2)
+            else:
+                label = ROMAN[min(so_counter, len(ROMAN)-1)] if kind != '중제목번호' else str(so_counter)
+                body = val
+            new_root.append(build_sojemok(frag_lib, label, body))
+        elif kind in ('서론','배경','상단박스','글상자'):
+            new_root.append(build_geulsangja(frag_lib, val))
+        elif kind in ('기관','학교','학교명','기관명','소속','부서'):
+            pass  # 이미 institution 변수로 사용됨
+        elif kind == '네모':
             new_root.append(build_body_label(frag_lib, val))
         elif kind == '붙임':
             mm = re.match(r'^(\S+)\s*[:：]\s*(.+)$', val)
             if mm:
-                new_root.append(build_section_heading(frag_lib, f'붙임{mm.group(1)}', mm.group(2)))
+                new_root.append(build_sojemok(frag_lib, f'붙임{mm.group(1)}', mm.group(2)))
             else:
-                new_root.append(build_section_heading(frag_lib, '붙임', val))
+                new_root.append(build_sojemok(frag_lib, '붙임', val))
         elif kind in ('원','동그라미'):
             new_root.append(build_body_text(frag_lib, f'  ○ {val}'))
         elif kind == '바':
             new_root.append(build_body_text(frag_lib, f'     - {val}'))
         elif kind == '별':
             new_root.append(build_body_text(frag_lib, f'      ▪ {val}'))
-        elif kind in ('당구',):
+        elif kind == '당구':
             new_root.append(build_body_text(frag_lib, f'    ※ {val}'))
         elif kind in ('주석','주석1','주석2'):
             mark = '**' if kind == '주석2' else '*'
@@ -360,8 +385,13 @@ def build_hwpx(markdown_text, output_path):
         elif kind == '본문':
             new_root.append(build_body_text(frag_lib, val))
         elif kind == 'blank':
-            new_root.append(build_body_text(frag_lib, ''))
+            new_root.append(build_body_text(frag_lib, ' '))
     flush_table()
+
+    # 빈 <hp:t> 방지 (Windows HWP 호환)
+    for t in new_root.iter(f'{{{HP}}}t'):
+        if not t.text:
+            t.text = ' '
 
     # 직렬화
     body = ET.tostring(new_root, encoding='UTF-8')
@@ -370,10 +400,7 @@ def build_hwpx(markdown_text, output_path):
     else:
         body = re.sub(rb'^<\?xml[^?]*\?>', b'<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>', body)
 
-    # 중요: Python ET는 실제 사용된 ns prefix만 xmlns로 선언함.
-    # 하지만 HWP는 원본 section0.xml에 있던 14개 ns 전부 선언이 필요할 수 있다
-    # (header.xml 등 다른 part 와의 일관성). 원본 <hs:sec ...> opening tag를
-    # 통째로 복원한다.
+    # 원본 <hs:sec ...> opening tag 복원 (14개 ns 선언 유지)
     with zipfile.ZipFile(TEMPLATE_PATH) as z:
         orig = z.read('Contents/section0.xml').decode('utf-8')
     m_orig = re.search(r'<hs:sec\b[^>]*>', orig)
@@ -381,7 +408,7 @@ def build_hwpx(markdown_text, output_path):
     if m_orig and m_new:
         body = body[:m_new.start()] + m_orig.group(0).encode('utf-8') + body[m_new.end():]
 
-    # re-zip: template_master.hwpx 의 모든 항목 유지, section0.xml만 교체
+    # re-zip
     shutil.copyfile(TEMPLATE_PATH, output_path)
     tmp = output_path + '.tmp'
     with zipfile.ZipFile(output_path, 'r') as zin:
@@ -396,7 +423,7 @@ def build_hwpx(markdown_text, output_path):
     return {'ok': True, 'blocks': len(blocks), 'savedTo': output_path}
 
 
-# ─── 5. CLI ─────────────────────────────────────────────────
+# ─── 6. CLI ─────────────────────────────────────────────
 if __name__ == '__main__':
     try:
         if len(sys.argv) < 3:
