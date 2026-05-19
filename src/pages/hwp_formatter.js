@@ -6,31 +6,44 @@ var DOC_TYPES = [
   '기안문', '공문(협조요청)', '가정통신문', '회의록', '연수보고서'
 ];
 
-var EXAMPLE_MD = `제목: 충남도-청년센터 청년정책 간담회 개최 계획
-서론: 도-청년센터 간 협력체계 강화 및 청년정책 현장 의견 수렴 필요에 따라 정책 간담회 개최 추진함
+var EXAMPLE_MD = `제목: 2026. 중학교 자유학기제 현장지원단 운영 계획
+부서: 중등교육과 중등교육팀
 
-대제목: 6: 학생 봉사활동 절차와 방법
-중제목번호: 1: 학교교육계획에 의한 봉사활동 절차
+대제목: 관련 근거
+◦ 2026. 주요업무계획 1-1-2 학생 주도성을 키우는 교육과정
+◦ 충청북도교육과정 총론(충청북도교육청 고시 제2026-5호)
+◦ 2026. 중학교 자유학기제 운영 기본 계획(중등교육과-1234, 2026. 2. 13.)
 
-네모: 간담회 개요
-원: 때 와 곳: 2026. 03. 09.(월) 14:00 ~ 15:00 / 충남도청 중회의실
-원: 참석대상: 충남도 관계자, 청년센터 관계자 등 15명
-원: 주요내용: 충남 청년정책 추진현황 공유 및 청년센터 협력방안 논의 추진
-바: 충남 청년정책 추진 현황 공유 및 정책 방향 설명
-바: 청년센터 현장 의견 수렴 및 협력사업 발굴 검토
-별: 청년정책 추진체계 강화 및 도-청년센터 협력 네트워크 구축 필요
+대제목: 추진 목적
+◦ 2022 개정 교육과정의 취지를 반영한 학교 교육과정 편성·운영 활성화를 위한 교육청 차원의 지원 기반 마련
+◦ 자유학기제 내실 운영을 통한 학생 진로탐색 역량 강화
+◦ 학교 현장의 요구에 기반한 맞춤형 지원으로 정책 추진 실효성 제고
 
-네모: 세부 일정
-시간계획표: 14:00:14:10: 참석자 소개 및 인사 : 사회자
-시간계획표: 14:10:14:35: 청년정책 추진현황 공유 : 담당자
-시간계획표: 14:35:14:55: 협력방안 논의 및 의견 수렴 : 참석자
-시간계획표: 14:55:15:00: 마무리 : 사회자
+대제목: 추진 방침
+◦ 중학교 교육과정 및 자유학기제 운영에 역량있는 교원으로 구성
+◦ 교육과정 전문성 신장을 위한 역량 강화 워크숍 운영 및 단위학교 컨설팅 지원
+◦ 현장 의견 수렴을 통한 교육청 차원의 지원 기반 마련
 
-네모: 협조 사항
-원: 회의자료 사전 준비 및 참석자 안내 철저
-원: 간담회 결과 정리 후 향후 협력사업 검토 자료로 활용
+대제목: 세부 추진 계획
+소제목: 현장지원단 조직 및 운영
+◦ (기간) 2026. 4. ~ 2027. 2.
+◦ (구성) 중학교 교육과정 및 자유학기제 운영에 역량있는 교원
+◦ (주요 역할)
+  - 교육과정 편성·운영에 대한 현장 의견 상시 모니터링
+  - 단위학교 컨설팅 및 연수 지원
+  - 교육과정 도움 자료 개발
 
-붙임: 2: 2015 개정 교육과정의 봉사활동 내용(중·고등학교 3학년 적용)
+소제목: 주요 추진 일정
+표:
+월 | 주요 내용 | 비고
+4월 | 지원단 구성 및 발대식 | 도교육청
+5~7월 | 단위학교 컨설팅 지원 | 지원단
+8월 | 역량 강화 워크숍 2차 | 도교육청
+10월 | 교육과정 편성표 검토 | 지원단
+
+대제목: 기대 효과
+◦ 자유학기제 내실 운영을 통한 학생 진로탐색 역량 강화
+◦ 현장 지원 강화를 통한 교육과정 정책 안착 지원
 `;
 
 function escapeHtml(s) {
@@ -84,12 +97,12 @@ async function render(container) {
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
           <div style="font-weight:600;font-size:14px">2️⃣ 마크다운 작성/편집</div>
           <div style="font-size:11px;color:var(--text2)">
-            <code>기관:</code> · <code>제목:</code> · <code>서론:</code> · <code>붙임:N:제목</code> · <code>대제목:N:제목</code> · <code>중제목번호:N:제목</code> · <code>네모:</code> · <code>원/바/별:</code> · <code>당구:</code> · <code>주석:</code> · <code>시간계획표:</code>
+            <code>제목:</code> · <code>부제목:</code> · <code>부서:</code> · <code>대제목:</code> · <code>소제목:</code> · <code>◦ 항목</code> · <code>  - 세부항목</code> · <code>※ 주석</code> · <code>표:</code>
           </div>
         </div>
         <textarea id="hwpf-md" style="width:100%;min-height:320px;padding:12px;font-family:'D2Coding',Consolas,monospace;font-size:13px;line-height:1.6;border:1px solid var(--border);border-radius:8px;resize:vertical;background:#fafafa">${escapeHtml(savedMd)}</textarea>
         <div style="margin-top:6px;display:flex;justify-content:space-between;font-size:11px;color:var(--text2)">
-          <span>위계: 기관→제목→[붙임/대제목/중제목번호 박스]→서론→네모(□)→원(ㅇ)→바(-)→별(￭)→당구(※)→주석(*)→시간계획표</span>
+          <span>위계: 제목→부제목→부서→대제목(로마자 박스)→소제목(□)→◦항목→  -세부항목→※주석→표:</span>
           <span><span id="hwpf-md-count">0</span>자</span>
         </div>
       </div>
@@ -119,16 +132,14 @@ async function render(container) {
 
       <!-- 표준 안내 -->
       <details style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;font-size:12px;color:var(--text2);margin-bottom:10px">
-        <summary style="cursor:pointer;font-weight:600;color:var(--text1)">📐 적용되는 공문서 표준 (행정안전부 「행정업무운영 편람」)</summary>
+        <summary style="cursor:pointer;font-weight:600;color:var(--text1)">📐 적용되는 서식 (충청북도교육청 현장지원단 운영 계획 스타일)</summary>
         <div style="margin-top:10px;line-height:1.9">
-          • <b>본문 폰트</b>: 함초롬바탕 15pt<br>
-          • <b>줄간격</b>: 160%<br>
-          • <b>들여쓰기</b>: 단계마다 1자(2타)씩<br>
-          • <b>항목 단계</b>: 1. → 가. → 1) → 가) → (1) → (가)<br>
-          • <b>글머리 4단계</b>: □ → ○ → - → ·<br>
-          • <b>표지</b>: 기관명(상단) · 주황바 · 대제목 · 남색바 · 연도+기관명(하단) — 행안부 업무계획 스타일<br>
-          • <b>표</b>: 검정 테두리 + 첫 행 남색(#003087) 배경 + 흰 글씨<br>
-          • <b>마크다운 정리</b>: **굵게** 마커 자동 제거
+          • <b>대제목</b>: 남색(#18304B) 박스 + 흰색 로마자(Ⅰ,Ⅱ,Ⅲ…) + 파란 구분선 + 제목 텍스트<br>
+          • <b>소제목</b>: □ 스타일, 굵은 본문<br>
+          • <b>◦ 항목</b>: 수준1 불릿 (들여쓰기 적용)<br>
+          • <b>  - 세부항목</b>: 수준2 대시 불릿<br>
+          • <b>표</b>: 검정 테두리 + 첫 행 헤더 스타일<br>
+          • <b>페이지</b>: A4 세로, 표준 여백
         </div>
       </details>
 
@@ -156,9 +167,9 @@ async function render(container) {
     var school = schoolEl.value.trim();
     var md = ta.value.trim();
     if (!school) return md;
-    // 이미 기관: 태그가 있으면 앞에 추가하지 않음
+    // 이미 부서: 또는 기관: 태그가 있으면 추가하지 않음
     if (/^\s*(기관|학교|기관명|학교명|소속|부서)\s*[:：]/m.test(md)) return md;
-    return '기관: ' + school + '\n' + md;
+    return md + '\n부서: ' + school;
   }
 
   function updateCount() { mdCount.textContent = ta.value.length.toLocaleString(); }
