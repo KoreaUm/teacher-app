@@ -888,7 +888,7 @@ function Write-Table($hwp, $rows) {
                 Set-ParaShape $hwp 0 140 $cellStyle.align 0 0
                 try { Insert-Text $hwp $cellText } catch {}
 
-                # 헤더 셀 배경: 남색 — CreateAction 방식 (범피스 역분석 패턴)
+                # 헤더 셀 배경: 남색 — CreateAction 방식
                 if ($isHeader) {
                     try {
                         $actFill = $hwp.CreateAction('CellBorderFill')
