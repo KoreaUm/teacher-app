@@ -2788,6 +2788,62 @@ ipcMain.handle('hwp-format-from-text', async (_evt, markdownText) => {
   }
 });
 
+// ── 한글(HWP) 템플릿 빌더: hwpx XML 직접 생성 (한글 설치 불필요) ─
+ipcMain.handle('hwp-build-hwpx', async (_evt, markdownText) => {
+  if (!markdownText || !String(markdownText).trim()) {
+    return { ok: false, error: '입력 텍스트가 비어있습니다.' };
+  }
+  const saveRes = await dialog.showSaveDialog(mainWindow, {
+    title: 'hwpx 파일 저장 위치 (범정부오피스 스타일 템플릿)',
+    defaultPath: '문서.hwpx',
+    filters: [{ name: '한글 문서', extensions: ['hwpx'] }]
+  });
+  if (saveRes.canceled || !saveRes.filePath) {
+    return { ok: false, error: '저장 취소되었습니다.', canceled: true };
+  }
+
+  const isDev = !app.isPackaged;
+  const engineDir = isDev
+    ? path.join(__dirname, 'hwp_engine')
+    : path.join(process.resourcesPath, 'hwp_engine');
+  const builderPath = path.join(engineDir, 'hwpx_builder.py');
+
+  const tmpDir = os.tmpdir();
+  const tmpTxt = path.join(tmpDir, `hwpx-md-${Date.now()}.txt`);
+  fs.writeFileSync(tmpTxt, markdownText, 'utf8');
+
+  const pyCandidates = process.platform === 'win32'
+    ? ['python', 'py', 'python3']
+    : ['python3', 'python'];
+
+  return await new Promise((resolve) => {
+    function tryNext(idx) {
+      if (idx >= pyCandidates.length) {
+        try { fs.unlinkSync(tmpTxt); } catch (_) {}
+        return resolve({ ok: false, error: 'Python 실행 파일을 찾을 수 없습니다. Python 3.8+ 설치가 필요합니다.' });
+      }
+      const py = spawn(pyCandidates[idx], [builderPath, tmpTxt, saveRes.filePath], {
+        windowsHide: true,
+        env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
+      });
+      let out = '', err = '';
+      py.stdout.on('data', d => { out += d.toString('utf8'); });
+      py.stderr.on('data', d => { err += d.toString('utf8'); });
+      py.on('error', () => tryNext(idx + 1));
+      py.on('close', (code) => {
+        try { fs.unlinkSync(tmpTxt); } catch (_) {}
+        try {
+          const parsed = JSON.parse(out.trim());
+          resolve(parsed);
+        } catch {
+          resolve({ ok: false, error: err || out || `Python exit code ${code}` });
+        }
+      });
+    }
+    tryNext(0);
+  });
+});
+
 // ── 한글(HWP) 자동 서식: 로컬 AI(Ollama)로 마크다운 생성 ──────────
 ipcMain.handle('hwp-generate-markdown', async (_evt, { topic, docType }) => {
   if (!topic || !String(topic).trim()) {
