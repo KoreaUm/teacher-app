@@ -368,8 +368,18 @@ def build_hwpx(markdown_text, output_path):
     if not body.startswith(b'<?xml'):
         body = b'<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>' + body
     else:
-        # ET가 xml decl을 standalone 없이 만들 수 있으니 강제 교체
         body = re.sub(rb'^<\?xml[^?]*\?>', b'<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>', body)
+
+    # 중요: Python ET는 실제 사용된 ns prefix만 xmlns로 선언함.
+    # 하지만 HWP는 원본 section0.xml에 있던 14개 ns 전부 선언이 필요할 수 있다
+    # (header.xml 등 다른 part 와의 일관성). 원본 <hs:sec ...> opening tag를
+    # 통째로 복원한다.
+    with zipfile.ZipFile(TEMPLATE_PATH) as z:
+        orig = z.read('Contents/section0.xml').decode('utf-8')
+    m_orig = re.search(r'<hs:sec\b[^>]*>', orig)
+    m_new  = re.search(rb'<hs:sec\b[^>]*>', body)
+    if m_orig and m_new:
+        body = body[:m_new.start()] + m_orig.group(0).encode('utf-8') + body[m_new.end():]
 
     # re-zip: template_master.hwpx 의 모든 항목 유지, section0.xml만 교체
     shutil.copyfile(TEMPLATE_PATH, output_path)
