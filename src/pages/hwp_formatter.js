@@ -102,7 +102,7 @@ async function render(container) {
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
           <button class="btn btn-primary" id="hwpf-build-hwpx" style="font-size:14px;padding:10px 28px;border-radius:10px;background:linear-gradient(135deg,#7c3aed,#4f46e5);border:0;color:#fff">
-            🎨 범정부오피스 스타일 hwpx 만들기 (한글 불필요·권장)
+            🎨 깔끔 템플릿으로 hwpx 만들기 (한글 불필요·권장)
           </button>
           <button class="btn btn-secondary" id="hwpf-convert-text" style="font-size:13px;padding:8px 20px;border-radius:10px">
             ⚙️ 기존 PowerShell 방식 (한글 필요)
@@ -137,7 +137,7 @@ async function render(container) {
         ⚠️ <b>기존 PowerShell 방식</b>: Windows + 한글(HWP) 2018+ 필요 · 적용 전 한글 프로그램 완전 종료
       </div>
       <div style="background:#dbeafe;border:1px solid #93c5fd;border-radius:10px;padding:12px;font-size:12px;color:#1e40af">
-        🎨 <b>범정부오피스 스타일 hwpx 만들기 (권장)</b>: 한글 프로그램 불필요. <b>Python 3.8+ 설치 필요</b> (Windows에서 Python 미설치 시 Microsoft Store에서 "Python" 검색 후 설치)
+        🎨 <b>깔끔 템플릿으로 hwpx 만들기 (권장)</b>: 한글 프로그램 불필요. <b>Python 3.8+ 설치 필요</b> (Windows에서 Python 미설치 시 Microsoft Store에서 "Python" 검색 후 설치)
       </div>
     </div>
   `;
@@ -248,13 +248,13 @@ async function render(container) {
     }
   }
 
-  // 범정부오피스 스타일 hwpx 빌드 (한글 불필요)
+  // 깔끔 템플릿 hwpx 빌드 (한글 불필요)
   container.querySelector('#hwpf-build-hwpx').addEventListener('click', async function () {
     var md = buildMdWithSchool();
     if (!md) { alert('마크다운을 작성해주세요.'); return; }
     var btn = container.querySelector('#hwpf-build-hwpx');
     btn.disabled = true; spinner.style.display = 'block'; resultDiv.style.display = 'none';
-    statusText.textContent = '범정부오피스 템플릿으로 hwpx 생성 중...';
+    statusText.textContent = '템플릿으로 hwpx 생성 중...';
     try {
       var r = await window.api.hwpBuildHwpx(md);
       showResult(r);

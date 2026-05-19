@@ -2794,7 +2794,7 @@ ipcMain.handle('hwp-build-hwpx', async (_evt, markdownText) => {
     return { ok: false, error: '입력 텍스트가 비어있습니다.' };
   }
   const saveRes = await dialog.showSaveDialog(mainWindow, {
-    title: 'hwpx 파일 저장 위치 (범정부오피스 스타일 템플릿)',
+    title: 'hwpx 파일 저장 위치 (깔끔 템플릿)',
     defaultPath: '문서.hwpx',
     filters: [{ name: '한글 문서', extensions: ['hwpx'] }]
   });

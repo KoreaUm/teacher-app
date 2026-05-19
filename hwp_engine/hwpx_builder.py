@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-hwpx_builder.py — 범정부오피스 스타일 hwpx 자동 생성
+hwpx_builder.py — 깔끔 템플릿 기반 hwpx 자동 생성
 
 한글 프로그램 설치 없이 hwpx 파일을 생성한다.
 원리:
-  1) template_master.hwpx (범정부오피스 예시 출력)를 wrapper로 사용
+  1) template_master.hwpx 예시를 wrapper로 사용
   2) section0.xml의 최상위 <hp:p> 블록을 fragment library로 추출
   3) 사용자 마크다운을 fragment에 매핑 + 텍스트 치환
   4) 새 section0.xml로 교체하여 re-zip
@@ -82,9 +82,48 @@ def strip_lineseg(elem):
             p.remove(lsa)
 
 
+# ─── 고유 ID 생성기 (fragment 클론 시 ID 중복 방지) ─────────────
+_id_counter = [2000000000]
+def _next_id():
+    _id_counter[0] += 1
+    return str(_id_counter[0])
+
+_zorder_counter = [100]
+def _next_zorder():
+    _zorder_counter[0] += 1
+    return str(_zorder_counter[0])
+
+# HWP가 ID 중복으로 hang하는 것을 방지: 클론한 fragment의 모든
+# id/zOrder/instId 속성을 새 값으로 교체. 표·도형·셀 모두 포함.
+ID_ATTR_NAMES = ('id', 'instId')
+def reassign_ids(elem):
+    # tbl 의 id + zOrder
+    for tbl in elem.iter(f'{{{HP}}}tbl'):
+        tbl.set('id', _next_id())
+        if tbl.get('zOrder') is not None:
+            tbl.set('zOrder', _next_zorder())
+    # 도형 (rect/line/pic 등) — hp:* 도형류
+    for tag in ('rect','line','pic','curve','polygon','ellipse','connectLine','container','ole','equation','compose'):
+        for shape in elem.iter(f'{{{HP}}}{tag}'):
+            shape.set('id', _next_id())
+            if shape.get('zOrder') is not None:
+                shape.set('zOrder', _next_zorder())
+    # 일반 단락도 id 속성 보유 — 충돌은 잘 안나지만 안전하게
+    for p in elem.iter(f'{{{HP}}}p'):
+        if p.get('id') and p.get('id') != '0':
+            p.set('id', _next_id())
+
+
+def _clone(elem):
+    """fragment deepcopy + 모든 ID 재할당 (HWP hang 방지)"""
+    f = copy.deepcopy(elem)
+    reassign_ids(f)
+    return f
+
+
 # ─── 2. Fragment 빌더 ────────────────────────────────────────
 def build_cover(frag_lib, title, subtitle):
-    f = copy.deepcopy(frag_lib['cover'])
+    f = _clone(frag_lib['cover'])
     rs = text_runs(f)
     # rs[0] = 제목, rs[1] = 부제목 (오른쪽 정렬)
     if len(rs) >= 1: rs[0].text = title or ''
@@ -94,7 +133,7 @@ def build_cover(frag_lib, title, subtitle):
 
 
 def build_subtitle_box(frag_lib, title, sub):
-    f = copy.deepcopy(frag_lib['subtitle_box'])
+    f = _clone(frag_lib['subtitle_box'])
     rs = text_runs(f)
     if len(rs) >= 1: rs[0].text = title or ''
     # rs[1] is just spacer between title and (sub)
@@ -106,9 +145,9 @@ def build_subtitle_box(frag_lib, title, sub):
 
 def build_top_box(frag_lib, quoted, body):
     """녹색 상단박스. quoted = 큰따옴표로 강조될 키워드, body = 본문"""
-    f = copy.deepcopy(frag_lib['top_box'])
+    f = _clone(frag_lib['top_box'])
     rs = text_runs(f)
-    # 원본: rs[0]='  "범정부오피스"', rs[1]='란?', rs[2]='   범정부오피스는 ... 프로그램입니다.'
+    # 원본 fragment: rs[0]=따옴표 강조어, rs[1]=접미부, rs[2]=본문 설명
     if len(rs) >= 1: rs[0].text = f'  "{quoted}"' if quoted else '  '
     if len(rs) >= 2: rs[1].text = ''     # "란?" 접미부 제거 (사용자 본문에 통합)
     if len(rs) >= 3: rs[2].text = f'   {body}'
@@ -118,7 +157,7 @@ def build_top_box(frag_lib, quoted, body):
 
 def build_section_heading(frag_lib, num_label, title):
     """소제목 박스 (Ⅰ 목적 스타일). num_label = 'Ⅰ' '1' '붙임1' 등"""
-    f = copy.deepcopy(frag_lib['section_heading'])
+    f = _clone(frag_lib['section_heading'])
     rs = text_runs(f)
     if len(rs) >= 1: rs[0].text = num_label or ''
     if len(rs) >= 2: rs[1].text = f' {title}' if title else ''
@@ -128,7 +167,7 @@ def build_section_heading(frag_lib, num_label, title):
 
 def build_body_label(frag_lib, text):
     """본문 □ 라벨 — body_label fragment 사용, 텍스트를 ' □ 텍스트' 형태로"""
-    f = copy.deepcopy(frag_lib['body_label'])
+    f = _clone(frag_lib['body_label'])
     rs = text_runs(f)
     if len(rs) >= 1: rs[0].text = f' □ {text}'
     strip_lineseg(f)
@@ -137,7 +176,7 @@ def build_body_label(frag_lib, text):
 
 def build_body_text(frag_lib, text):
     """그냥 본문 단락 (body_label fragment 재사용, □ 없이)"""
-    f = copy.deepcopy(frag_lib['body_label'])
+    f = _clone(frag_lib['body_label'])
     rs = text_runs(f)
     if len(rs) >= 1: rs[0].text = text
     strip_lineseg(f)
@@ -151,7 +190,7 @@ def build_table(frag_lib, rows):
     원본 fragment는 3행 × 4열 (헤더 1 + 데이터 2).
     """
     src = frag_lib['overview_table']
-    f = copy.deepcopy(src)
+    f = _clone(src)
     tbl = f.find(f'.//{{{HP}}}tbl')
     if tbl is None or not rows:
         return build_body_text(frag_lib, ' | '.join([' | '.join(r) for r in rows]))
@@ -185,6 +224,7 @@ def build_table(frag_lib, rows):
 
     for row in rows[1:]:
         new_tr = copy.deepcopy(data_tr_template)
+        reassign_ids(new_tr)
         cells = new_tr.findall(f'{{{HP}}}tc')
         vals = normalize(row)
         for tc, val in zip(cells, vals):
