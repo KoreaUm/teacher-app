@@ -167,6 +167,10 @@ $TAG_PATTERNS = @{
     TITLE       = '^\s*제목\s*[:：]\s*(.+)$'
     INSTITUTION = '^\s*(기관|학교|기관명|학교명|소속|부서)\s*[:：]\s*(.+)$'
     LEAD        = '^\s*(서론|요약|개요문)\s*[:：]\s*(.+)$'
+    # 라벨 박스 헤딩 (남색 라벨칸 + 굵은 제목)
+    ATTACH      = '^\s*붙임\s*[:：]\s*([^:：]+?)\s*[:：]\s*(.+)$'   # 붙임:2:제목
+    BIGSEC      = '^\s*대제목\s*[:：]\s*([^:：]+?)\s*[:：]\s*(.+)$' # 대제목:6:제목
+    MIDSEC      = '^\s*중제목번호\s*[:：]\s*([^:：]+?)\s*[:：]\s*(.+)$' # 중제목번호:1:제목
     SECTION     = '^\s*(네모|중제목)\s*[:：]\s*(.+)$'
     CIRCLE      = '^\s*(원|동그라미)\s*[:：]\s*(.+)$'
     DASH        = '^\s*(바|하이픈)\s*[:：]\s*(.+)$'
@@ -193,6 +197,9 @@ function Classify-Line($line) {
     if ($s -match $TAG_PATTERNS.TITLE)       { return @{ type = 'MD_H1';      text = Strip-MdMarkers $matches[1] } }
     if ($s -match $TAG_PATTERNS.INSTITUTION) { return @{ type = 'INSTITUTION'; text = Strip-MdMarkers $matches[2] } }
     if ($s -match $TAG_PATTERNS.LEAD)        { return @{ type = 'LEAD';        text = Strip-MdMarkers $matches[2] } }
+    if ($s -match $TAG_PATTERNS.ATTACH)      { return @{ type = 'ATTACH'; label = ('붙임 ' + (Strip-MdMarkers $matches[1])); text = Strip-MdMarkers $matches[2] } }
+    if ($s -match $TAG_PATTERNS.BIGSEC)      { return @{ type = 'BIGSEC'; label = Strip-MdMarkers $matches[1]; text = Strip-MdMarkers $matches[2] } }
+    if ($s -match $TAG_PATTERNS.MIDSEC)      { return @{ type = 'MIDSEC'; label = Strip-MdMarkers $matches[1]; text = Strip-MdMarkers $matches[2] } }
     if ($s -match $TAG_PATTERNS.SECTION) { return @{ type = 'TAG_SECTION'; text = Strip-MdMarkers $matches[2] } }
     if ($s -match $TAG_PATTERNS.CIRCLE)  { return @{ type = 'BULLET_CR'; text = 'ㅇ ' + (Strip-MdMarkers $matches[2]) } }
     if ($s -match $TAG_PATTERNS.DASH)    { return @{ type = 'BULLET_DASH'; text = '- ' + (Strip-MdMarkers $matches[2]) } }
@@ -346,6 +353,9 @@ while ($i -lt $labeled.Count) {
         [void]$nodes.Add(@{ kind = 'heading'; level = $lvl; text = $item.text })
     } elseif ($item.type -eq 'INSTITUTION')  { [void]$nodes.Add(@{ kind = 'institution'; text = $item.text }) }
     elseif ($item.type -eq 'LEAD')        { [void]$nodes.Add(@{ kind = 'lead';        text = $item.text }) }
+    elseif ($item.type -eq 'ATTACH')      { [void]$nodes.Add(@{ kind = 'attach';      label = $item.label; text = $item.text }) }
+    elseif ($item.type -eq 'BIGSEC')      { [void]$nodes.Add(@{ kind = 'bigsec';      label = $item.label; text = $item.text }) }
+    elseif ($item.type -eq 'MIDSEC')      { [void]$nodes.Add(@{ kind = 'midsec';      label = $item.label; text = $item.text }) }
     elseif ($item.type -eq 'TAG_SECTION')   { [void]$nodes.Add(@{ kind = 'section';     text = $item.text }) }
     elseif ($item.type -eq 'BULLET_SQ')     { [void]$nodes.Add(@{ kind = 'bullet_sq';   text = $item.text }) }
     elseif ($item.type -eq 'BULLET_CR')     { [void]$nodes.Add(@{ kind = 'bullet_cr';   text = $item.text }) }
@@ -707,6 +717,104 @@ function Write-DecoratedTitle($hwp, $titleText, $institutionName="") {
     try { $actR.Execute("ParagraphShape", $psR.HSet) | Out-Null } catch {}
 }
 
+# ─── 라벨 박스 헤딩 (붙임 N / 번호 섹션) ────────────────────────
+# 1행 2열 표:
+#   왼쪽 셀 = 남색 채움 + 흰 굵은 라벨
+#   오른쪽 셀 = 흰 바탕 + 굵은 제목 + 하단 진한 테두리
+# 결과적으로 행안부 보고서의 "붙임 2"·"6 학생..." 박스 외형
+function Write-LabeledHeading($hwp, $labelText, $titleText, $opts) {
+    $totalWidth = 38000
+    $labelW = $opts.labelWidth
+    $titleW = $totalWidth - $labelW
+    $rowH   = $opts.rowHeight
+
+    # 단락 위 여백 (제목과 본문 분리)
+    Set-ParaShape $hwp 0 120 0 ($opts.spaceBefore) 0 0
+    Set-CharShape $hwp '휴먼명조' 10 $false
+    Safe-Run $hwp "BreakPara"
+
+    $created = $false
+    try {
+        $act  = $hwp.HAction
+        $pset = $hwp.HParameterSet.HTableCreation
+        $act.GetDefault("TableCreate", $pset.HSet) | Out-Null
+        Try-SetProp $pset 'Rows'        1
+        Try-SetProp $pset 'Cols'        2
+        Try-SetProp $pset 'WidthType'   0
+        Try-SetProp $pset 'HeightType'  0
+        Try-SetProp $pset 'WidthValue'  $totalWidth
+        Try-SetProp $pset 'HeightValue' $rowH
+        try {
+            $pset.CreateItemArray("ColWidth", 2) | Out-Null
+            try { $pset.ColWidth.SetItem(0, $labelW) } catch { try { $pset.ColWidth.Item(0) = $labelW } catch {} }
+            try { $pset.ColWidth.SetItem(1, $titleW) } catch { try { $pset.ColWidth.Item(1) = $titleW } catch {} }
+        } catch {}
+        try {
+            $pset.CreateItemArray("RowHeight", 1) | Out-Null
+            try { $pset.RowHeight.SetItem(0, $rowH) } catch { try { $pset.RowHeight.Item(0) = $rowH } catch {} }
+        } catch {}
+        $act.Execute("TableCreate", $pset.HSet) | Out-Null
+        $created = $true
+    } catch {}
+
+    if (-not $created) {
+        # 표 생성 실패 → 텍스트 폴백 ("[붙임 2] 제목")
+        Write-StyledPara $hwp ("[" + $labelText + "] " + $titleText) $STYLE.H2
+        return
+    }
+
+    # ── 왼쪽 셀: 남색 채움 + 흰 라벨 ───────────────────
+    Set-CharShape $hwp 'HY헤드라인M' $opts.labelSize $true 0xFFFFFF
+    Set-ParaShape $hwp 0 130 1 0 0 0   # 가운데 정렬
+    try { Insert-Text $hwp $labelText } catch {}
+
+    try {
+        $actFill = $hwp.CreateAction('CellBorderFill')
+        $psetFill = $actFill.CreateSet()
+        $actFill.GetDefault($psetFill) | Out-Null
+        $psetFill.SetItem('FillType', 1)
+        $psetFill.SetItem('FillColorR', 0)
+        $psetFill.SetItem('FillColorG', 48)
+        $psetFill.SetItem('FillColorB', 135)
+        $actFill.Execute($psetFill) | Out-Null
+    } catch {}
+
+    Safe-Run $hwp "TableRightCell"
+
+    # ── 오른쪽 셀: 굵은 제목 ────────────────────────────
+    Set-CharShape $hwp 'HY헤드라인M' $opts.titleSize $true 0
+    Set-ParaShape $hwp 200 140 0 0 0 0
+    try { Insert-Text $hwp $titleText } catch {}
+
+    # 표 밖으로 나가기
+    Safe-Run $hwp "CloseEx"
+    Safe-Run $hwp "MoveDocEnd"
+
+    # 표 아래 굵은 가로줄 (제목줄 밑줄 효과)
+    if ($opts.underline) {
+        Safe-Run $hwp "BreakPara"
+        Set-ParaShape $hwp 0 100 0 0 80 0
+        $navy = 8859648
+        if (-not (Insert-LineShape $hwp $totalWidth $navy 60)) {
+            Set-CharShape $hwp '함초롬바탕' 9 $true $navy
+            Insert-Text $hwp '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+        }
+        Safe-Run $hwp "BreakPara"
+    } else {
+        Safe-Run $hwp "BreakPara"
+    }
+
+    # 다음 단락 정렬 초기화
+    try {
+        $actR = $hwp.HAction
+        $psR  = $hwp.HParameterSet.HParaShape
+        $actR.GetDefault("ParagraphShape", $psR.HSet) | Out-Null
+        Try-SetProp $psR 'AlignType' 0
+        Try-SetProp $psR 'LeftMargin' 0
+        $actR.Execute("ParagraphShape", $psR.HSet) | Out-Null
+    } catch {}
+}
+
 function Write-Table($hwp, $rows) {
     $numRows = $rows.Count
     if ($numRows -eq 0) { return }
@@ -922,6 +1030,27 @@ foreach ($node in $nodes) {
             }
             'lead'        {
                 Write-LeadPara $hwp $node.text $true
+            }
+            'attach'      {
+                Write-LabeledHeading $hwp $node.label $node.text @{
+                    labelWidth=5500; rowHeight=1700; labelSize=14; titleSize=16;
+                    underline=$false; spaceBefore=400
+                }
+                $firstSectionDone = $true
+            }
+            'bigsec'      {
+                Write-LabeledHeading $hwp $node.label $node.text @{
+                    labelWidth=2200; rowHeight=1900; labelSize=18; titleSize=18;
+                    underline=$true; spaceBefore=600
+                }
+                $firstSectionDone = $true
+            }
+            'midsec'      {
+                Write-LabeledHeading $hwp $node.label $node.text @{
+                    labelWidth=1800; rowHeight=1500; labelSize=14; titleSize=14;
+                    underline=$true; spaceBefore=400
+                }
+                $firstSectionDone = $true
             }
             'section'     {
                 Write-SectionHeading $hwp $node.text
