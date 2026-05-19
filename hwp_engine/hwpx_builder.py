@@ -280,8 +280,8 @@ def parse_schedule_row(text):
         activity = parts[0] if parts else rest
         note = ' / '.join(parts[1:]) if len(parts) > 1 else ''
         return [f'{m.group(1)} ~ {m.group(2)}', activity, note]
-    # HH:MM 패턴 보호 후 ':' 분리
-    protected = re.sub(r'(\d{1,2}):(\d{2})', r'\1\x00\2', s)
+    # HH:MM 패턴 보호 후 ':' 분리 (lambda 사용 — re.sub repl 문자열의 \x 이스케이프 회피)
+    protected = re.sub(r'(\d{1,2}):(\d{2})', lambda m: f'{m.group(1)}\x00{m.group(2)}', s)
     cells = [p.strip().replace('\x00', ':') for p in protected.split(':')]
     return [c for c in cells if c is not None]
 
