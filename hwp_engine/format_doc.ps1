@@ -171,6 +171,8 @@ $TAG_PATTERNS = @{
     CIRCLE      = '^\s*(원|동그라미)\s*[:：]\s*(.+)$'
     DASH        = '^\s*(바|하이픈)\s*[:：]\s*(.+)$'
     STAR        = '^\s*(별|별표)\s*[:：]\s*(.+)$'
+    DANGGU      = '^\s*(당구|당구장)\s*[:：]\s*(.+)$'
+    JUJUK       = '^\s*(주석|주석1|주석2)\s*[:：]\s*(.+)$'
     SCHEDULE    = '^\s*(시간계획표|일정표|시간표)\s*[:：]\s*(.+)$'
     ACTIONS     = '^\s*(지사님하실일|지사님 하실 일|기관장하실일|기관장 하실 일|하실일|하실 일)\s*[:：]\s*(.+)$'
 }
@@ -195,6 +197,8 @@ function Classify-Line($line) {
     if ($s -match $TAG_PATTERNS.CIRCLE)  { return @{ type = 'BULLET_CR'; text = 'ㅇ ' + (Strip-MdMarkers $matches[2]) } }
     if ($s -match $TAG_PATTERNS.DASH)    { return @{ type = 'BULLET_DASH'; text = '- ' + (Strip-MdMarkers $matches[2]) } }
     if ($s -match $TAG_PATTERNS.STAR)    { return @{ type = 'BULLET_DOT'; text = '￭ ' + (Strip-MdMarkers $matches[2]) } }
+    if ($s -match $TAG_PATTERNS.DANGGU) { return @{ type = 'NOTE_STAR'; text = '    ※ ' + (Strip-MdMarkers $matches[2]) } }
+    if ($s -match $TAG_PATTERNS.JUJUK)  { return @{ type = 'NOTE_AST';  text = '     * ' + (Strip-MdMarkers $matches[2]) } }
     if ($s -match $TAG_PATTERNS.ACTIONS) { return @{ type = 'BODY'; text = (Strip-MdMarkers ($matches[1] + ': ' + $matches[2])) } }
     if ($s -match $TAG_PATTERNS.SCHEDULE) {
         $payload = Strip-MdMarkers $matches[2]
@@ -349,6 +353,8 @@ while ($i -lt $labeled.Count) {
     elseif ($item.type -eq 'BULLET_DOT')    { [void]$nodes.Add(@{ kind = 'bullet_dot';  text = $item.text }) }
     elseif ($item.type -eq 'EMPH')          { [void]$nodes.Add(@{ kind = 'emph';        text = $item.text }) }
     elseif ($item.type -eq 'NOTE')          { [void]$nodes.Add(@{ kind = 'note';        text = $item.text }) }
+    elseif ($item.type -eq 'NOTE_STAR')    { [void]$nodes.Add(@{ kind = 'note_star';   text = $item.text }) }
+    elseif ($item.type -eq 'NOTE_AST')     { [void]$nodes.Add(@{ kind = 'note_ast';    text = $item.text }) }
     else                                    { [void]$nodes.Add(@{ kind = 'body';        text = $item.text }) }
     $i++
 }
@@ -372,6 +378,8 @@ $STYLE = @{
     BULLET_DOT  = @{ font='맑은 고딕'; size=12; bold=$false; indent=($INDENT_UNIT*1);            hanging=450; line=140; align=0; spaceBefore=250;  spaceAfter=0 }
     EMPH        = @{ font='맑은 고딕'; size=14; bold=$true;  indent=0;                            hanging=700; line=150; align=0; spaceBefore=300;  spaceAfter=0 }
     NOTE        = @{ font='맑은 고딕'; size=12; bold=$false; indent=$INDENT_UNIT;                 line=140; align=0; spaceBefore=300; spaceAfter=0 }
+    NOTE_STAR   = @{ font='맑은 고딕'; size=12; bold=$false; indent=($INDENT_UNIT*1); hanging=500; line=140; align=0; spaceBefore=200; spaceAfter=0 }
+    NOTE_AST    = @{ font='맑은 고딕'; size=12; bold=$false; indent=($INDENT_UNIT*1); hanging=550; line=140; align=0; spaceBefore=200; spaceAfter=0 }
     BODY        = @{ font='휴먼명조'; size=15; bold=$false; indent=0;                             line=150; align=0; spaceBefore=0; spaceAfter=0 }
     LEAD        = @{ font='휴먼명조'; size=15; bold=$false; indent=0;                             line=150; align=0; spaceBefore=0; spaceAfter=60 }
     SECTION     = @{ font='휴먼명조'; size=15; bold=$true;  color=0xFF0000; indent=0; hanging=700; line=150; align=0; spaceBefore=1000; spaceAfter=0 }
@@ -763,23 +771,17 @@ function Write-Table($hwp, $rows) {
                 Set-ParaShape $hwp 0 140 $cellStyle.align 0 0
                 try { Insert-Text $hwp $cellText } catch {}
 
-                # 헤더 셀 배경: 남색 (셀마다 바로 적용 → 선택 오류 회피)
+                # 헤더 셀 배경: 남색 — CreateAction 방식 (범피스 역분석 패턴)
                 if ($isHeader) {
                     try {
-                        $act = $hwp.HAction
-                        $pset = $hwp.HParameterSet.HCellBorderFill
-                        $act.GetDefault("CellBorderFill", $pset.HSet) | Out-Null
-                        Try-SetProp $pset 'HasFill' $true
-                        Try-SetProp $pset 'FillType' 1
-                        try {
-                            $fill = $pset.HSet.CreateItemSet("FillBrush", "FillBrush")
-                            $fill.WinBrush.FaceColor = $navyBGR
-                        } catch {
-                            foreach ($p in 'ColorFillFG','ColorFG','FaceColor','Color') {
-                                Try-SetProp $pset $p $navyBGR
-                            }
-                        }
-                        try { $act.Execute("CellBorderFill", $pset.HSet) | Out-Null } catch {}
+                        $actFill = $hwp.CreateAction('CellBorderFill')
+                        $psetFill = $actFill.CreateSet()
+                        $actFill.GetDefault($psetFill) | Out-Null
+                        $psetFill.SetItem('FillType', 1)
+                        $psetFill.SetItem('FillColorR', 0)
+                        $psetFill.SetItem('FillColorG', 48)
+                        $psetFill.SetItem('FillColorB', 135)
+                        $actFill.Execute($psetFill) | Out-Null
                     } catch {}
                 }
 
@@ -931,6 +933,8 @@ foreach ($node in $nodes) {
             'bullet_dot'  { Write-StyledPara $hwp $node.text $STYLE.BULLET_DOT }
             'emph'        { Write-StyledPara $hwp $node.text $STYLE.EMPH }
             'note'        { Write-StyledPara $hwp $node.text $STYLE.NOTE }
+            'note_star'   { Write-StyledPara $hwp $node.text $STYLE.NOTE_STAR }
+            'note_ast'    { Write-StyledPara $hwp $node.text $STYLE.NOTE_AST }
             'body'        {
                 if ($firstH1Done -and -not $firstSectionDone) {
                     Write-LeadPara $hwp $node.text $true
