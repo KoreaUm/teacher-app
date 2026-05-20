@@ -340,8 +340,6 @@ contextBridge.exposeInMainWorld('api', {
   macroDiagnose: (wsUrl) => ipcRenderer.invoke('macro-diagnose', wsUrl),
 
   // 한글(HWP) 자동 서식
-  hwpApplyFormat: () => ipcRenderer.invoke('hwp-apply-format'),
-  hwpFormatFromText: (md) => ipcRenderer.invoke('hwp-format-from-text', md),
   hwpBuildHwpx: (opts) => ipcRenderer.invoke('hwp-build-hwpx', opts),
   showOpenDialog: (opts) => ipcRenderer.invoke('show-open-dialog', opts),
   hwpGenerateMarkdown: (opts) => ipcRenderer.invoke('hwp-generate-markdown', opts),
