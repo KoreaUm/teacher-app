@@ -100,9 +100,9 @@ def inject_logo(tmp_dir, logo_path):
     hpf_path = os.path.join(tmp_dir, 'Contents', 'content.hpf')
     with open(hpf_path, 'r', encoding='utf-8') as f:
         hpf = f.read()
-    hpf = re.sub(r'<opf:item id="image1"[^/]*/>',
+    hpf = re.sub(r'<opf:item id="image1".*?/>',
                  f'<opf:item id="image1" href="BinData/{new_name}" media-type="{media_type}" isEmbeded="1"/>',
-                 hpf)
+                 hpf, flags=re.DOTALL)
     with open(hpf_path, 'w', encoding='utf-8') as f:
         f.write(hpf)
 
@@ -209,7 +209,7 @@ def make_logo_table(orig_w_px, orig_h_px, dept_text=None, display_w_hwp=18000):
     logo_cell_h = display_h_hwp + 282
     logo_row = (
         f'<hp:tr>'
-        f'<hp:tc name="" header="0" hasMargin="0" protect="0" editable="0" dirty="0" borderFillIDRef="3">'
+        f'<hp:tc name="" header="0" hasMargin="0" protect="0" editable="0" dirty="0" borderFillIDRef="60">'
         f'<hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="CENTER" '
         f'linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">'
         f'<hp:p id="2147483648" paraPrIDRef="62" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">'
@@ -234,7 +234,7 @@ def make_logo_table(orig_w_px, orig_h_px, dept_text=None, display_w_hwp=18000):
         dept_cell_h = 1682
         dept_row = (
             f'<hp:tr>'
-            f'<hp:tc name="" header="0" hasMargin="0" protect="0" editable="0" dirty="0" borderFillIDRef="3">'
+            f'<hp:tc name="" header="0" hasMargin="0" protect="0" editable="0" dirty="0" borderFillIDRef="60">'
             f'<hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="CENTER" '
             f'linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">'
             f'<hp:p id="2147483648" paraPrIDRef="62" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">'
@@ -255,7 +255,7 @@ def make_logo_table(orig_w_px, orig_h_px, dept_text=None, display_w_hwp=18000):
     tbl_xml = (
         f'<hp:tbl id="{tbl_id}" zOrder="0" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" '
         f'textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" pageBreak="CELL" repeatHeader="0" '
-        f'rowCnt="{row_cnt}" colCnt="1" cellSpacing="0" borderFillIDRef="3" noAdjust="0">'
+        f'rowCnt="{row_cnt}" colCnt="1" cellSpacing="0" borderFillIDRef="60" noAdjust="0">'
         f'<hp:sz width="{tbl_w}" widthRelTo="ABSOLUTE" height="{tbl_sz_h}" heightRelTo="ABSOLUTE" protect="0"/>'
         f'<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" '
         f'vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>'
@@ -451,7 +451,7 @@ def make_note(text):
 
 # ─── 추가 borderFill XML (header.xml에 주입, 항상 추가) ──────────────────────
 # 56=파랑(#4E9FD7, 표지바), 57=분홍(#AC1F8D, 표지바), 58=노랑(#BCBE50, 표지바)
-# 59=연파랑(#BDD7EE, 표 헤더)
+# 59=연파랑(#BDD7EE, 표 헤더), 60=테두리없음/배경없음(로고 테이블)
 _EXTRA_FILLS_XML = (
     '<hh:borderFill id="56" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0">'
     '<hh:slash type="NONE" Crooked="0" isCounter="0"/><hh:backSlash type="NONE" Crooked="0" isCounter="0"/>'
@@ -484,6 +484,14 @@ _EXTRA_FILLS_XML = (
     '<hh:topBorder type="SOLID" width="0.12 mm" color="#000000"/>'
     '<hh:bottomBorder type="SOLID" width="0.12 mm" color="#000000"/>'
     '<hc:fillBrush><hc:winBrush faceColor="#BDD7EE" hatchColor="#000000" alpha="0"/></hc:fillBrush>'
+    '</hh:borderFill>'
+    '<hh:borderFill id="60" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0">'
+    '<hh:slash type="NONE" Crooked="0" isCounter="0"/><hh:backSlash type="NONE" Crooked="0" isCounter="0"/>'
+    '<hh:leftBorder type="NONE" width="0.12 mm" color="#000000"/>'
+    '<hh:rightBorder type="NONE" width="0.12 mm" color="#000000"/>'
+    '<hh:topBorder type="NONE" width="0.12 mm" color="#000000"/>'
+    '<hh:bottomBorder type="NONE" width="0.12 mm" color="#000000"/>'
+    '<hc:fillBrush/>'
     '</hh:borderFill>'
 )
 _COVER_BAR_FILLS_XML = _EXTRA_FILLS_XML  # 하위 호환 별칭
@@ -840,7 +848,7 @@ def build_hwpx(md_text, output_path, logo_path=None):
         hdr_path = os.path.join(tmp_dir, 'Contents', 'header.xml')
         with open(hdr_path, 'r', encoding='utf-8') as f:
             hdr = f.read()
-        hdr = hdr.replace('borderFills itemCnt="55"', 'borderFills itemCnt="59"', 1)
+        hdr = hdr.replace('borderFills itemCnt="55"', 'borderFills itemCnt="60"', 1)
         hdr = hdr.replace('</hh:borderFills>', _EXTRA_FILLS_XML + '</hh:borderFills>', 1)
         with open(hdr_path, 'w', encoding='utf-8') as f:
             f.write(hdr)
