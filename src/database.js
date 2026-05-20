@@ -595,10 +595,10 @@ class AppDatabase {
         SUM(CASE WHEN a.category='출석인정' AND a.period=0 THEN 1 ELSE 0 END) as approved,
         SUM(CASE WHEN a.category='미인정' AND a.period=0 THEN 1 ELSE 0 END) as unapproved,
         SUM(CASE WHEN a.category='질병' AND a.period=0 THEN 1 ELSE 0 END) as disease,
-        SUM(CASE WHEN a.status='결석' AND a.period=0 THEN 1 ELSE 0 END) as absent,
-        SUM(CASE WHEN a.status='결과' AND a.period=0 THEN 1 ELSE 0 END) as result,
-        SUM(CASE WHEN a.status='지각' AND a.period=0 THEN 1 ELSE 0 END) as late,
-        SUM(CASE WHEN a.status='조퇴' AND a.period=0 THEN 1 ELSE 0 END) as early
+        SUM(CASE WHEN INSTR(COALESCE(a.status,''),'결석')>0 AND a.period=0 THEN 1 ELSE 0 END) as absent,
+        SUM(CASE WHEN INSTR(COALESCE(a.status,''),'결과')>0 AND a.period=0 THEN 1 ELSE 0 END) as result,
+        SUM(CASE WHEN INSTR(COALESCE(a.status,''),'지각')>0 AND a.period=0 THEN 1 ELSE 0 END) as late,
+        SUM(CASE WHEN INSTR(COALESCE(a.status,''),'조퇴')>0 AND a.period=0 THEN 1 ELSE 0 END) as early
       FROM students s
       LEFT JOIN attendance a ON s.id=a.student_id AND a.date LIKE ?
       GROUP BY s.id

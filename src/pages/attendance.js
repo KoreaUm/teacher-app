@@ -5,6 +5,26 @@ let currentTab = 'daily';
 let currentDate = today();
 let students = [];
 
+// 복합 상태 헬퍼 (예: "지각+조퇴")
+function hasStatus(statusStr, val) {
+  if (!statusStr) return val === '출석';
+  return statusStr.split('+').includes(val);
+}
+
+function toggleStatus(current, val) {
+  // 출석·결석은 단독 선택
+  if (val === '출석' || val === '결석') return val;
+  const parts = (current === '출석' || !current) ? [] : current.split('+').filter((v) => v !== '출석');
+  const idx = parts.indexOf(val);
+  if (idx >= 0) parts.splice(idx, 1);
+  else parts.push(val);
+  return parts.length ? parts.join('+') : '출석';
+}
+
+function isNonAttendance(statusStr) {
+  return statusStr && statusStr !== '출석';
+}
+
 // DB에는 '결과'로 저장, UI에는 '외출'로 표시
 const STATUSES = [
   { val: '출석', label: '출석', color: '#22c55e' },
@@ -84,7 +104,7 @@ async function renderDaily(container) {
     const counts = {};
     STATUSES.forEach((s) => { counts[s.val] = 0; });
     Object.values(stateMap).forEach((st) => {
-      if (counts[st.status] !== undefined) counts[st.status]++;
+      STATUSES.forEach((s) => { if (hasStatus(st.status, s.val)) counts[s.val]++; });
     });
     return STATUSES.map((s) => `
       <div style="display:flex;align-items:center;gap:6px;background:${s.color}18;border:1px solid ${s.color}44;border-radius:20px;padding:4px 12px;font-size:12px">
@@ -125,7 +145,7 @@ async function renderDaily(container) {
     const counts = {};
     STATUSES.forEach((s) => { counts[s.val] = 0; });
     Object.values(stateMap).forEach((st) => {
-      if (counts[st.status] !== undefined) counts[st.status]++;
+      STATUSES.forEach((s) => { if (hasStatus(st.status, s.val)) counts[s.val]++; });
     });
     STATUSES.forEach((s) => {
       const el = document.getElementById(`sum-${s.val}`);
@@ -133,21 +153,21 @@ async function renderDaily(container) {
     });
   }
 
-  // 상태 버튼 이벤트 위임
+  // 상태 버튼 이벤트 위임 (복합 선택: 지각+조퇴 등 가능, 출석·결석은 단독)
   const tbody = document.getElementById('att-tbody');
   tbody.addEventListener('click', (e) => {
     const btn = e.target.closest('.att-status-btn');
     if (!btn) return;
     const id = btn.dataset.id;
     const val = btn.dataset.val;
-    stateMap[id].status = val;
-    if (val === '출석') stateMap[id].category = '출석';
+    stateMap[id].status = toggleStatus(stateMap[id].status, val);
+    if (!isNonAttendance(stateMap[id].status)) stateMap[id].category = '출석';
     else if (stateMap[id].category === '출석') stateMap[id].category = '출석인정';
 
     // 버튼 스타일 업데이트
     tbody.querySelectorAll(`.att-status-btn[data-id="${id}"]`).forEach((b) => {
       const s = STATUS_MAP[b.dataset.val];
-      const active = b.dataset.val === val;
+      const active = hasStatus(stateMap[id].status, b.dataset.val);
       b.style.borderColor = active ? s.color : 'var(--border)';
       b.style.background = active ? s.color : 'transparent';
       b.style.color = active ? '#fff' : 'var(--fg-2)';
@@ -157,8 +177,8 @@ async function renderDaily(container) {
     // 범주 select 표시/숨김
     const catEl = tbody.querySelector(`.att-cat[data-id="${id}"]`);
     if (catEl) {
-      catEl.style.display = val !== '출석' ? '' : 'none';
-      if (val !== '출석') catEl.value = stateMap[id].category;
+      catEl.style.display = isNonAttendance(stateMap[id].status) ? '' : 'none';
+      if (isNonAttendance(stateMap[id].status)) catEl.value = stateMap[id].category;
     }
 
     refreshSummary();
@@ -193,7 +213,7 @@ function buildDailyRows(studentList, stateMap) {
   tbody.innerHTML = studentList.map((student) => {
     const st = stateMap[student.id];
     const statusBtns = STATUSES.map((s) => {
-      const active = s.val === st.status;
+      const active = hasStatus(st.status, s.val);
       return `<button class="att-status-btn" data-id="${student.id}" data-val="${s.val}"
         style="padding:4px 9px;border-radius:16px;border:1.5px solid ${active ? s.color : 'var(--border)'};background:${active ? s.color : 'transparent'};color:${active ? '#fff' : 'var(--fg-2)'};font-size:12px;font-weight:${active ? '600' : '400'};cursor:pointer;transition:all 0.12s;white-space:nowrap"
       >${s.label}</button>`;
@@ -210,7 +230,7 @@ function buildDailyRows(studentList, stateMap) {
         <td><div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">${statusBtns}</div></td>
         <td>
           <select class="input att-cat" data-id="${student.id}"
-            style="height:32px;font-size:12px;display:${st.status !== '출석' ? '' : 'none'};border-color:${CATEGORY_COLORS[st.category] || 'var(--border)'}">
+            style="height:32px;font-size:12px;display:${isNonAttendance(st.status) ? '' : 'none'};border-color:${CATEGORY_COLORS[st.category] || 'var(--border)'}">
             ${catOpts}
           </select>
         </td>
@@ -233,21 +253,23 @@ function buildDailyRows(studentList, stateMap) {
   tbody.querySelectorAll('.att-reason').forEach((input) => {
     let composing = false;
     let saveTimer = null;
+    const flushReason = () => { stateMap[input.dataset.id].reason = input.value.trim(); };
     const queueSave = () => {
       if (saveTimer) clearTimeout(saveTimer);
       saveTimer = setTimeout(() => {
         if (!composing) {
-          stateMap[input.dataset.id].reason = input.value.trim();
+          flushReason();
           saveSingleFromState(input.dataset.id, stateMap[input.dataset.id]);
         }
       }, 500);
     };
     input.addEventListener('compositionstart', () => { composing = true; });
-    input.addEventListener('compositionend', () => { composing = false; queueSave(); });
-    input.addEventListener('input', queueSave);
+    input.addEventListener('compositionend', () => { composing = false; flushReason(); queueSave(); });
+    // 즉시 stateMap 반영 — 상태 버튼 클릭 등 다른 저장 경로에서도 최신 사유가 반영됨
+    input.addEventListener('input', () => { if (!composing) flushReason(); queueSave(); });
     input.addEventListener('blur', () => {
       if (saveTimer) clearTimeout(saveTimer);
-      stateMap[input.dataset.id].reason = input.value.trim();
+      flushReason();
       saveSingleFromState(input.dataset.id, stateMap[input.dataset.id]);
     });
   });
@@ -363,7 +385,7 @@ async function renderStats(container) {
         const label = button.dataset.label;
         const color = button.dataset.color;
         const studentRecords = (recordMap[sid] || [])
-          .filter((r) => r.status === status && r.category !== '출석')
+          .filter((r) => hasStatus(r.status, status) && r.category !== '출석')
           .sort((a, b) => a.date.localeCompare(b.date));
 
         const rows = studentRecords.length
