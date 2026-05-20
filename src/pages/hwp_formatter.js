@@ -155,11 +155,11 @@ async function render(container) {
   // ── 섹션 구성 상태 (세션 메모리, 영구 저장 X) ─────────────
   function defaultSections() {
     return [
-      { name: '관련 근거',     mode: 'ai', included: true },
-      { name: '추진 목적',     mode: 'ai', included: true },
-      { name: '추진 방침',     mode: 'ai', included: true },
-      { name: '세부 추진 계획', mode: 'ai', included: true },
-      { name: '기대 효과',     mode: 'ai', included: true }
+      { name: '관련 근거',     mode: 'ai', included: true, body: '' },
+      { name: '추진 목적',     mode: 'ai', included: true, body: '' },
+      { name: '추진 방침',     mode: 'ai', included: true, body: '' },
+      { name: '세부 추진 계획', mode: 'ai', included: true, body: '' },
+      { name: '기대 효과',     mode: 'ai', included: true, body: '' }
     ];
   }
   var sections = defaultSections();
@@ -178,62 +178,83 @@ async function render(container) {
     var list = container.querySelector('#hwpf-sections-list');
     list.innerHTML = sections.map(function (s, i) {
       var aiActive = s.mode === 'ai';
-      return '<div class="hwpf-sec-row" data-idx="' + i + '" draggable="true" style="display:flex;align-items:center;gap:8px;padding:8px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:' + (s.included ? '#fff' : '#f5f5f5') + '">' +
-        '<span style="cursor:grab;color:#999;font-size:14px;user-select:none">⋮⋮</span>' +
-        '<input type="checkbox" class="hwpf-sec-inc" ' + (s.included ? 'checked' : '') + ' style="cursor:pointer">' +
-        '<input type="text" class="hwpf-sec-name input" value="' + escapeHtml(s.name) + '" style="flex:1;font-size:13px;padding:4px 6px">' +
-        '<div style="display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden;font-size:12px">' +
-          '<button class="hwpf-sec-mode" data-mode="ai" style="border:0;padding:4px 8px;background:' + (aiActive ? '#7c3aed' : '#fff') + ';color:' + (aiActive ? '#fff' : '#666') + ';cursor:pointer">🤖 AI</button>' +
-          '<button class="hwpf-sec-mode" data-mode="manual" style="border:0;padding:4px 8px;background:' + (!aiActive ? '#0ea5e9' : '#fff') + ';color:' + (!aiActive ? '#fff' : '#666') + ';cursor:pointer">✍️ 직접</button>' +
+      var manualBox = '';
+      if (s.mode === 'manual' && s.included) {
+        var placeholder = '이 섹션에 들어갈 내용을 자유롭게 작성하세요.\n예시:\n◦ 첫 번째 항목\n◦ 두 번째 항목\n  - 세부 항목';
+        manualBox =
+          '<div style="padding:6px 10px 10px 36px;background:#f0f9ff;border-top:1px dashed #93c5fd">' +
+            '<div style="font-size:11px;color:#0369a1;margin-bottom:4px">✍️ 직접 작성 — 아래에 입력한 내용이 hwpx에 그대로 들어갑니다</div>' +
+            '<textarea class="hwpf-sec-body" placeholder="' + escapeHtml(placeholder) + '" style="width:100%;min-height:90px;font-family:\'D2Coding\',Consolas,monospace;font-size:12px;line-height:1.5;padding:8px;border:1px solid #93c5fd;border-radius:6px;background:#fff;resize:vertical;box-sizing:border-box">' + escapeHtml(s.body || '') + '</textarea>' +
+          '</div>';
+      }
+      return '<div class="hwpf-sec-wrap" data-idx="' + i + '" style="border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:' + (s.included ? '#fff' : '#f5f5f5') + ';overflow:hidden">' +
+        '<div class="hwpf-sec-row" style="display:flex;align-items:center;gap:8px;padding:8px">' +
+          '<span class="hwpf-sec-handle" draggable="true" title="드래그하여 순서 변경" style="cursor:grab;color:#999;font-size:14px;user-select:none;padding:4px 6px">⋮⋮</span>' +
+          '<input type="checkbox" class="hwpf-sec-inc" ' + (s.included ? 'checked' : '') + ' style="cursor:pointer">' +
+          '<input type="text" class="hwpf-sec-name input" value="' + escapeHtml(s.name) + '" style="flex:1;font-size:13px;padding:4px 6px">' +
+          '<div style="display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden;font-size:12px">' +
+            '<button class="hwpf-sec-mode" data-mode="ai" style="border:0;padding:4px 8px;background:' + (aiActive ? '#7c3aed' : '#fff') + ';color:' + (aiActive ? '#fff' : '#666') + ';cursor:pointer">🤖 AI</button>' +
+            '<button class="hwpf-sec-mode" data-mode="manual" style="border:0;padding:4px 8px;background:' + (!aiActive ? '#0ea5e9' : '#fff') + ';color:' + (!aiActive ? '#fff' : '#666') + ';cursor:pointer">✍️ 직접</button>' +
+          '</div>' +
+          '<button class="hwpf-sec-del" title="삭제" style="border:0;background:transparent;cursor:pointer;color:#dc2626;font-size:16px;padding:0 4px">🗑</button>' +
         '</div>' +
-        '<button class="hwpf-sec-del" title="삭제" style="border:0;background:transparent;cursor:pointer;color:#dc2626;font-size:16px;padding:0 4px">🗑</button>' +
+        manualBox +
       '</div>';
     }).join('');
 
     // 이벤트 바인딩
-    list.querySelectorAll('.hwpf-sec-row').forEach(function (row) {
-      var idx = parseInt(row.getAttribute('data-idx'), 10);
-      row.querySelector('.hwpf-sec-inc').addEventListener('change', function (e) {
+    list.querySelectorAll('.hwpf-sec-wrap').forEach(function (wrap) {
+      var idx = parseInt(wrap.getAttribute('data-idx'), 10);
+      wrap.querySelector('.hwpf-sec-inc').addEventListener('change', function (e) {
         sections[idx].included = e.target.checked;
         renderSectionsList();
       });
-      row.querySelector('.hwpf-sec-name').addEventListener('input', function (e) {
+      wrap.querySelector('.hwpf-sec-name').addEventListener('input', function (e) {
         sections[idx].name = e.target.value;
       });
-      row.querySelectorAll('.hwpf-sec-mode').forEach(function (btn) {
+      wrap.querySelectorAll('.hwpf-sec-mode').forEach(function (btn) {
         btn.addEventListener('click', function () {
           sections[idx].mode = btn.getAttribute('data-mode');
           renderSectionsList();
         });
       });
-      row.querySelector('.hwpf-sec-del').addEventListener('click', function () {
+      wrap.querySelector('.hwpf-sec-del').addEventListener('click', function () {
         sections.splice(idx, 1);
         renderSectionsList();
       });
-      // 드래그
-      row.addEventListener('dragstart', function (e) {
+      var bodyEl = wrap.querySelector('.hwpf-sec-body');
+      if (bodyEl) {
+        bodyEl.addEventListener('input', function (e) {
+          sections[idx].body = e.target.value;
+        });
+      }
+      // 드래그는 핸들에서만 시작 (textarea/input과 충돌 방지)
+      var handle = wrap.querySelector('.hwpf-sec-handle');
+      handle.addEventListener('dragstart', function (e) {
         dragIdx = idx;
-        row.style.opacity = '0.4';
+        wrap.style.opacity = '0.4';
         e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', String(idx));
       });
-      row.addEventListener('dragend', function () {
-        row.style.opacity = '';
+      handle.addEventListener('dragend', function () {
+        wrap.style.opacity = '';
         dragIdx = -1;
       });
-      row.addEventListener('dragover', function (e) {
+      wrap.addEventListener('dragover', function (e) {
+        if (dragIdx < 0) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
-        row.style.borderTop = idx < dragIdx ? '2px solid #7c3aed' : '';
-        row.style.borderBottom = idx > dragIdx ? '2px solid #7c3aed' : '';
+        wrap.style.borderTop = idx < dragIdx ? '2px solid #7c3aed' : '';
+        wrap.style.borderBottom = idx > dragIdx ? '2px solid #7c3aed' : '';
       });
-      row.addEventListener('dragleave', function () {
-        row.style.borderTop = '';
-        row.style.borderBottom = '';
+      wrap.addEventListener('dragleave', function () {
+        wrap.style.borderTop = '1px solid var(--border)';
+        wrap.style.borderBottom = '1px solid var(--border)';
       });
-      row.addEventListener('drop', function (e) {
+      wrap.addEventListener('drop', function (e) {
         e.preventDefault();
-        row.style.borderTop = '';
-        row.style.borderBottom = '';
+        wrap.style.borderTop = '1px solid var(--border)';
+        wrap.style.borderBottom = '1px solid var(--border)';
         if (dragIdx < 0 || dragIdx === idx) return;
         var moved = sections.splice(dragIdx, 1)[0];
         sections.splice(idx, 0, moved);
@@ -241,6 +262,43 @@ async function render(container) {
         renderSectionsList();
       });
     });
+  }
+
+  // 직접 작성 섹션의 본문을 최종 마크다운의 해당 대제목 아래에 주입.
+  // 사용자가 textarea에서 이미 채워넣은 섹션은 건드리지 않음 (textarea 우선).
+  function injectManualSectionBodies(md) {
+    var manualWithBody = sections.filter(function (s) {
+      return s.included && s.mode === 'manual' && s.body && s.body.trim() && s.name && s.name.trim();
+    });
+    if (!manualWithBody.length) return md;
+    var byName = {};
+    manualWithBody.forEach(function (s) { byName[s.name.trim()] = s.body.trim(); });
+
+    var lines = md.split('\n');
+    var out = [];
+    var i = 0;
+    while (i < lines.length) {
+      out.push(lines[i]);
+      var m = lines[i].match(/^\s*대제목\s*[:：]\s*(.+?)\s*$/);
+      if (m && byName.hasOwnProperty(m[1])) {
+        // 이 대제목과 다음 대제목 사이의 본문 수집
+        var j = i + 1;
+        var hasContent = false;
+        while (j < lines.length && !/^\s*대제목\s*[:：]/.test(lines[j])) {
+          if (lines[j].trim()) hasContent = true;
+          j++;
+        }
+        if (!hasContent) {
+          // 비어있으면 사용자 본문 주입
+          byName[m[1]].split('\n').forEach(function (l) { out.push(l); });
+          out.push(''); // 다음 대제목과 한 줄 띄움
+          i = j;
+          continue;
+        }
+      }
+      i++;
+    }
+    return out.join('\n');
   }
 
   function openSectionsModal() {
@@ -279,6 +337,7 @@ async function render(container) {
     var school = schoolEl.value.trim();
     var md = ta.value.trim();
     md = normalizeBullets(md);
+    md = injectManualSectionBodies(md);
     if (!school) return md;
     md = normalizeSchoolName(md, school);
     // 기존 부서: 줄이 있으면 학교명으로 교체
