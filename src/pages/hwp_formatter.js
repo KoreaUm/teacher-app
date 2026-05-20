@@ -56,6 +56,7 @@ async function render(container) {
   var savedTopic = (await api.getSetting('hwp_topic', '')) || '';
   var savedType = (await api.getSetting('hwp_doctype', DOC_TYPES[0])) || DOC_TYPES[0];
   var savedSchool = (await api.getSetting('hwp_school', '')) || '';
+  var savedLogo   = (await api.getSetting('hwp_logo_path', '')) || '';
 
   container.innerHTML = `
     <div class="page-wrap">
@@ -75,8 +76,13 @@ async function render(container) {
       <!-- Step 1: 주제 + 양식 -->
       <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:14px">
         <div style="font-weight:600;font-size:14px;margin-bottom:10px">1️⃣ 주제 입력 + 양식 선택</div>
-        <div style="margin-bottom:8px">
-          <input id="hwpf-school" class="input" type="text" placeholder="학교(기관)명 — 표지 상단/하단에 자동 삽입 (예: ○○중학교)" value="${escapeHtml(savedSchool)}" style="width:100%;font-size:13px;padding:6px 8px;box-sizing:border-box">
+        <div style="margin-bottom:8px;display:flex;gap:8px;align-items:center">
+          <input id="hwpf-school" class="input" type="text" placeholder="부서/기관명 — 표지·본문 헤더에 자동 삽입 (예: 충청북도교육청 중등교육과)" value="${escapeHtml(savedSchool)}" style="flex:1;font-size:13px;padding:6px 8px;box-sizing:border-box">
+        </div>
+        <div style="margin-bottom:8px;display:flex;gap:8px;align-items:center">
+          <button class="btn btn-secondary btn-sm" id="hwpf-logo-pick" style="white-space:nowrap;flex-shrink:0">🖼 학교 로고 선택</button>
+          <span id="hwpf-logo-name" style="font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${savedLogo ? savedLogo.split(/[\\/]/).pop() : '선택된 로고 없음 (없으면 기관명만 표시)'}</span>
+          <button class="btn btn-secondary btn-sm" id="hwpf-logo-clear" style="display:${savedLogo ? 'inline-block' : 'none'}">✕</button>
         </div>
         <div style="display:grid;grid-template-columns:160px 1fr;gap:8px;margin-bottom:10px">
           <select id="hwpf-doctype" class="input" style="font-size:13px;padding:6px 8px">
@@ -162,14 +168,24 @@ async function render(container) {
   var resultDiv  = container.querySelector('#hwpf-result');
   var spinner    = container.querySelector('#hwpf-spinner');
   var mdCount    = container.querySelector('#hwpf-md-count');
+  var logoNameEl = container.querySelector('#hwpf-logo-name');
+  var logoClearBtn = container.querySelector('#hwpf-logo-clear');
+  var currentLogoPath = savedLogo;
 
   function buildMdWithSchool() {
     var school = schoolEl.value.trim();
     var md = ta.value.trim();
     if (!school) return md;
-    // 이미 부서: 또는 기관: 태그가 있으면 추가하지 않음
     if (/^\s*(기관|학교|기관명|학교명|소속|부서)\s*[:：]/m.test(md)) return md;
-    return md + '\n부서: ' + school;
+    // 제목: 줄 바로 다음에 부서: 삽입
+    var lines = md.split('\n');
+    for (var i = 0; i < lines.length; i++) {
+      if (/^\s*제목\s*[:：]/.test(lines[i])) {
+        lines.splice(i + 1, 0, '부서: ' + school);
+        return lines.join('\n');
+      }
+    }
+    return '부서: ' + school + '\n' + md;
   }
 
   function updateCount() { mdCount.textContent = ta.value.length.toLocaleString(); }
@@ -182,6 +198,29 @@ async function render(container) {
   topicEl.addEventListener('input', function () { api.setSetting('hwp_topic', topicEl.value); });
   typeEl.addEventListener('change', function () { api.setSetting('hwp_doctype', typeEl.value); });
   schoolEl.addEventListener('input', function () { api.setSetting('hwp_school', schoolEl.value); });
+
+  // 로고 파일 선택
+  container.querySelector('#hwpf-logo-pick').addEventListener('click', async function () {
+    var res = await window.api.showOpenDialog({
+      title: '학교 로고 이미지 선택',
+      filters: [{ name: '이미지', extensions: ['png', 'jpg', 'jpeg', 'bmp'] }],
+      properties: ['openFile']
+    });
+    if (!res || res.canceled || !res.filePaths || !res.filePaths[0]) return;
+    currentLogoPath = res.filePaths[0];
+    var fname = currentLogoPath.split(/[\\/]/).pop();
+    logoNameEl.textContent = fname;
+    logoClearBtn.style.display = 'inline-block';
+    api.setSetting('hwp_logo_path', currentLogoPath);
+  });
+
+  // 로고 초기화
+  logoClearBtn.addEventListener('click', function () {
+    currentLogoPath = '';
+    logoNameEl.textContent = '선택된 로고 없음 (없으면 기관명만 표시)';
+    logoClearBtn.style.display = 'none';
+    api.setSetting('hwp_logo_path', '');
+  });
 
   // 예시 불러오기
   container.querySelector('#hwpf-load-example').addEventListener('click', function () {
@@ -243,9 +282,12 @@ async function render(container) {
     resultDiv.style.display = 'block';
     if (result && result.ok) {
       statusText.textContent = '서식 적용 완료!';
+      var detail = result.savedTo
+        ? '저장: ' + escapeHtml(result.savedTo)
+        : (result.blocks ? result.blocks + '개 단락/표 처리됨' : '');
       resultDiv.innerHTML = `
         <div style="background:#d1fae5;border:1px solid #6ee7b7;border-radius:10px;padding:14px;font-size:13px;color:#065f46">
-          <b>✅ 완료!</b> ${result.blocks || 0}개 단락/표 처리됨${result.savedTo ? '<br><span style="font-size:11px">저장: ' + escapeHtml(result.savedTo) + '</span>' : ''}
+          <b>✅ 완료!</b>${detail ? '<br><span style="font-size:11px">' + detail + '</span>' : ''}
         </div>`;
     } else if (result && result.canceled) {
       resultDiv.style.display = 'none';
@@ -267,7 +309,7 @@ async function render(container) {
     btn.disabled = true; spinner.style.display = 'block'; resultDiv.style.display = 'none';
     statusText.textContent = '템플릿으로 hwpx 생성 중...';
     try {
-      var r = await window.api.hwpBuildHwpx(md);
+      var r = await window.api.hwpBuildHwpx({ markdownText: md, logoPath: currentLogoPath || '' });
       showResult(r);
     } catch (e) {
       showResult({ ok: false, error: String(e) });

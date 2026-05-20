@@ -22,7 +22,7 @@ hwpx_builder.py — 교육청 실제 문서 기반 fragment library hwpx 생성�
   값1 | 값2 | 값3
 """
 
-import os, re, random, zipfile, shutil, html, tempfile
+import os, re, random, zipfile, shutil, html, tempfile, struct
 
 TEMPLATE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'template_master.hwpx')
 
@@ -43,13 +43,254 @@ def make_title(text):
 # paraPr=62(CENTER), charPr=80(소형 일반)
 def make_subtitle(text):
     t = html.escape(text)
-    return f'<hp:p id="2147483648" paraPrIDRef="62" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="80"><hp:t>{t}</hp:t></hp:run><hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1300" textheight="1300" baseline="1105" spacing="584" horzpos="0" horzsize="46776" flags="393216"/></hp:linesegarray></hp:p>'
+    return f'<hp:p id="2147483648" paraPrIDRef="62" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="94"><hp:t>{t}</hp:t></hp:run><hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1300" textheight="1300" baseline="1105" spacing="584" horzpos="0" horzsize="46776" flags="393216"/></hp:linesegarray></hp:p>'
 
 # ─── 부서/기관명 단락 (우측 정렬) ───────────────────────────────────────────
 # paraPr=54(RIGHT), charPr=67(14pt 일반)
 def make_dept(text):
     t = html.escape(text)
     return f'<hp:p id="0" paraPrIDRef="54" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0"><hp:run charPrIDRef="67"><hp:t>{t}</hp:t></hp:run><hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1500" textheight="1500" baseline="1275" spacing="900" horzpos="0" horzsize="48472" flags="393216"/></hp:linesegarray></hp:p>'
+
+# ─── 로고 이미지 삽입 ────────────────────────────────────────────────────────
+def _get_image_size_px(path):
+    """이미지 파일에서 픽셀 크기 추출 (PNG/JPEG 헤더 직접 읽기, PIL 불필요)"""
+    try:
+        with open(path, 'rb') as f:
+            header = f.read(24)
+        ext = os.path.splitext(path)[1].lower()
+        if ext == '.png' and header[:8] == b'\x89PNG\r\n\x1a\n':
+            w, h = struct.unpack('>II', header[16:24])
+            return w, h
+        elif ext in ('.jpg', '.jpeg') and header[:2] == b'\xff\xd8':
+            with open(path, 'rb') as f:
+                f.read(2)
+                while True:
+                    marker, = struct.unpack('>H', f.read(2))
+                    size, = struct.unpack('>H', f.read(2))
+                    if marker in (0xFFC0, 0xFFC1, 0xFFC2):
+                        f.read(1)
+                        h, w = struct.unpack('>HH', f.read(4))
+                        return w, h
+                    f.read(size - 2)
+        elif ext == '.bmp' and header[:2] == b'BM':
+            w, h = struct.unpack('<II', header[18:26])
+            return w, abs(h)
+    except Exception:
+        pass
+    return 500, 200  # 기본값
+
+def inject_logo(tmp_dir, logo_path):
+    """사용자 로고로 템플릿의 image1(헤더 로고)을 교체. content.hpf 업데이트."""
+    ext = os.path.splitext(logo_path)[1].lower()
+    if ext == '.jpeg':
+        ext = '.jpg'
+    media_map = {'.png': 'image/png', '.jpg': 'image/jpg', '.bmp': 'image/bmp'}
+    media_type = media_map.get(ext, 'image/png')
+
+    # 기존 image1.jpg 삭제 (확장자가 다른 경우)
+    old_jpg = os.path.join(tmp_dir, 'BinData', 'image1.jpg')
+    if os.path.exists(old_jpg) and ext != '.jpg':
+        os.remove(old_jpg)
+
+    new_name = f'image1{ext}'
+    dest = os.path.join(tmp_dir, 'BinData', new_name)
+    shutil.copy2(logo_path, dest)
+
+    # content.hpf에서 image1 항목 업데이트
+    hpf_path = os.path.join(tmp_dir, 'Contents', 'content.hpf')
+    with open(hpf_path, 'r', encoding='utf-8') as f:
+        hpf = f.read()
+    hpf = re.sub(r'<opf:item id="image1"[^/]*/>',
+                 f'<opf:item id="image1" href="BinData/{new_name}" media-type="{media_type}" isEmbeded="1"/>',
+                 hpf)
+    with open(hpf_path, 'w', encoding='utf-8') as f:
+        f.write(hpf)
+
+
+def _get_template_secpr(logo_w_px=None, logo_h_px=None):
+    """템플릿 section0.xml의 첫 번째 hp:p (SECPR, 헤더 포함)을 추출.
+    로고 크기 제공 시 헤더 내 image1 크기 정보를 업데이트."""
+    with zipfile.ZipFile(TEMPLATE_PATH, 'r') as z:
+        with z.open('Contents/section0.xml') as f:
+            tmpl_sec = f.read().decode('utf-8')
+    # hs:sec 여는 태그 끝부분(본문 시작) 찾기
+    sec_start = re.search(r'<hs:sec[^>]*>', tmpl_sec)
+    body_start = sec_start.end() if sec_start else 0
+    # 중첩 <hp:p>/<hp:p > 계층을 추적해 외부 SECPR hp:p의 올바른 닫는 태그를 찾음
+    depth = 0
+    pos = body_start
+    p_end = len(tmpl_sec)
+    while pos < len(tmpl_sec):
+        next_open_sp = tmpl_sec.find('<hp:p ', pos)
+        next_open_gt = tmpl_sec.find('<hp:p>', pos)
+        # 둘 중 먼저 나오는 열기 태그
+        opens = [x for x in [next_open_sp, next_open_gt] if x != -1]
+        next_open = min(opens) if opens else -1
+        next_close = tmpl_sec.find('</hp:p>', pos)
+        if next_close == -1:
+            break
+        if next_open != -1 and next_open < next_close:
+            depth += 1
+            pos = next_open + 5
+        else:
+            depth -= 1
+            if depth == 0:
+                p_end = next_close + len('</hp:p>')
+                break
+            pos = next_close + len('</hp:p>')
+    secpr = tmpl_sec[:p_end]
+
+    if logo_w_px and logo_h_px:
+        cur_w, cur_h = 10783, 2519  # 헤더에서 image1의 표시 크기(유지)
+        orig_w, orig_h = logo_w_px * 100, logo_h_px * 100
+        sx = cur_w / max(orig_w, 1)
+        sy = cur_h / max(orig_h, 1)
+        pos = secpr.find('binaryItemIDRef="image1"')
+        if pos != -1:
+            pic_start = secpr.rfind('<hp:pic', 0, pos)
+            pic_end = secpr.find('</hp:pic>', pos) + len('</hp:pic>')
+            pic = secpr[pic_start:pic_end]
+            pic = re.sub(r'<hp:orgSz[^/]*/>', f'<hp:orgSz width="{orig_w}" height="{orig_h}"/>', pic)
+            pic = re.sub(r'<hp:imgClip[^/]*/>', f'<hp:imgClip left="0" right="{orig_w}" top="0" bottom="{orig_h}"/>', pic)
+            pic = re.sub(r'<hp:imgDim[^/]*/>', f'<hp:imgDim dimwidth="{orig_w}" dimheight="{orig_h}"/>', pic)
+            pic = re.sub(r'<hp:imgRect>.*?</hp:imgRect>',
+                         f'<hp:imgRect><hc:pt0 x="0" y="0"/><hc:pt1 x="{orig_w}" y="0"/>'
+                         f'<hc:pt2 x="{orig_w}" y="{orig_h}"/><hc:pt3 x="0" y="{orig_h}"/></hp:imgRect>',
+                         pic, flags=re.DOTALL)
+            pic = re.sub(r'<hc:scaMatrix e1="[^"]*" e2="0" e3="0" e4="0" e5="[^"]*" e6="0"/>',
+                         f'<hc:scaMatrix e1="{sx:.6f}" e2="0" e3="0" e4="0" e5="{sy:.6f}" e6="0"/>',
+                         pic)
+            secpr = secpr[:pic_start] + pic + secpr[pic_end:]
+    return secpr
+
+def make_logo_table(orig_w_px, orig_h_px, dept_text=None, display_w_hwp=18000):
+    """표지 하단 로고+부서명 테이블 - image1을 테이블 셀 안에 삽입 (HWP 렌더링 필수).
+    dept_text 제공 시 로고 아래 행에 【부서명】 텍스트 추가."""
+    orig_w_hwp = orig_w_px * 100
+    orig_h_hwp = orig_h_px * 100
+    display_h_hwp = max(1000, int(display_w_hwp * orig_h_px / max(orig_w_px, 1)))
+    pic_id = _new_id()
+    inst = _new_id()
+    tbl_id = _new_id()
+    sx = display_w_hwp / max(orig_w_hwp, 1)
+    sy = display_h_hwp / max(orig_h_hwp, 1)
+
+    tbl_w = 47622
+    inner_tbl_w = tbl_w - 282
+
+    pic_xml = (
+        f'<hp:pic id="{pic_id}" zOrder="0" numberingType="PICTURE" textWrap="TOP_AND_BOTTOM" '
+        f'textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" href="" groupLevel="0" instid="{inst}" reverse="0">'
+        f'<hp:offset x="0" y="0"/>'
+        f'<hp:orgSz width="{orig_w_hwp}" height="{orig_h_hwp}"/>'
+        f'<hp:curSz width="{display_w_hwp}" height="{display_h_hwp}"/>'
+        f'<hp:flip horizontal="0" vertical="0"/>'
+        f'<hp:rotationInfo angle="0" centerX="{display_w_hwp//2}" centerY="{display_h_hwp//2}" rotateimage="1"/>'
+        f'<hp:renderingInfo>'
+        f'<hc:transMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/>'
+        f'<hc:scaMatrix e1="{sx:.6f}" e2="0" e3="0" e4="0" e5="{sy:.6f}" e6="0"/>'
+        f'<hc:rotMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/>'
+        f'</hp:renderingInfo>'
+        f'<hc:img binaryItemIDRef="image1" bright="0" contrast="0" effect="REAL_PIC" alpha="0"/>'
+        f'<hp:imgRect><hc:pt0 x="0" y="0"/><hc:pt1 x="{orig_w_hwp}" y="0"/>'
+        f'<hc:pt2 x="{orig_w_hwp}" y="{orig_h_hwp}"/><hc:pt3 x="0" y="{orig_h_hwp}"/></hp:imgRect>'
+        f'<hp:imgClip left="0" right="{orig_w_hwp}" top="0" bottom="{orig_h_hwp}"/>'
+        f'<hp:inMargin left="0" right="0" top="0" bottom="0"/>'
+        f'<hp:imgDim dimwidth="{orig_w_hwp}" dimheight="{orig_h_hwp}"/>'
+        f'<hp:effects/>'
+        f'<hp:sz width="{display_w_hwp}" widthRelTo="ABSOLUTE" height="{display_h_hwp}" heightRelTo="ABSOLUTE" protect="0"/>'
+        f'<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" '
+        f'vertRelTo="PARA" horzRelTo="COLUMN" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>'
+        f'<hp:outMargin left="0" right="0" top="0" bottom="0"/>'
+        f'<hp:shapeComment>그림입니다.</hp:shapeComment>'
+        f'</hp:pic>'
+    )
+
+    logo_cell_h = display_h_hwp + 282
+    logo_row = (
+        f'<hp:tr>'
+        f'<hp:tc name="" header="0" hasMargin="0" protect="0" editable="0" dirty="0" borderFillIDRef="3">'
+        f'<hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="CENTER" '
+        f'linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">'
+        f'<hp:p id="2147483648" paraPrIDRef="62" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">'
+        f'<hp:run charPrIDRef="114">{pic_xml}<hp:t/></hp:run>'
+        f'<hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="{display_h_hwp}" '
+        f'textheight="{display_h_hwp}" baseline="{int(display_h_hwp*0.85)}" '
+        f'spacing="600" horzpos="0" horzsize="{inner_tbl_w}" flags="393216"/></hp:linesegarray>'
+        f'</hp:p></hp:subList>'
+        f'<hp:cellAddr colAddr="0" rowAddr="0"/><hp:cellSpan colSpan="1" rowSpan="1"/>'
+        f'<hp:cellSz width="{tbl_w}" height="{logo_cell_h}"/>'
+        f'<hp:cellMargin left="141" right="141" top="141" bottom="141"/></hp:tc>'
+        f'</hp:tr>'
+    )
+
+    rows = [logo_row]
+    tbl_sz_h = logo_cell_h
+    row_cnt = 1
+
+    if dept_text:
+        t = html.escape(dept_text)
+        label = f'【{t}】' if not dept_text.startswith('【') else t
+        dept_cell_h = 1682
+        dept_row = (
+            f'<hp:tr>'
+            f'<hp:tc name="" header="0" hasMargin="0" protect="0" editable="0" dirty="0" borderFillIDRef="3">'
+            f'<hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="CENTER" '
+            f'linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">'
+            f'<hp:p id="2147483648" paraPrIDRef="62" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">'
+            f'<hp:run charPrIDRef="67"><hp:t>{label}</hp:t></hp:run>'
+            f'<hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1500" textheight="1500" '
+            f'baseline="1275" spacing="900" horzpos="0" horzsize="{inner_tbl_w}" flags="393216"/></hp:linesegarray>'
+            f'</hp:p></hp:subList>'
+            f'<hp:cellAddr colAddr="0" rowAddr="1"/><hp:cellSpan colSpan="1" rowSpan="1"/>'
+            f'<hp:cellSz width="{tbl_w}" height="{dept_cell_h}"/>'
+            f'<hp:cellMargin left="141" right="141" top="141" bottom="141"/></hp:tc>'
+            f'</hp:tr>'
+        )
+        rows.append(dept_row)
+        tbl_sz_h += dept_cell_h
+        row_cnt = 2
+
+    tbl_height = tbl_sz_h + 566
+    tbl_xml = (
+        f'<hp:tbl id="{tbl_id}" zOrder="0" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" '
+        f'textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" pageBreak="CELL" repeatHeader="0" '
+        f'rowCnt="{row_cnt}" colCnt="1" cellSpacing="0" borderFillIDRef="3" noAdjust="0">'
+        f'<hp:sz width="{tbl_w}" widthRelTo="ABSOLUTE" height="{tbl_sz_h}" heightRelTo="ABSOLUTE" protect="0"/>'
+        f'<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" '
+        f'vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>'
+        f'<hp:outMargin left="283" right="283" top="283" bottom="283"/>'
+        f'<hp:inMargin left="141" right="141" top="141" bottom="141"/>'
+        f'{"".join(rows)}</hp:tbl>'
+    )
+
+    return (
+        f'<hp:p id="0" paraPrIDRef="62" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">'
+        f'<hp:run charPrIDRef="52">{tbl_xml}<hp:t/></hp:run>'
+        f'<hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="{tbl_height}" '
+        f'textheight="{tbl_height}" baseline="{int(tbl_height * 0.85)}" '
+        f'spacing="840" horzpos="0" horzsize="48472" flags="393216"/></hp:linesegarray>'
+        f'</hp:p>'
+    )
+
+def make_dept_box(dept_text):
+    """표지 하단 【부서명】 텍스트 단락 (중앙 정렬, 괄호 포함)"""
+    t = html.escape(dept_text)
+    label = f'【{t}】' if not dept_text.startswith('【') else t
+    return (f'<hp:p id="2147483648" paraPrIDRef="62" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">'
+            f'<hp:run charPrIDRef="67"><hp:t>{label}</hp:t></hp:run>'
+            f'<hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1500" textheight="1500" '
+            f'baseline="1275" spacing="900" horzpos="0" horzsize="48472" flags="393216"/></hp:linesegarray>'
+            f'</hp:p>')
+
+def make_dept_right(dept_text):
+    """본문 페이지 우측 정렬 부서명 (타이틀 바 아래)"""
+    t = html.escape(dept_text)
+    return (f'<hp:p id="2147483648" paraPrIDRef="54" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">'
+            f'<hp:run charPrIDRef="67"><hp:t>{t}</hp:t></hp:run>'
+            f'<hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1500" textheight="1500" '
+            f'baseline="1275" spacing="900" horzpos="0" horzsize="48472" flags="393216"/></hp:linesegarray>'
+            f'</hp:p>')
 
 # ─── 대제목 컨테이너 (실제 교육청 서식 그대로) ──────────────────────────────
 # 구조: 남색 정사각형 박스(로마자) + 흰색 바(제목 텍스트) + 파란 구분선
@@ -208,6 +449,125 @@ def make_note(text):
             f'<hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1400" textheight="1400" baseline="1190" spacing="1120" horzpos="0" horzsize="48472" flags="393216"/></hp:linesegarray>'
             f'</hp:p>')
 
+# ─── 추가 borderFill XML (header.xml에 주입, 항상 추가) ──────────────────────
+# 56=파랑(#4E9FD7, 표지바), 57=분홍(#AC1F8D, 표지바), 58=노랑(#BCBE50, 표지바)
+# 59=연파랑(#BDD7EE, 표 헤더)
+_EXTRA_FILLS_XML = (
+    '<hh:borderFill id="56" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0">'
+    '<hh:slash type="NONE" Crooked="0" isCounter="0"/><hh:backSlash type="NONE" Crooked="0" isCounter="0"/>'
+    '<hh:leftBorder type="NONE" width="0.12 mm" color="#000000"/>'
+    '<hh:rightBorder type="NONE" width="0.12 mm" color="#000000"/>'
+    '<hh:topBorder type="NONE" width="0.12 mm" color="#000000"/>'
+    '<hh:bottomBorder type="NONE" width="0.12 mm" color="#000000"/>'
+    '<hc:fillBrush><hc:winBrush faceColor="#4E9FD7" hatchColor="#000000" alpha="0"/></hc:fillBrush>'
+    '</hh:borderFill>'
+    '<hh:borderFill id="57" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0">'
+    '<hh:slash type="NONE" Crooked="0" isCounter="0"/><hh:backSlash type="NONE" Crooked="0" isCounter="0"/>'
+    '<hh:leftBorder type="NONE" width="0.12 mm" color="#000000"/>'
+    '<hh:rightBorder type="NONE" width="0.12 mm" color="#000000"/>'
+    '<hh:topBorder type="NONE" width="0.12 mm" color="#000000"/>'
+    '<hh:bottomBorder type="NONE" width="0.12 mm" color="#000000"/>'
+    '<hc:fillBrush><hc:winBrush faceColor="#AC1F8D" hatchColor="#000000" alpha="0"/></hc:fillBrush>'
+    '</hh:borderFill>'
+    '<hh:borderFill id="58" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0">'
+    '<hh:slash type="NONE" Crooked="0" isCounter="0"/><hh:backSlash type="NONE" Crooked="0" isCounter="0"/>'
+    '<hh:leftBorder type="NONE" width="0.12 mm" color="#000000"/>'
+    '<hh:rightBorder type="NONE" width="0.12 mm" color="#000000"/>'
+    '<hh:topBorder type="NONE" width="0.12 mm" color="#000000"/>'
+    '<hh:bottomBorder type="NONE" width="0.12 mm" color="#000000"/>'
+    '<hc:fillBrush><hc:winBrush faceColor="#BCBE50" hatchColor="#000000" alpha="0"/></hc:fillBrush>'
+    '</hh:borderFill>'
+    '<hh:borderFill id="59" threeD="0" shadow="0" centerLine="NONE" breakCellSeparateLine="0">'
+    '<hh:slash type="NONE" Crooked="0" isCounter="0"/><hh:backSlash type="NONE" Crooked="0" isCounter="0"/>'
+    '<hh:leftBorder type="SOLID" width="0.12 mm" color="#000000"/>'
+    '<hh:rightBorder type="SOLID" width="0.12 mm" color="#000000"/>'
+    '<hh:topBorder type="SOLID" width="0.12 mm" color="#000000"/>'
+    '<hh:bottomBorder type="SOLID" width="0.12 mm" color="#000000"/>'
+    '<hc:fillBrush><hc:winBrush faceColor="#BDD7EE" hatchColor="#000000" alpha="0"/></hc:fillBrush>'
+    '</hh:borderFill>'
+)
+_COVER_BAR_FILLS_XML = _EXTRA_FILLS_XML  # 하위 호환 별칭
+
+def make_cover_bar_table(title_text, center_h=5690):
+    """표지 색깔 바 + 제목 박스 테이블 생성
+    구조: [파랑/분홍/노랑 얇은 바] + [제목 텍스트 merged cell] + [파랑/분홍/노랑 얇은 바]
+    borderFill IDs 56(파랑) 57(분홍) 58(노랑) — build_hwpx에서 header.xml에 주입됨
+    center_h: 가운데 제목 셀 높이 (표지=5690, 본문 헤더=4400)
+    """
+    t = html.escape(title_text)
+    tbl_id = _new_id()
+    tbl_w = 47622
+    col_w = tbl_w // 3
+    col_widths = [col_w, col_w, tbl_w - col_w * 2]
+    bar_fill_ids = [56, 57, 58]
+
+    def _bar_row(row_idx, row_h):
+        tcs = []
+        for ci, (w, fid) in enumerate(zip(col_widths, bar_fill_ids)):
+            inner_w = max(100, w - 282)
+            tcs.append(
+                f'<hp:tc name="" header="0" hasMargin="0" protect="0" editable="0" dirty="0" borderFillIDRef="{fid}">'
+                f'<hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="CENTER" '
+                f'linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">'
+                f'<hp:p id="2147483648" paraPrIDRef="8" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">'
+                f'<hp:run charPrIDRef="94"/>'
+                f'<hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="50" textheight="50" '
+                f'baseline="43" spacing="28" horzpos="0" horzsize="{inner_w}" flags="393216"/></hp:linesegarray>'
+                f'</hp:p></hp:subList>'
+                f'<hp:cellAddr colAddr="{ci}" rowAddr="{row_idx}"/><hp:cellSpan colSpan="1" rowSpan="1"/>'
+                f'<hp:cellSz width="{w}" height="{row_h}"/>'
+                f'<hp:cellMargin left="141" right="141" top="141" bottom="141"/></hp:tc>'
+            )
+        return f'<hp:tr>{"".join(tcs)}</hp:tr>'
+
+    title_cell_h = center_h
+    inner_w = max(100, tbl_w - 282)
+    title_row = (
+        f'<hp:tr>'
+        f'<hp:tc name="" header="0" hasMargin="0" protect="0" editable="0" dirty="0" borderFillIDRef="1">'
+        f'<hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="CENTER" '
+        f'linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">'
+        f'<hp:p id="2147483648" paraPrIDRef="62" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">'
+        f'<hp:run charPrIDRef="95"><hp:t>{t}</hp:t></hp:run>'
+        f'<hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1800" textheight="1800" '
+        f'baseline="1530" spacing="812" horzpos="0" horzsize="{inner_w}" flags="393216"/></hp:linesegarray>'
+        f'</hp:p></hp:subList>'
+        f'<hp:cellAddr colAddr="0" rowAddr="1"/><hp:cellSpan colSpan="3" rowSpan="1"/>'
+        f'<hp:cellSz width="{tbl_w}" height="{title_cell_h}"/>'
+        f'<hp:cellMargin left="141" right="141" top="141" bottom="141"/></hp:tc>'
+        f'</hp:tr>'
+    )
+
+    row0_h, row2_h = 419, 363
+    tbl_sz_h = row0_h + title_cell_h + row2_h
+    tbl_lineseg_h = tbl_sz_h + 566
+
+    tbl_xml = (
+        f'<hp:tbl id="{tbl_id}" zOrder="0" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" '
+        f'textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" pageBreak="CELL" repeatHeader="1" '
+        f'rowCnt="3" colCnt="3" cellSpacing="0" borderFillIDRef="3" noAdjust="0">'
+        f'<hp:sz width="{tbl_w}" widthRelTo="ABSOLUTE" height="{tbl_sz_h}" heightRelTo="ABSOLUTE" protect="0"/>'
+        f'<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" '
+        f'vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>'
+        f'<hp:outMargin left="283" right="283" top="283" bottom="283"/>'
+        f'<hp:inMargin left="141" right="141" top="141" bottom="141"/>'
+        f'{_bar_row(0, row0_h)}{title_row}{_bar_row(2, row2_h)}'
+        f'</hp:tbl>'
+    )
+
+    return (
+        f'<hp:p id="0" paraPrIDRef="8" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">'
+        f'<hp:run charPrIDRef="52">{tbl_xml}<hp:t/></hp:run>'
+        f'<hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="{tbl_lineseg_h}" '
+        f'textheight="{tbl_lineseg_h}" baseline="{int(tbl_lineseg_h * 0.85)}" '
+        f'spacing="840" horzpos="0" horzsize="48472" flags="393216"/></hp:linesegarray>'
+        f'</hp:p>'
+    )
+
+def make_body_title_bar(title_text):
+    """본문 1페이지 상단 소형 제목 바 (표지 바와 동일 구조, 제목 셀만 작음)"""
+    return make_cover_bar_table(title_text, center_h=4400)
+
 # ─── 빈 줄 ───────────────────────────────────────────────────────────────
 SPACER_PARA = ('<hp:p id="2147483648" paraPrIDRef="66" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">'
                '<hp:run charPrIDRef="142"/>'
@@ -219,6 +579,12 @@ SMALL_SPACER = ('<hp:p id="0" paraPrIDRef="46" styleIDRef="0" pageBreak="0" colu
                 '<hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="700" textheight="700" baseline="595" spacing="420" horzpos="0" horzsize="48472" flags="393216"/></hp:linesegarray>'
                 '</hp:p>')
 
+# 페이지 강제 전환 (표지 → 본문)
+PAGE_BREAK_PARA = ('<hp:p id="0" paraPrIDRef="8" styleIDRef="0" pageBreak="1" columnBreak="0" merged="0">'
+                   '<hp:run charPrIDRef="94"><hp:t> </hp:t></hp:run>'
+                   '<hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1000" textheight="1000" baseline="850" spacing="600" horzpos="0" horzsize="48472" flags="393216"/></hp:linesegarray>'
+                   '</hp:p>')
+
 # ─── 표(hp:tbl) 생성 ─────────────────────────────────────────────────────
 def make_table(rows):
     """표 단락 생성. rows = [['헤더1','헤더2',...], ['값1','값2',...], ...]"""
@@ -229,43 +595,55 @@ def make_table(rows):
     tbl_id = _new_id()
 
     total_w = 47622
-    col_w = total_w // col_cnt
-    col_widths = [col_w] * col_cnt
-    col_widths[-1] = total_w - col_w * (col_cnt - 1)
+    # 열 너비: 각 열의 최대 텍스트 길이에 비례해서 배분 (최소 3000 단위)
+    col_max_len = []
+    for ci in range(col_cnt):
+        max_len = max(len((row[ci] if ci < len(row) else '').strip()) for row in rows)
+        col_max_len.append(max(max_len, 2))
+    total_len = sum(col_max_len)
+    min_w = 3000
+    col_widths = [max(min_w, int(total_w * l / total_len)) for l in col_max_len]
+    # 마지막 열로 나머지 흡수 (반올림 오차 조정)
+    col_widths[-1] = max(min_w, total_w - sum(col_widths[:-1]))
+
+    # 행당 실제 높이: 셀 내용(1400) + 상하 cellMargin(141*2) = 1682
+    row_h = 1682
+    tbl_sz_height = row_cnt * row_h          # <hp:sz height> (테이블 내부 순수 높이)
+    tbl_height = tbl_sz_height + 566         # lineseg vertsize (outMargin 상하 283*2 포함)
 
     tr_xmls = []
     for ri, row in enumerate(rows):
         is_header = (ri == 0)
-        fill_ref = '52' if is_header else '3'
-        char_ref = '3' if is_header else '37'
-        para_ref = '8' if is_header else '85'
+        fill_ref = '59' if is_header else '3'   # 59=연파랑 헤더, 3=테두리 일반
+        char_ref = '3' if is_header else '94'
         tc_xmls = []
         for ci in range(col_cnt):
             cell_text = (row[ci] if ci < len(row) else '').strip() or ' '
             t = html.escape(str(cell_text))
             w = col_widths[ci]
+            inner_w = max(100, w - 282)  # cellMargin left(141) + right(141) = 282
             tc_xml = (f'<hp:tc name="" header="0" hasMargin="0" protect="0" editable="0" dirty="0" borderFillIDRef="{fill_ref}">'
                       f'<hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="CENTER" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">'
-                      f'<hp:p id="2147483648" paraPrIDRef="{para_ref}" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">'
+                      f'<hp:p id="2147483648" paraPrIDRef="8" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">'
                       f'<hp:run charPrIDRef="{char_ref}"><hp:t>{t}</hp:t></hp:run>'
-                      f'<hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1400" textheight="1400" baseline="1190" spacing="1120" horzpos="0" horzsize="{max(100, w - 1020)}" flags="393216"/></hp:linesegarray>'
+                      f'<hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1400" textheight="1400" baseline="1190" spacing="600" horzpos="0" horzsize="{inner_w}" flags="393216"/></hp:linesegarray>'
                       f'</hp:p></hp:subList>'
                       f'<hp:cellAddr colAddr="{ci}" rowAddr="{ri}"/><hp:cellSpan colSpan="1" rowSpan="1"/>'
-                      f'<hp:sz width="{w}" widthRelTo="ABSOLUTE"/>'
-                      f'<hp:inMargin left="510" right="510" top="141" bottom="141"/></hp:tc>')
+                      f'<hp:cellSz width="{w}" height="1400"/>'
+                      f'<hp:cellMargin left="141" right="141" top="141" bottom="141"/></hp:tc>')
             tc_xmls.append(tc_xml)
         tr_xmls.append(f'<hp:tr>{"".join(tc_xmls)}</hp:tr>')
 
     tbl_xml = (f'<hp:tbl id="{tbl_id}" zOrder="0" numberingType="TABLE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" pageBreak="CELL" repeatHeader="1" rowCnt="{row_cnt}" colCnt="{col_cnt}" cellSpacing="0" borderFillIDRef="3" noAdjust="0">'
-               f'<hp:sz width="{total_w}" widthRelTo="ABSOLUTE" height="3000" heightRelTo="ABSOLUTE" protect="0"/>'
+               f'<hp:sz width="{total_w}" widthRelTo="ABSOLUTE" height="{tbl_sz_height}" heightRelTo="ABSOLUTE" protect="0"/>'
                f'<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="1" allowOverlap="0" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>'
                f'<hp:outMargin left="283" right="283" top="283" bottom="283"/>'
-               f'<hp:inMargin left="510" right="510" top="141" bottom="141"/>'
+               f'<hp:inMargin left="141" right="141" top="141" bottom="141"/>'
                f'{"".join(tr_xmls)}</hp:tbl>')
 
-    return (f'<hp:p id="0" paraPrIDRef="49" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">'
-            f'<hp:run charPrIDRef="89">{tbl_xml}<hp:t> </hp:t></hp:run>'
-            f'<hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="3000" textheight="3000" baseline="2550" spacing="600" horzpos="0" horzsize="48472" flags="393216"/></hp:linesegarray>'
+    return (f'<hp:p id="0" paraPrIDRef="8" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">'
+            f'<hp:run charPrIDRef="52">{tbl_xml}<hp:t/></hp:run>'
+            f'<hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="{tbl_height}" textheight="{tbl_height}" baseline="{int(tbl_height * 0.85)}" spacing="840" horzpos="0" horzsize="48472" flags="393216"/></hp:linesegarray>'
             f'</hp:p>')
 
 # ─── 마크다운 파서 ─────────────────────────────────────────────────────────
@@ -359,15 +737,66 @@ def assign_roman_numerals(elements):
 
 
 # ─── hwpx 빌더 메인 함수 ──────────────────────────────────────────────────
-def build_hwpx(md_text, output_path):
-    """마크다운 텍스트 → hwpx 파일 생성"""
+_COVER_TYPES = {'title', 'subtitle', 'dept'}
+
+def build_hwpx(md_text, output_path, logo_path=None):
+    """마크다운 텍스트 → hwpx 파일 생성. logo_path: 학교 로고 이미지 파일 경로 (선택)"""
     elements = parse_markdown(md_text)
     elements = assign_roman_numerals(elements)
 
+    # 로고 파일 유효성 확인 및 크기 읽기
+    logo_valid = logo_path and os.path.isfile(logo_path)
+    logo_w_px, logo_h_px = _get_image_size_px(logo_path) if logo_valid else (500, 200)
+
     paras = [SECPR_PARA]
 
+    # 표지 요소(제목/부제목/부서)를 앞에서 분리
+    first_real = next((k for k, _ in elements if k != 'spacer'), None)
+    has_cover = first_real in _COVER_TYPES
+
+    if has_cover:
+        cover_elems = []
+        i = 0
+        while i < len(elements):
+            k, v = elements[i]
+            if k in _COVER_TYPES:
+                cover_elems.append((k, v))
+            elif k != 'spacer':
+                break
+            i += 1
+        body_elems = elements[i:]
+
+        # 표지: 상단 여백 → 색깔바+제목 박스 → 부제목 → (여백) → 부서
+        title_val = next((v for k, v in cover_elems if k == 'title'), '')
+        subtitle_list = [(k, v) for k, v in cover_elems if k == 'subtitle']
+        dept_list = [(k, v) for k, v in cover_elems if k == 'dept']
+
+        for _ in range(8):
+            paras.append(SPACER_PARA)
+        paras.append(make_cover_bar_table(title_val))
+        for _, content in subtitle_list:
+            paras.append(make_subtitle(content))
+        # 표지 하단: 로고+부서명 테이블 (로고 없으면 부서명 단락만)
+        if dept_list:
+            dept_val = dept_list[0][1]
+            for _ in range(6):
+                paras.append(SPACER_PARA)
+            if logo_valid:
+                paras.append(make_logo_table(logo_w_px, logo_h_px, dept_val, 18000))
+            else:
+                paras.append(make_dept_box(dept_val))
+        # 본문은 다음 페이지부터 (본문 상단에 소형 제목 바 + 우측 부서명)
+        if body_elems:
+            paras.append(PAGE_BREAK_PARA)
+            if title_val:
+                paras.append(make_body_title_bar(title_val))
+            if dept_list:
+                paras.append(make_dept_right(dept_list[0][1]))
+    else:
+        body_elems = elements
+
     prev_kind = None
-    for kind, content in elements:
+    for kind, content in body_elems:
         if kind == 'title':
             paras.append(SPACER_PARA)
             paras.append(make_title(content))
@@ -407,6 +836,19 @@ def build_hwpx(md_text, output_path):
         with zipfile.ZipFile(TEMPLATE_PATH, 'r') as z:
             z.extractall(tmp_dir)
 
+        # header.xml에 borderFill 56-59 추가 (표지 바 + 표 헤더 색상)
+        hdr_path = os.path.join(tmp_dir, 'Contents', 'header.xml')
+        with open(hdr_path, 'r', encoding='utf-8') as f:
+            hdr = f.read()
+        hdr = hdr.replace('borderFills itemCnt="55"', 'borderFills itemCnt="59"', 1)
+        hdr = hdr.replace('</hh:borderFills>', _EXTRA_FILLS_XML + '</hh:borderFills>', 1)
+        with open(hdr_path, 'w', encoding='utf-8') as f:
+            f.write(hdr)
+
+        # 로고 이미지 파일 BinData에 복사 + content.hpf 등록
+        if logo_valid:
+            inject_logo(tmp_dir, logo_path)
+
         sec_path = os.path.join(tmp_dir, 'Contents', 'section0.xml')
         with open(sec_path, 'w', encoding='utf-8') as f:
             f.write(section_xml)
@@ -427,11 +869,16 @@ def build_hwpx(md_text, output_path):
 
 
 if __name__ == '__main__':
-    import sys
+    import sys, json
     if len(sys.argv) < 3:
-        print('Usage: python hwpx_builder.py <markdown_file> <output.hwpx>')
+        print(json.dumps({'ok': False, 'error': 'Usage: python hwpx_builder.py <markdown_file> <output.hwpx>'}))
         sys.exit(1)
-    with open(sys.argv[1], 'r', encoding='utf-8') as f:
-        md = f.read()
-    result = build_hwpx(md, sys.argv[2])
-    print(f'Generated: {result}')
+    try:
+        with open(sys.argv[1], 'r', encoding='utf-8') as f:
+            md = f.read()
+        logo = sys.argv[3] if len(sys.argv) > 3 else None
+        result = build_hwpx(md, sys.argv[2], logo)
+        print(json.dumps({'ok': True, 'path': result, 'savedTo': result}))
+    except Exception as e:
+        print(json.dumps({'ok': False, 'error': str(e)}))
+        sys.exit(1)
