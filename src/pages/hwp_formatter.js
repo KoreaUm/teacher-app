@@ -93,12 +93,12 @@ async function render(container) {
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
           <div style="font-weight:600;font-size:14px">2️⃣ 마크다운 작성/편집</div>
           <div style="font-size:11px;color:var(--text2)">
-            <code>제목:</code> · <code>부제목:</code> · <code>부서:</code> · <code>대제목:</code> · <code>소제목:</code> · <code>◦ 항목</code> · <code>  - 세부항목</code> · <code>※ 주석</code> · <code>표:</code>
+            <code>제목:</code> · <code>부제목:</code> · <code>부서:</code> · <code>대제목:</code> · <code>소제목:</code> · <code>◦ 항목</code> · <code>  - 세부항목</code> · <code>※ 주석</code> · <code>표:</code> · <code>붙임:</code>
           </div>
         </div>
         <textarea id="hwpf-md" style="width:100%;min-height:320px;padding:12px;font-family:'D2Coding',Consolas,monospace;font-size:13px;line-height:1.6;border:1px solid var(--border);border-radius:8px;resize:vertical;background:#fafafa">${escapeHtml(savedMd)}</textarea>
         <div style="margin-top:6px;display:flex;justify-content:space-between;font-size:11px;color:var(--text2)">
-          <span>위계: 제목→부제목→부서→대제목(로마자 박스)→소제목(□)→◦항목→  -세부항목→※주석→표:</span>
+          <span>위계: 제목→부제목→부서→대제목(로마자 박스)→소제목(□)→◦항목→  -세부항목→※주석→표: · 붙임(전폭 박스, 자동 번호)</span>
           <span><span id="hwpf-md-count">0</span>자</span>
         </div>
       </div>

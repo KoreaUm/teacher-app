@@ -382,11 +382,70 @@ _MAJOR_TEMPLATE = ('<hp:p id="2147483648" paraPrIDRef="67" styleIDRef="68" pageB
     '<hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="2248" textheight="2248" baseline="1911" spacing="780" horzpos="0" horzsize="48472" flags="393216"/></hp:linesegarray>'
     '</hp:p>')
 
+# ─── 붙임 헤더 (전체 너비 남색 바, 흰색 텍스트) ─────────────────────────────
+# 대제목(좌측 로마자 박스+흰바 분리)과 달리, 단일 전폭 rect로 구성.
+# charPrIDRef="2": 흰색 15pt — 남색 배경 위에 "붙임 N. 제목" 표시.
+_ATTACHMENT_TEMPLATE = (
+    '<hp:p id="2147483648" paraPrIDRef="67" styleIDRef="68" pageBreak="0" columnBreak="0" merged="0">'
+    '<hp:run charPrIDRef="1">'
+    '<hp:container id="__CID__" zOrder="0" numberingType="PICTURE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" href="" groupLevel="0" instid="__INST1__">'
+    '<hp:offset x="0" y="0"/><hp:orgSz width="48759" height="2248"/><hp:curSz width="48178" height="0"/>'
+    '<hp:flip horizontal="0" vertical="0"/>'
+    '<hp:rotationInfo angle="0" centerX="24089" centerY="1124" rotateimage="1"/>'
+    '<hp:renderingInfo>'
+    '<hc:transMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/>'
+    '<hc:scaMatrix e1="0.988084" e2="0" e3="0" e4="0" e5="1" e6="0"/>'
+    '<hc:rotMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/>'
+    '</hp:renderingInfo>'
+    '<hp:rect id="0" zOrder="0" numberingType="NONE" textWrap="TOP_AND_BOTTOM" textFlow="BOTH_SIDES" lock="0" dropcapstyle="None" href="" groupLevel="1" instid="__INST2__" ratio="0">'
+    '<hp:offset x="0" y="63"/><hp:orgSz width="48759" height="2184"/><hp:curSz width="48178" height="0"/>'
+    '<hp:flip horizontal="0" vertical="0"/>'
+    '<hp:rotationInfo angle="0" centerX="24089" centerY="1092" rotateimage="1"/>'
+    '<hp:renderingInfo>'
+    '<hc:transMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="63"/>'
+    '<hc:scaMatrix e1="0.988084" e2="0" e3="0" e4="0" e5="1" e6="0"/>'
+    '<hc:rotMatrix e1="1" e2="0" e3="0" e4="0" e5="1" e6="0"/>'
+    '</hp:renderingInfo>'
+    '<hp:lineShape color="#000000" width="33" style="NONE" endCap="FLAT" headStyle="NORMAL" tailStyle="NORMAL" headfill="1" tailfill="1" headSz="MEDIUM_MEDIUM" tailSz="MEDIUM_MEDIUM" outlineStyle="NORMAL" alpha="0"/>'
+    '<hc:fillBrush><hc:winBrush faceColor="#18304B" hatchColor="#000000" alpha="0"/></hc:fillBrush>'
+    '<hp:shadow type="NONE" color="#B2B2B2" offsetX="0" offsetY="0" alpha="0"/>'
+    '<hp:drawText lastWidth="48178" name="" editable="0">'
+    '<hp:subList id="" textDirection="HORIZONTAL" lineWrap="BREAK" vertAlign="CENTER" linkListIDRef="0" linkListNextIDRef="0" textWidth="0" textHeight="0" hasTextRef="0" hasNumRef="0">'
+    '<hp:p id="2147483648" paraPrIDRef="8" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">'
+    '<hp:run charPrIDRef="2"><hp:t>__ATTACH_TEXT__</hp:t></hp:run>'
+    '<hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="1600" textheight="1600" baseline="1360" spacing="960" horzpos="0" horzsize="47612" flags="393216"/></hp:linesegarray>'
+    '</hp:p>'
+    '</hp:subList>'
+    '<hp:textMargin left="400" right="283" top="283" bottom="283"/>'
+    '</hp:drawText>'
+    '<hc:pt0 x="0" y="0"/><hc:pt1 x="48759" y="0"/><hc:pt2 x="48759" y="2184"/><hc:pt3 x="0" y="2184"/>'
+    '</hp:rect>'
+    '<hp:sz width="48178" widthRelTo="ABSOLUTE" height="2248" heightRelTo="ABSOLUTE" protect="0"/>'
+    '<hp:pos treatAsChar="1" affectLSpacing="0" flowWithText="0" allowOverlap="1" holdAnchorAndSO="0" vertRelTo="PARA" horzRelTo="PARA" vertAlign="TOP" horzAlign="LEFT" vertOffset="0" horzOffset="0"/>'
+    '<hp:outMargin left="0" right="0" top="0" bottom="0"/>'
+    '</hp:container>'
+    '<hp:t> </hp:t></hp:run>'
+    '<hp:linesegarray><hp:lineseg textpos="0" vertpos="0" vertsize="2248" textheight="2248" baseline="1911" spacing="780" horzpos="0" horzsize="48472" flags="393216"/></hp:linesegarray>'
+    '</hp:p>')
+
 _id_counter = [10000]
 
 def _new_id():
     _id_counter[0] += random.randint(100, 999)
     return _id_counter[0]
+
+def make_attachment_heading(num, title):
+    """붙임 헤더 단락 생성 (전폭 남색 바, 흰색 텍스트 '붙임 N. 제목')"""
+    label = f'붙임 {num}.'
+    text = html.escape(f'{label}  {title}' if title else label)
+    cid   = _new_id()
+    inst1 = _new_id()
+    inst2 = _new_id()
+    return (_ATTACHMENT_TEMPLATE
+            .replace('__CID__',        str(cid))
+            .replace('__INST1__',      str(inst1))
+            .replace('__INST2__',      str(inst2))
+            .replace('__ATTACH_TEXT__', text))
 
 def make_major_heading(roman, title):
     """대제목 컨테이너 단락 생성 (남색 박스 + 파란 구분선 + 제목 텍스트)"""
@@ -682,6 +741,8 @@ def parse_markdown(md_text):
                 roman = None
                 title = text
             elements.append(('major_heading', (roman, title)))
+        elif line.startswith('붙임:'):
+            elements.append(('attachment_heading', line[4:].strip()))
         elif line.startswith('소제목:'):
             elements.append(('sub_heading', line[4:].strip()))
         elif line.strip() == '표:':
@@ -729,16 +790,20 @@ def parse_markdown(md_text):
 
 
 def assign_roman_numerals(elements):
-    """대제목에 로마자 자동 배정 (없는 경우만)"""
-    counter = 0
+    """대제목에 로마자 자동 배정, 붙임에 순번 자동 배정"""
+    roman_counter = 0
+    attach_counter = 0
     result = []
     for kind, content in elements:
         if kind == 'major_heading':
             roman, title = content
             if roman is None:
-                roman = ROMAN_NUMS[counter] if counter < len(ROMAN_NUMS) else str(counter + 1)
-            counter += 1
+                roman = ROMAN_NUMS[roman_counter] if roman_counter < len(ROMAN_NUMS) else str(roman_counter + 1)
+            roman_counter += 1
             result.append((kind, (roman, title)))
+        elif kind == 'attachment_heading':
+            attach_counter += 1
+            result.append((kind, (attach_counter, content)))
         else:
             result.append((kind, content))
     return result
@@ -818,6 +883,12 @@ def build_hwpx(md_text, output_path, logo_path=None):
                 paras.append(SPACER_PARA)
             paras.append(SMALL_SPACER)
             paras.append(make_major_heading(roman, title))
+        elif kind == 'attachment_heading':
+            num, title = content
+            if prev_kind not in (None, 'title', 'subtitle', 'dept'):
+                paras.append(SPACER_PARA)
+            paras.append(SMALL_SPACER)
+            paras.append(make_attachment_heading(num, title))
         elif kind == 'sub_heading':
             paras.append(make_sub_heading(content))
         elif kind == 'bullet1':
