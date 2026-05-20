@@ -180,10 +180,10 @@ async function render(container) {
       var aiActive = s.mode === 'ai';
       var manualBox = '';
       if (s.mode === 'manual' && s.included) {
-        var placeholder = '이 섹션에 들어갈 내용을 자유롭게 작성하세요.\n예시:\n◦ 첫 번째 항목\n◦ 두 번째 항목\n  - 세부 항목';
+        var placeholder = '자유롭게 한 줄씩 적으세요. 자동으로 마크다운 규칙이 적용됩니다.\n\n예시 입력:\n학생 자발성 강조\n안전사고 예방\n  세부 지침 작성\n※ 비고 사항\n\n→ 자동 변환 결과:\n◦ 학생 자발성 강조\n◦ 안전사고 예방\n  - 세부 지침 작성\n※ 비고 사항';
         manualBox =
           '<div style="padding:6px 10px 10px 36px;background:#f0f9ff;border-top:1px dashed #93c5fd">' +
-            '<div style="font-size:11px;color:#0369a1;margin-bottom:4px">✍️ 직접 작성 — 아래에 입력한 내용이 hwpx에 그대로 들어갑니다</div>' +
+            '<div style="font-size:11px;color:#0369a1;margin-bottom:4px">✍️ 직접 작성 — 한 줄씩 자유롭게 입력하면 자동으로 ◦ / 세부항목 형식이 적용됩니다 (커서 떠날 때 변환)</div>' +
             '<textarea class="hwpf-sec-body" placeholder="' + escapeHtml(placeholder) + '" style="width:100%;min-height:90px;font-family:\'D2Coding\',Consolas,monospace;font-size:12px;line-height:1.5;padding:8px;border:1px solid #93c5fd;border-radius:6px;background:#fff;resize:vertical;box-sizing:border-box">' + escapeHtml(s.body || '') + '</textarea>' +
           '</div>';
       }
@@ -227,6 +227,14 @@ async function render(container) {
         bodyEl.addEventListener('input', function (e) {
           sections[idx].body = e.target.value;
         });
+        // 포커스 떠날 때 자동 정규화 (◦ / 들여쓰기 / 다른 불릿 등을 표준 형식으로)
+        bodyEl.addEventListener('blur', function () {
+          var normalized = normalizeManualBody(sections[idx].body);
+          if (normalized !== sections[idx].body) {
+            sections[idx].body = normalized;
+            bodyEl.value = normalized;
+          }
+        });
       }
       // 드래그는 핸들에서만 시작 (textarea/input과 충돌 방지)
       var handle = wrap.querySelector('.hwpf-sec-handle');
@@ -264,6 +272,30 @@ async function render(container) {
     });
   }
 
+  // 직접 작성 본문을 마크다운 규칙에 맞게 자동 정규화.
+  // 평문 → "◦ 항목", 들여쓴 평문/다른 불릿 → "  - 세부항목".
+  // 이미 형식이 맞거나 태그 줄(제목/대제목/소제목/표/※)은 건드리지 않음.
+  function normalizeManualBody(text) {
+    if (!text) return text;
+    var SKIP_PREFIXES = /^\s*(제목|부제목|부서|대제목|소제목|표)\s*[:：]/;
+    return text.split('\n').map(function (line) {
+      if (!line.trim()) return line;
+      if (SKIP_PREFIXES.test(line)) return line;
+      if (line.indexOf('|') !== -1) return line;     // 표 행
+      if (/^\s*※/.test(line)) return line;            // 주석
+      if (/^◦\s/.test(line)) return line;             // 이미 ◦
+      if (/^\s{2,}-\s/.test(line)) return line;       // 이미 수준2
+      // 다른 불릿 기호 (선택적 앞 공백) → 수준2 "  - "
+      var m = line.match(/^\s*[*•·▪]\s+(.*)$/);
+      if (m) return '  - ' + m[1];
+      // 들여쓰기 2칸 이상 + 평문 → 수준2
+      m = line.match(/^\s{2,}(\S.*)$/);
+      if (m) return '  - ' + m[1];
+      // 그 외 평문 → 수준1 "◦ "
+      return '◦ ' + line.trim();
+    }).join('\n');
+  }
+
   // 직접 작성 섹션의 본문을 최종 마크다운의 해당 대제목 아래에 주입.
   // 사용자가 textarea에서 이미 채워넣은 섹션은 건드리지 않음 (textarea 우선).
   function injectManualSectionBodies(md) {
@@ -272,7 +304,7 @@ async function render(container) {
     });
     if (!manualWithBody.length) return md;
     var byName = {};
-    manualWithBody.forEach(function (s) { byName[s.name.trim()] = s.body.trim(); });
+    manualWithBody.forEach(function (s) { byName[s.name.trim()] = normalizeManualBody(s.body).trim(); });
 
     var lines = md.split('\n');
     var out = [];
@@ -395,7 +427,11 @@ async function render(container) {
   container.querySelector('#hwpf-sections-apply').addEventListener('click', function () {
     // 빈 이름 정리
     sections = sections.filter(function (s) { return s.name && s.name.trim(); });
-    sections.forEach(function (s) { s.name = s.name.trim(); });
+    sections.forEach(function (s) {
+      s.name = s.name.trim();
+      // 직접 작성 본문은 마크다운 규칙에 맞게 자동 정규화
+      if (s.mode === 'manual' && s.body) s.body = normalizeManualBody(s.body);
+    });
     if (!sections.length) { sections = defaultSections(); }
     updateSectionsSummary();
     closeSectionsModal();

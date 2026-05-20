@@ -61,7 +61,6 @@
       "target": "nsis",
       "artifactName": "teacher-app-setup-${version}.${ext}",
       "executableName": "쌤포트",
-      "signAndEditExecutable": false,
       "icon": "assets/icon.ico",
       "extraResources": [
         {
