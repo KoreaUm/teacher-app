@@ -234,7 +234,7 @@ async function render(container) {
 
   // 프롬프트 복사
   container.querySelector('#hwpf-copy-prompt').addEventListener('click', async function () {
-    var r = await window.api.hwpBuildPrompt({ topic: topicEl.value.trim(), docType: typeEl.value });
+    var r = await window.api.hwpBuildPrompt({ topic: topicEl.value.trim(), docType: typeEl.value, school: schoolEl.value.trim() });
     if (r && r.ok) {
       try {
         await navigator.clipboard.writeText(r.prompt);

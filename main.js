@@ -2789,7 +2789,13 @@ ipcMain.handle('hwp-format-from-text', async (_evt, markdownText) => {
 });
 
 // ── 한글(HWP) 템플릿 빌더: hwpx XML 직접 생성 (한글 설치 불필요) ─
-ipcMain.handle('hwp-build-hwpx', async (_evt, markdownText) => {
+ipcMain.handle('show-open-dialog', async (_evt, opts) => {
+  return dialog.showOpenDialog(mainWindow, opts || {});
+});
+
+ipcMain.handle('hwp-build-hwpx', async (_evt, opts) => {
+  const markdownText = (opts && typeof opts === 'object') ? opts.markdownText : opts;
+  const logoPath = (opts && typeof opts === 'object' && opts.logoPath) ? opts.logoPath : '';
   if (!markdownText || !String(markdownText).trim()) {
     return { ok: false, error: '입력 텍스트가 비어있습니다.' };
   }
@@ -2822,7 +2828,9 @@ ipcMain.handle('hwp-build-hwpx', async (_evt, markdownText) => {
         try { fs.unlinkSync(tmpTxt); } catch (_) {}
         return resolve({ ok: false, error: 'Python 실행 파일을 찾을 수 없습니다. Python 3.8+ 설치가 필요합니다.' });
       }
-      const py = spawn(pyCandidates[idx], [builderPath, tmpTxt, saveRes.filePath], {
+      const pyArgs = [builderPath, tmpTxt, saveRes.filePath];
+      if (logoPath) pyArgs.push(logoPath);
+      const py = spawn(pyCandidates[idx], pyArgs, {
         windowsHide: true,
         env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
       });
@@ -2876,23 +2884,25 @@ ipcMain.handle('hwp-generate-markdown', async (_evt, { topic, docType }) => {
 });
 
 // ── 한글(HWP) 자동 서식: GPT/Claude용 프롬프트 생성 (복사용) ────
-ipcMain.handle('hwp-build-prompt', async (_evt, { topic, docType }) => {
-  return { ok: true, prompt: buildHwpMarkdownPrompt(topic || '', docType || '') };
+ipcMain.handle('hwp-build-prompt', async (_evt, { topic, docType, school }) => {
+  return { ok: true, prompt: buildHwpMarkdownPrompt(topic || '', docType || '', school || '') };
 });
 
-function buildHwpMarkdownPrompt(topic, docType) {
+function buildHwpMarkdownPrompt(topic, docType, school) {
   const typeLabel = docType || '공문서';
+  const schoolLine = school ? `부서: ${school}` : `부서: 부서명 팀명 (예: 중등교육과 중등교육팀)`;
   return [
     `당신은 한국 학교/교육청의 공문서 작성 전문가입니다.`,
     `아래 주제로 "${typeLabel}"를 교육청 현장지원단 운영 계획 스타일로 작성해주세요.`,
     ``,
     `주제: ${topic}`,
+    school ? `기관명: ${school}` : '',
     ``,
     `[출력 규칙 - 반드시 지켜주세요]`,
     `- 아래 태그 형식으로만 작성 (다른 설명이나 코드블록 없이 본문만 출력)`,
     `- 제목: 문서 제목 (1줄)`,
     `- 부제목: 부제목 (선택, 1줄)`,
-    `- 부서: 부서명 팀명 (선택, 예: 중등교육과 중등교육팀)`,
+    `- 부서: ${school || '부서명 팀명'} (반드시 이 기관명 그대로 사용)`,
     `- 대제목: 섹션 제목 — 로마자 자동 부여됨 (Ⅰ, Ⅱ, Ⅲ...) 생략해도 됨`,
     `- 소제목: □ 스타일 소제목 (굵게)`,
     `- ◦ 항목 — 수준1 불릿 (대제목 바로 아래 또는 독립 항목)`,
@@ -2910,7 +2920,7 @@ function buildHwpMarkdownPrompt(topic, docType) {
     ``,
     `[예시]`,
     `제목: 2026. 중학교 자유학기제 현장지원단 운영 계획`,
-    `부서: 중등교육과 중등교육팀`,
+    schoolLine,
     ``,
     `대제목: 관련 근거`,
     `◦ 2026. 주요업무계획 1-1-2 학생 주도성을 키우는 교육과정`,
