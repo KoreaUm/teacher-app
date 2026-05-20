@@ -31,6 +31,7 @@ const MENU_PAGE_OPTIONS = [
   { key: 'lesson_materials', label: '수업자료제작' },
   { key: 'todos',            label: '할일 목록' },
   { key: 'sticky_notes',     label: '스티커 메모' },
+  { key: 'hwp_formatter',    label: '한글 자동 서식' },
   { key: 'settings',         label: '설정' },
 ];
 
@@ -38,7 +39,7 @@ const DEFAULT_MENU_GROUPS = [
   { key: 'class',      label: '학급 관리', items: ['students', 'attendance', 'daily_memo', 'timetable'] },
   { key: 'records',    label: '학생 기록', items: ['counseling', 'observations', 'lessons'] },
   { key: 'evaluation', label: '평가',     items: ['assessments', 'submissions', 'statistics', 'ai_analysis'] },
-  { key: 'admin',      label: '업무',     items: ['official_document'] },
+  { key: 'admin',      label: '업무',     items: ['official_document', 'hwp_formatter'] },
   { key: 'utility',    label: '편의',     items: ['meal', 'school_calendar', 'calculator', 'lesson_materials', 'todos', 'sticky_notes'] },
   { key: 'settings',   label: '설정',     items: ['settings'] },
 ];
