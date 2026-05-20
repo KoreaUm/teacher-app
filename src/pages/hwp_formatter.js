@@ -176,8 +176,11 @@ async function render(container) {
     var school = schoolEl.value.trim();
     var md = ta.value.trim();
     if (!school) return md;
-    if (/^\s*(기관|학교|기관명|학교명|소속|부서)\s*[:：]/m.test(md)) return md;
-    // 제목: 줄 바로 다음에 부서: 삽입
+    // 기존 부서: 줄이 있으면 학교명으로 교체
+    if (/^\s*(기관|학교|기관명|학교명|소속|부서)\s*[:：]/m.test(md)) {
+      return md.replace(/^(\s*(기관|학교|기관명|학교명|소속|부서)\s*[:：]).*/m, '$1 ' + school);
+    }
+    // 없으면 제목: 줄 바로 다음에 삽입
     var lines = md.split('\n');
     for (var i = 0; i < lines.length; i++) {
       if (/^\s*제목\s*[:：]/.test(lines[i])) {
