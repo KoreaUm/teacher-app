@@ -56,9 +56,14 @@ async function render(container) {
           <button class="btn btn-secondary btn-sm" id="hwpf-sections-edit">⚙️ 섹션 구성</button>
           <span id="hwpf-sections-summary" style="font-size:11px;color:var(--text2)"></span>
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center">
           <button class="btn btn-primary btn-sm" id="hwpf-ai-gen">🤖 로컬 AI로 자동 생성</button>
-          <button class="btn btn-secondary btn-sm" id="hwpf-copy-prompt">📋 GPT/Claude용 프롬프트 복사</button>
+          <button class="btn btn-secondary btn-sm" id="hwpf-copy-prompt">📋 프롬프트 복사</button>
+          <div style="display:flex;gap:4px;padding-left:4px;border-left:1px solid var(--border);margin-left:4px">
+            <button class="btn btn-secondary btn-sm hwpf-open-ai" data-url="https://chatgpt.com" title="ChatGPT 열기" style="padding:4px 10px">💬 ChatGPT</button>
+            <button class="btn btn-secondary btn-sm hwpf-open-ai" data-url="https://claude.ai/new" title="Claude 열기" style="padding:4px 10px">🤖 Claude</button>
+            <button class="btn btn-secondary btn-sm hwpf-open-ai" data-url="https://gemini.google.com/app" title="Gemini 열기" style="padding:4px 10px">✨ Gemini</button>
+          </div>
           <span id="hwpf-ai-status" style="font-size:12px;color:var(--text2);align-self:center"></span>
         </div>
       </div>
@@ -421,6 +426,14 @@ async function render(container) {
     api.setSetting('hwp_logo_path', '');
   });
 
+  // AI 사이트 바로가기 (외부 브라우저로 열기)
+  container.querySelectorAll('.hwpf-open-ai').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var url = btn.getAttribute('data-url');
+      if (url && window.api && window.api.openUrl) window.api.openUrl(url);
+    });
+  });
+
   // 섹션 구성 모달
   container.querySelector('#hwpf-sections-edit').addEventListener('click', openSectionsModal);
   container.querySelector('#hwpf-sections-close').addEventListener('click', closeSectionsModal);
@@ -544,6 +557,10 @@ async function render(container) {
     try {
       var r = await window.api.hwpBuildHwpx({ markdownText: md, logoPath: currentLogoPath || '' });
       showResult(r);
+      // 저장 성공 시 기본 프로그램(한글 등)으로 파일 자동 열기
+      if (r && r.ok && r.savedTo && window.api && window.api.openPath) {
+        try { await window.api.openPath(r.savedTo); } catch (_) {}
+      }
     } catch (e) {
       showResult({ ok: false, error: String(e) });
     } finally {
