@@ -342,7 +342,8 @@ contextBridge.exposeInMainWorld('api', {
   // 한글(HWP) 자동 서식
   hwpApplyFormat: () => ipcRenderer.invoke('hwp-apply-format'),
   hwpFormatFromText: (md) => ipcRenderer.invoke('hwp-format-from-text', md),
-  hwpBuildHwpx: (md) => ipcRenderer.invoke('hwp-build-hwpx', md),
+  hwpBuildHwpx: (opts) => ipcRenderer.invoke('hwp-build-hwpx', opts),
+  showOpenDialog: (opts) => ipcRenderer.invoke('show-open-dialog', opts),
   hwpGenerateMarkdown: (opts) => ipcRenderer.invoke('hwp-generate-markdown', opts),
   hwpBuildPrompt: (opts) => ipcRenderer.invoke('hwp-build-prompt', opts),
 });
