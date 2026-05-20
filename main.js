@@ -2707,87 +2707,6 @@ ipcMain.handle('macro-fill-edufine-cdp', async (e, { wsUrl, items }) => {
   }
 });
 
-// ── 한글(HWP) 자동 서식: 공통 PowerShell 실행 함수 ───────────────
-function runHwpFormatPS(args) {
-  const isDev = !app.isPackaged;
-  const scriptPath = isDev
-    ? path.join(__dirname, 'hwp_engine', 'format_doc.ps1')
-    : path.join(process.resourcesPath, 'hwp_engine', 'format_doc.ps1');
-
-  return new Promise((resolve) => {
-    const ps = spawn('powershell', [
-      '-ExecutionPolicy', 'Bypass',
-      '-NoProfile',
-      '-File', scriptPath,
-      ...args
-    ], { windowsHide: true });
-    let out = '';
-    let err = '';
-    ps.stdout.on('data', d => { out += d.toString(); });
-    ps.stderr.on('data', d => { err += d.toString(); });
-    ps.on('close', () => {
-      try {
-        const parsed = JSON.parse(out.trim());
-        resolve(parsed);
-      } catch {
-        resolve({ ok: false, error: err || out || '알 수 없는 오류' });
-      }
-    });
-    ps.on('error', (e) => {
-      resolve({ ok: false, error: 'PowerShell 실행 실패: ' + e.message });
-    });
-  });
-}
-
-// ── 한글(HWP) 자동 서식: 기존 파일 선택 후 적용 ───────────────────
-ipcMain.handle('hwp-apply-format', async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    title: '서식을 적용할 한글 문서를 선택하세요',
-    properties: ['openFile'],
-    filters: [
-      { name: '한글 문서', extensions: ['hwp', 'hwpx'] },
-      { name: '모든 파일', extensions: ['*'] }
-    ]
-  });
-  if (result.canceled || !result.filePaths.length) {
-    return { ok: false, error: '파일 선택이 취소되었습니다.', canceled: true };
-  }
-  return await runHwpFormatPS(['-FilePath', result.filePaths[0]]);
-});
-
-// ── 한글(HWP) 자동 서식: 마크다운 텍스트 → 새 한글 파일 ──────────
-ipcMain.handle('hwp-format-from-text', async (_evt, markdownText) => {
-  if (!markdownText || !String(markdownText).trim()) {
-    return { ok: false, error: '입력 텍스트가 비어있습니다.' };
-  }
-
-  // 저장 위치 선택
-  const saveRes = await dialog.showSaveDialog(mainWindow, {
-    title: '한글 파일 저장 위치',
-    defaultPath: '문서.hwpx',
-    filters: [
-      { name: '한글 문서', extensions: ['hwpx', 'hwp'] }
-    ]
-  });
-  if (saveRes.canceled || !saveRes.filePath) {
-    return { ok: false, error: '저장 취소되었습니다.', canceled: true };
-  }
-
-  // 텍스트를 임시 파일로 저장 (UTF-8 BOM 포함)
-  const tmpDir = os.tmpdir();
-  const tmpTxt = path.join(tmpDir, `hwp-input-${Date.now()}.txt`);
-  fs.writeFileSync(tmpTxt, '﻿' + markdownText, 'utf8');
-
-  try {
-    return await runHwpFormatPS([
-      '-FilePath', saveRes.filePath,
-      '-InputTextFile', tmpTxt
-    ]);
-  } finally {
-    try { fs.unlinkSync(tmpTxt); } catch (_) {}
-  }
-});
-
 // ── 한글(HWP) 템플릿 빌더: hwpx XML 직접 생성 (한글 설치 불필요) ─
 ipcMain.handle('show-open-dialog', async (_evt, opts) => {
   return dialog.showOpenDialog(mainWindow, opts || {});
@@ -2818,8 +2737,13 @@ ipcMain.handle('hwp-build-hwpx', async (_evt, opts) => {
   const tmpTxt = path.join(tmpDir, `hwpx-md-${Date.now()}.txt`);
   fs.writeFileSync(tmpTxt, markdownText, 'utf8');
 
+  // 번들된 Python (embeddable) 경로 — Windows 빌드에만 포함됨.
+  // 시스템 Python보다 우선 사용하여 미설치 사용자도 동작 보장.
+  const bundledPy = process.platform === 'win32'
+    ? path.join(isDev ? __dirname : process.resourcesPath, 'python-embed', 'python.exe')
+    : null;
   const pyCandidates = process.platform === 'win32'
-    ? ['python', 'py', 'python3']
+    ? [bundledPy, 'python', 'py', 'python3'].filter(Boolean)
     : ['python3', 'python'];
 
   return await new Promise((resolve) => {
@@ -2884,13 +2808,38 @@ ipcMain.handle('hwp-generate-markdown', async (_evt, { topic, docType }) => {
 });
 
 // ── 한글(HWP) 자동 서식: GPT/Claude용 프롬프트 생성 (복사용) ────
-ipcMain.handle('hwp-build-prompt', async (_evt, { topic, docType, school }) => {
-  return { ok: true, prompt: buildHwpMarkdownPrompt(topic || '', docType || '', school || '') };
+ipcMain.handle('hwp-build-prompt', async (_evt, { topic, docType, school, sections }) => {
+  return { ok: true, prompt: buildHwpMarkdownPrompt(topic || '', docType || '', school || '', sections || null) };
 });
 
-function buildHwpMarkdownPrompt(topic, docType, school) {
+function buildHwpMarkdownPrompt(topic, docType, school, sections) {
   const typeLabel = docType || '공문서';
   const schoolLine = school ? `부서: ${school}` : `부서: 부서명 팀명 (예: 중등교육과 중등교육팀)`;
+
+  // sections 가 주어지면 그 순서대로, AI 섹션만 본문 작성. 직접 작성 섹션은 대제목 줄만 출력.
+  // sections 가 null 이면 기본 가이드라인만 안내.
+  let sectionInstr = '';
+  if (Array.isArray(sections) && sections.length) {
+    const lines = ['[섹션 구성 — 반드시 아래 순서·이름 그대로 출력]'];
+    sections.forEach((s, i) => {
+      const tag = s.mode === 'manual' ? '✍️ 직접 작성 (본문 비워둘 것)' : '🤖 AI 작성';
+      lines.push(`  ${i + 1}. ${s.name}  — ${tag}`);
+    });
+    lines.push('');
+    lines.push('규칙:');
+    lines.push('- 위 섹션 이름을 정확히 그대로 "대제목: <이름>" 형태로 출력');
+    lines.push('- 🤖 AI 작성 섹션: 그 아래에 ◦ 항목 3~5개로 충실히 작성');
+    lines.push('- ✍️ 직접 작성 섹션: "대제목: <이름>" 줄 + 빈 줄 한 줄만 출력하고 ◦ 본문은 작성하지 말 것 (사용자가 직접 채울 영역)');
+    lines.push('- 위에 명시되지 않은 추가 대제목은 임의로 만들지 말 것');
+    sectionInstr = lines.join('\n');
+  } else {
+    sectionInstr = [
+      '[스타일]',
+      '- 대제목은 3~6개가 적당 (관련 근거, 추진 목적, 추진 방침, 세부 추진 계획, 기대 효과 등)',
+      '- 각 대제목 아래 3~5개 ◦ 항목'
+    ].join('\n');
+  }
+
   return [
     `당신은 한국 학교/교육청의 공문서 작성 전문가입니다.`,
     `아래 주제로 "${typeLabel}"를 교육청 현장지원단 운영 계획 스타일로 작성해주세요.`,
@@ -2902,21 +2851,24 @@ function buildHwpMarkdownPrompt(topic, docType, school) {
     `- 아래 태그 형식으로만 작성 (다른 설명이나 코드블록 없이 본문만 출력)`,
     `- 제목: 문서 제목 (1줄)`,
     `- 부제목: 부제목 (선택, 1줄)`,
-    `- 부서: ${school || '부서명 팀명'} (반드시 이 기관명 그대로 사용)`,
+    school
+      ? `- 부서: ${school}  ← 반드시 이 문자열을 글자 그대로 사용. "${school}"을 "${school}등학교"·"${school}교육청" 등으로 확장하거나 축약하지 말 것. 본문 안에서 기관을 지칭할 때도 동일한 표기 사용.`
+      : `- 부서: 부서명 팀명 (반드시 이 기관명 그대로 사용)`,
     `- 대제목: 섹션 제목 — 로마자 자동 부여됨 (Ⅰ, Ⅱ, Ⅲ...) 생략해도 됨`,
     `- 소제목: □ 스타일 소제목 (굵게)`,
     `- ◦ 항목 — 수준1 불릿 (대제목 바로 아래 또는 독립 항목)`,
-    `-   - 세부항목 — 수준2 (앞에 공백 2개 이상 + 대시)`,
+    `-   - 세부항목 — 수준2: 반드시 "공백 2칸 + 대시(-) + 공백" 으로 시작. 절대 "*"·"•"·"·"·"▪" 등 다른 기호를 쓰지 말 것. 들여쓰기 없는 줄은 수준2로 인식되지 않음.`,
     `- ※ 주석 내용`,
     `- 표:`,
     `  헤더1 | 헤더2 | 헤더3`,
     `  값1 | 값2 | 값3`,
     `  (표 끝은 빈 줄)`,
     ``,
-    `[스타일]`,
+    `[문체]`,
     `- 교육청 공문서 스타일: 간결, 격식, 명사형 종결("~함", "~필요", "~추진", "~지원")`,
-    `- 대제목은 3~6개가 적당 (관련 근거, 추진 목적, 추진 방침, 세부 추진 계획, 기대 효과 등)`,
     `- 각 대제목 아래 3~5개 ◦ 항목`,
+    ``,
+    sectionInstr,
     ``,
     `[예시]`,
     `제목: 2026. 중학교 자유학기제 현장지원단 운영 계획`,

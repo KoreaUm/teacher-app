@@ -6,53 +6,15 @@ var DOC_TYPES = [
   '기안문', '공문(협조요청)', '가정통신문', '회의록', '연수보고서'
 ];
 
-var EXAMPLE_MD = `제목: 2026. 중학교 자유학기제 현장지원단 운영 계획
-부서: 중등교육과 중등교육팀
-
-대제목: 관련 근거
-◦ 2026. 주요업무계획 1-1-2 학생 주도성을 키우는 교육과정
-◦ 충청북도교육과정 총론(충청북도교육청 고시 제2026-5호)
-◦ 2026. 중학교 자유학기제 운영 기본 계획(중등교육과-1234, 2026. 2. 13.)
-
-대제목: 추진 목적
-◦ 2022 개정 교육과정의 취지를 반영한 학교 교육과정 편성·운영 활성화를 위한 교육청 차원의 지원 기반 마련
-◦ 자유학기제 내실 운영을 통한 학생 진로탐색 역량 강화
-◦ 학교 현장의 요구에 기반한 맞춤형 지원으로 정책 추진 실효성 제고
-
-대제목: 추진 방침
-◦ 중학교 교육과정 및 자유학기제 운영에 역량있는 교원으로 구성
-◦ 교육과정 전문성 신장을 위한 역량 강화 워크숍 운영 및 단위학교 컨설팅 지원
-◦ 현장 의견 수렴을 통한 교육청 차원의 지원 기반 마련
-
-대제목: 세부 추진 계획
-소제목: 현장지원단 조직 및 운영
-◦ (기간) 2026. 4. ~ 2027. 2.
-◦ (구성) 중학교 교육과정 및 자유학기제 운영에 역량있는 교원
-◦ (주요 역할)
-  - 교육과정 편성·운영에 대한 현장 의견 상시 모니터링
-  - 단위학교 컨설팅 및 연수 지원
-  - 교육과정 도움 자료 개발
-
-소제목: 주요 추진 일정
-표:
-월 | 주요 내용 | 비고
-4월 | 지원단 구성 및 발대식 | 도교육청
-5~7월 | 단위학교 컨설팅 지원 | 지원단
-8월 | 역량 강화 워크숍 2차 | 도교육청
-10월 | 교육과정 편성표 검토 | 지원단
-
-대제목: 기대 효과
-◦ 자유학기제 내실 운영을 통한 학생 진로탐색 역량 강화
-◦ 현장 지원 강화를 통한 교육과정 정책 안착 지원
-`;
-
 function escapeHtml(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 async function render(container) {
-  var savedMd = (await api.getSetting('hwp_md_draft', '')) || EXAMPLE_MD;
+  // 이전 마크다운 초안은 더 이상 자동 복원하지 않음 (사용자 요청)
+  await api.setSetting('hwp_md_draft', '');
+  var savedMd = '';
   var savedTopic = (await api.getSetting('hwp_topic', '')) || '';
   var savedType = (await api.getSetting('hwp_doctype', DOC_TYPES[0])) || DOC_TYPES[0];
   var savedSchool = (await api.getSetting('hwp_school', '')) || '';
@@ -90,11 +52,35 @@ async function render(container) {
           </select>
           <input id="hwpf-topic" class="input" type="text" placeholder="예: 2026 학생 봉사활동 운영" value="${escapeHtml(savedTopic)}" style="font-size:13px;padding:6px 8px">
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <button class="btn btn-secondary btn-sm" id="hwpf-sections-edit">⚙️ 섹션 구성</button>
+          <span id="hwpf-sections-summary" style="font-size:11px;color:var(--text2)"></span>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
           <button class="btn btn-primary btn-sm" id="hwpf-ai-gen">🤖 로컬 AI로 자동 생성</button>
           <button class="btn btn-secondary btn-sm" id="hwpf-copy-prompt">📋 GPT/Claude용 프롬프트 복사</button>
-          <button class="btn btn-secondary btn-sm" id="hwpf-load-example">💡 예시 불러오기</button>
           <span id="hwpf-ai-status" style="font-size:12px;color:var(--text2);align-self:center"></span>
+        </div>
+      </div>
+
+      <!-- 섹션 구성 모달 -->
+      <div id="hwpf-sections-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center">
+        <div style="background:#fff;border-radius:12px;padding:20px;width:min(640px,92vw);max-height:88vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.3)">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <div style="font-weight:700;font-size:16px">⚙️ 섹션 구성</div>
+            <button class="btn btn-secondary btn-sm" id="hwpf-sections-close" style="padding:4px 10px">✕</button>
+          </div>
+          <div style="font-size:12px;color:#666;margin-bottom:14px;line-height:1.5">
+            대제목 섹션의 <b>포함 여부</b>, <b>순서</b>(드래그), <b>이름</b>, <b>작성 주체</b>(🤖 AI 생성 / ✍️ 직접 작성)를 정할 수 있습니다.
+          </div>
+          <div id="hwpf-sections-list" style="overflow-y:auto;flex:1;padding-right:4px"></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+            <button class="btn btn-secondary btn-sm" id="hwpf-sections-add">➕ 섹션 추가</button>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-secondary btn-sm" id="hwpf-sections-reset">↺ 기본값</button>
+              <button class="btn btn-primary btn-sm" id="hwpf-sections-apply">적용</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -121,13 +107,7 @@ async function render(container) {
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
           <button class="btn btn-primary" id="hwpf-build-hwpx" style="font-size:14px;padding:10px 28px;border-radius:10px;background:linear-gradient(135deg,#7c3aed,#4f46e5);border:0;color:#fff">
-            🎨 깔끔 템플릿으로 hwpx 만들기 (한글 불필요·권장)
-          </button>
-          <button class="btn btn-secondary" id="hwpf-convert-text" style="font-size:13px;padding:8px 20px;border-radius:10px">
-            ⚙️ 기존 PowerShell 방식 (한글 필요)
-          </button>
-          <button class="btn btn-secondary" id="hwpf-apply-existing" style="font-size:13px;padding:8px 20px;border-radius:10px">
-            📂 기존 한글 파일에 서식 적용
+            🎨 hwpx 파일 만들기
           </button>
         </div>
         <div id="hwpf-spinner" style="display:none;font-size:13px;color:var(--accent)">⏳ 처리 중...</div>
@@ -149,12 +129,8 @@ async function render(container) {
         </div>
       </details>
 
-      <!-- 주의 -->
-      <div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:10px;padding:12px;font-size:12px;color:#92400e;margin-bottom:8px">
-        ⚠️ <b>기존 PowerShell 방식</b>: Windows + 한글(HWP) 2018+ 필요 · 적용 전 한글 프로그램 완전 종료
-      </div>
       <div style="background:#dbeafe;border:1px solid #93c5fd;border-radius:10px;padding:12px;font-size:12px;color:#1e40af">
-        🎨 <b>깔끔 템플릿으로 hwpx 만들기 (권장)</b>: 한글 프로그램 불필요. <b>Python 3.8+ 설치 필요</b> (Windows에서 Python 미설치 시 Microsoft Store에서 "Python" 검색 후 설치)
+        🎨 한글(HWP) 프로그램 없이도 동작합니다. Python은 앱에 내장되어 있어 별도 설치가 필요 없습니다.
       </div>
     </div>
   `;
@@ -172,10 +148,139 @@ async function render(container) {
   var logoClearBtn = container.querySelector('#hwpf-logo-clear');
   var currentLogoPath = savedLogo;
 
+  function escapeRegex(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  // ── 섹션 구성 상태 (세션 메모리, 영구 저장 X) ─────────────
+  function defaultSections() {
+    return [
+      { name: '관련 근거',     mode: 'ai', included: true },
+      { name: '추진 목적',     mode: 'ai', included: true },
+      { name: '추진 방침',     mode: 'ai', included: true },
+      { name: '세부 추진 계획', mode: 'ai', included: true },
+      { name: '기대 효과',     mode: 'ai', included: true }
+    ];
+  }
+  var sections = defaultSections();
+  var dragIdx = -1;
+
+  function updateSectionsSummary() {
+    var el = container.querySelector('#hwpf-sections-summary');
+    if (!el) return;
+    var included = sections.filter(function (s) { return s.included; });
+    var aiCount = included.filter(function (s) { return s.mode === 'ai'; }).length;
+    var manualCount = included.length - aiCount;
+    el.textContent = '섹션 ' + included.length + '개 (🤖 ' + aiCount + ' · ✍️ ' + manualCount + ')';
+  }
+
+  function renderSectionsList() {
+    var list = container.querySelector('#hwpf-sections-list');
+    list.innerHTML = sections.map(function (s, i) {
+      var aiActive = s.mode === 'ai';
+      return '<div class="hwpf-sec-row" data-idx="' + i + '" draggable="true" style="display:flex;align-items:center;gap:8px;padding:8px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:' + (s.included ? '#fff' : '#f5f5f5') + '">' +
+        '<span style="cursor:grab;color:#999;font-size:14px;user-select:none">⋮⋮</span>' +
+        '<input type="checkbox" class="hwpf-sec-inc" ' + (s.included ? 'checked' : '') + ' style="cursor:pointer">' +
+        '<input type="text" class="hwpf-sec-name input" value="' + escapeHtml(s.name) + '" style="flex:1;font-size:13px;padding:4px 6px">' +
+        '<div style="display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden;font-size:12px">' +
+          '<button class="hwpf-sec-mode" data-mode="ai" style="border:0;padding:4px 8px;background:' + (aiActive ? '#7c3aed' : '#fff') + ';color:' + (aiActive ? '#fff' : '#666') + ';cursor:pointer">🤖 AI</button>' +
+          '<button class="hwpf-sec-mode" data-mode="manual" style="border:0;padding:4px 8px;background:' + (!aiActive ? '#0ea5e9' : '#fff') + ';color:' + (!aiActive ? '#fff' : '#666') + ';cursor:pointer">✍️ 직접</button>' +
+        '</div>' +
+        '<button class="hwpf-sec-del" title="삭제" style="border:0;background:transparent;cursor:pointer;color:#dc2626;font-size:16px;padding:0 4px">🗑</button>' +
+      '</div>';
+    }).join('');
+
+    // 이벤트 바인딩
+    list.querySelectorAll('.hwpf-sec-row').forEach(function (row) {
+      var idx = parseInt(row.getAttribute('data-idx'), 10);
+      row.querySelector('.hwpf-sec-inc').addEventListener('change', function (e) {
+        sections[idx].included = e.target.checked;
+        renderSectionsList();
+      });
+      row.querySelector('.hwpf-sec-name').addEventListener('input', function (e) {
+        sections[idx].name = e.target.value;
+      });
+      row.querySelectorAll('.hwpf-sec-mode').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          sections[idx].mode = btn.getAttribute('data-mode');
+          renderSectionsList();
+        });
+      });
+      row.querySelector('.hwpf-sec-del').addEventListener('click', function () {
+        sections.splice(idx, 1);
+        renderSectionsList();
+      });
+      // 드래그
+      row.addEventListener('dragstart', function (e) {
+        dragIdx = idx;
+        row.style.opacity = '0.4';
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      row.addEventListener('dragend', function () {
+        row.style.opacity = '';
+        dragIdx = -1;
+      });
+      row.addEventListener('dragover', function (e) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        row.style.borderTop = idx < dragIdx ? '2px solid #7c3aed' : '';
+        row.style.borderBottom = idx > dragIdx ? '2px solid #7c3aed' : '';
+      });
+      row.addEventListener('dragleave', function () {
+        row.style.borderTop = '';
+        row.style.borderBottom = '';
+      });
+      row.addEventListener('drop', function (e) {
+        e.preventDefault();
+        row.style.borderTop = '';
+        row.style.borderBottom = '';
+        if (dragIdx < 0 || dragIdx === idx) return;
+        var moved = sections.splice(dragIdx, 1)[0];
+        sections.splice(idx, 0, moved);
+        dragIdx = -1;
+        renderSectionsList();
+      });
+    });
+  }
+
+  function openSectionsModal() {
+    var modal = container.querySelector('#hwpf-sections-modal');
+    modal.style.display = 'flex';
+    renderSectionsList();
+  }
+  function closeSectionsModal() {
+    container.querySelector('#hwpf-sections-modal').style.display = 'none';
+  }
+
+  function normalizeBullets(md) {
+    // 표(`표:` 다음 빈 줄까지)는 건드리지 않음 — `|` 포함 행은 제외
+    return md.split('\n').map(function (line) {
+      if (line.indexOf('|') !== -1) return line;
+      // 줄 첫머리 * / • / · / ▪ (선택적 들여쓰기 포함) → "  - "
+      return line.replace(/^(\s*)[*•·▪]\s+/, '  - ');
+    }).join('\n');
+  }
+
+  function normalizeSchoolName(md, school) {
+    if (!school) return md;
+    // 사용자가 짧게 입력했는데 GPT가 흔한 접미사를 덧붙여 확장한 경우 원상복구.
+    // 단, 사용자가 이미 풀네임을 적었으면 이 regex는 매치되지 않음.
+    // 긴 접미사부터 (정규식 alternation은 좌→우 우선). "충주상업고" → "충주상업고등학교" 같은 확장만 잡고,
+    // "충주" → "충주청소년…" 같은 우연한 매칭은 피하기 위해 보수적으로.
+    var suffixes = ['등학교', '교육지원청', '교육청'];
+    // school 자체가 이미 그 접미사로 끝나면 패턴 적용 안 함 (예: "충주상업고등학교"는 굳이 건드릴 필요 없음)
+    var safeSuffixes = suffixes.filter(function (s) { return school.slice(-s.length) !== s; });
+    if (!safeSuffixes.length) return md;
+    var pattern = new RegExp(escapeRegex(school) + '(' + safeSuffixes.join('|') + ')', 'g');
+    return md.replace(pattern, school);
+  }
+
   function buildMdWithSchool() {
     var school = schoolEl.value.trim();
     var md = ta.value.trim();
+    md = normalizeBullets(md);
     if (!school) return md;
+    md = normalizeSchoolName(md, school);
     // 기존 부서: 줄이 있으면 학교명으로 교체
     if (/^\s*(기관|학교|기관명|학교명|소속|부서)\s*[:：]/m.test(md)) {
       return md.replace(/^(\s*(기관|학교|기관명|학교명|소속|부서)\s*[:：]).*/m, '$1 ' + school);
@@ -225,16 +330,46 @@ async function render(container) {
     api.setSetting('hwp_logo_path', '');
   });
 
-  // 예시 불러오기
-  container.querySelector('#hwpf-load-example').addEventListener('click', function () {
-    ta.value = EXAMPLE_MD;
-    updateCount();
-    api.setSetting('hwp_md_draft', EXAMPLE_MD);
+  // 섹션 구성 모달
+  container.querySelector('#hwpf-sections-edit').addEventListener('click', openSectionsModal);
+  container.querySelector('#hwpf-sections-close').addEventListener('click', closeSectionsModal);
+  container.querySelector('#hwpf-sections-apply').addEventListener('click', function () {
+    // 빈 이름 정리
+    sections = sections.filter(function (s) { return s.name && s.name.trim(); });
+    sections.forEach(function (s) { s.name = s.name.trim(); });
+    if (!sections.length) { sections = defaultSections(); }
+    updateSectionsSummary();
+    closeSectionsModal();
   });
+  container.querySelector('#hwpf-sections-add').addEventListener('click', function () {
+    sections.push({ name: '새 섹션', mode: 'ai', included: true });
+    renderSectionsList();
+  });
+  container.querySelector('#hwpf-sections-reset').addEventListener('click', function () {
+    if (confirm('섹션 구성을 기본값으로 되돌릴까요?')) {
+      sections = defaultSections();
+      renderSectionsList();
+    }
+  });
+  container.querySelector('#hwpf-sections-modal').addEventListener('click', function (e) {
+    if (e.target.id === 'hwpf-sections-modal') closeSectionsModal();
+  });
+  updateSectionsSummary();
 
   // 프롬프트 복사
   container.querySelector('#hwpf-copy-prompt').addEventListener('click', async function () {
-    var r = await window.api.hwpBuildPrompt({ topic: topicEl.value.trim(), docType: typeEl.value, school: schoolEl.value.trim() });
+    var includedSections = sections.filter(function (s) { return s.included && s.name.trim(); });
+    if (!includedSections.length) {
+      statusEl.textContent = '⚠ 포함된 섹션이 없습니다. ⚙️ 섹션 구성에서 추가하세요.';
+      statusEl.style.color = '#dc2626';
+      return;
+    }
+    var r = await window.api.hwpBuildPrompt({
+      topic: topicEl.value.trim(),
+      docType: typeEl.value,
+      school: schoolEl.value.trim(),
+      sections: includedSections.map(function (s) { return { name: s.name, mode: s.mode }; })
+    });
     if (r && r.ok) {
       try {
         await navigator.clipboard.writeText(r.prompt);
@@ -321,37 +456,6 @@ async function render(container) {
     }
   });
 
-  // 마크다운 → 한글 변환
-  container.querySelector('#hwpf-convert-text').addEventListener('click', async function () {
-    var md = buildMdWithSchool();
-    if (!md) { alert('마크다운을 작성해주세요.'); return; }
-    var btn = container.querySelector('#hwpf-convert-text');
-    btn.disabled = true; spinner.style.display = 'block'; resultDiv.style.display = 'none';
-    statusText.textContent = '한글 파일 생성 및 서식 적용 중...';
-    try {
-      var r = await window.api.hwpFormatFromText(md);
-      showResult(r);
-    } catch (e) {
-      showResult({ ok: false, error: String(e) });
-    } finally {
-      btn.disabled = false; spinner.style.display = 'none';
-    }
-  });
-
-  // 기존 한글 파일에 적용
-  container.querySelector('#hwpf-apply-existing').addEventListener('click', async function () {
-    var btn = container.querySelector('#hwpf-apply-existing');
-    btn.disabled = true; spinner.style.display = 'block'; resultDiv.style.display = 'none';
-    statusText.textContent = '파일 선택 후 적용 중...';
-    try {
-      var r = await window.api.hwpApplyFormat();
-      showResult(r);
-    } catch (e) {
-      showResult({ ok: false, error: String(e) });
-    } finally {
-      btn.disabled = false; spinner.style.display = 'none';
-    }
-  });
 }
 
 function init() {}

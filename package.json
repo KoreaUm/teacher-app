@@ -62,7 +62,14 @@
       "artifactName": "teacher-app-setup-${version}.${ext}",
       "executableName": "쌤포트",
       "signAndEditExecutable": false,
-      "icon": "assets/icon.ico"
+      "icon": "assets/icon.ico",
+      "extraResources": [
+        {
+          "from": "python-embed",
+          "to": "python-embed",
+          "filter": ["**/*"]
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,
