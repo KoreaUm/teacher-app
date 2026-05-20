@@ -2815,15 +2815,19 @@ function buildHwpMarkdownPrompt(topic, docType, school, sections) {
   if (Array.isArray(sections) && sections.length) {
     const lines = ['[섹션 구성 — 반드시 아래 순서·이름 그대로 출력]'];
     sections.forEach((s, i) => {
-      const tag = s.mode === 'manual' ? '✍️ 직접 작성 (본문 비워둘 것)' : '🤖 AI 작성';
-      lines.push(`  ${i + 1}. ${s.name}  — ${tag}`);
+      const isAttach = s.type === 'attachment';
+      const typeLabel = isAttach ? '[붙임]' : '[대제목]';
+      const writeLabel = s.mode === 'manual' ? '✍️ 직접 작성 (본문 비워둘 것)' : '🤖 AI 작성';
+      lines.push(`  ${i + 1}. ${typeLabel} ${s.name}  — ${writeLabel}`);
     });
     lines.push('');
     lines.push('규칙:');
-    lines.push('- 위 섹션 이름을 정확히 그대로 "대제목: <이름>" 형태로 출력');
-    lines.push('- 🤖 AI 작성 섹션: 그 아래에 ◦ 항목 3~5개로 충실히 작성');
-    lines.push('- ✍️ 직접 작성 섹션: "대제목: <이름>" 줄 + 빈 줄 한 줄만 출력하고 ◦ 본문은 작성하지 말 것 (사용자가 직접 채울 영역)');
-    lines.push('- 위에 명시되지 않은 추가 대제목은 임의로 만들지 말 것');
+    lines.push('- [대제목] 섹션: "대제목: <이름>" 형태로 출력');
+    lines.push('- [붙임] 섹션: "붙임: <이름>" 형태로 출력 (번호는 자동 부여되므로 생략)');
+    lines.push('- 🤖 AI 작성 [대제목]: 아래에 ◦ 항목 3~5개로 충실히 작성');
+    lines.push('- 🤖 AI 작성 [붙임]: 아래에 ◦ 항목 또는 내용 2~4개로 작성');
+    lines.push('- ✍️ 직접 작성 섹션: 해당 태그 줄 + 빈 줄 한 줄만 출력하고 본문은 작성하지 말 것 (사용자가 직접 채울 영역)');
+    lines.push('- 위에 명시되지 않은 추가 섹션은 임의로 만들지 말 것');
     sectionInstr = lines.join('\n');
   } else {
     sectionInstr = [

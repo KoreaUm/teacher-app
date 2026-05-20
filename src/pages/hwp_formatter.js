@@ -79,7 +79,10 @@ async function render(container) {
           </div>
           <div id="hwpf-sections-list" style="overflow-y:auto;flex:1;padding-right:4px"></div>
           <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
-            <button class="btn btn-secondary btn-sm" id="hwpf-sections-add">➕ 섹션 추가</button>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-secondary btn-sm" id="hwpf-sections-add">➕ 섹션 추가</button>
+              <button class="btn btn-secondary btn-sm" id="hwpf-sections-add-attach" style="border-color:#18304b55;color:#18304b">📎 붙임 추가</button>
+            </div>
             <div style="display:flex;gap:8px">
               <button class="btn btn-secondary btn-sm" id="hwpf-sections-reset">↺ 기본값</button>
               <button class="btn btn-primary btn-sm" id="hwpf-sections-apply">적용</button>
@@ -158,7 +161,11 @@ async function render(container) {
 
   // ── 섹션 구성 상태 (세션 메모리, 영구 저장 X) ─────────────
   function makeSections(names) {
-    return names.map(function (n) { return { name: n, mode: 'ai', included: true, body: '' }; });
+    return names.map(function (n) {
+      var isAttachment = typeof n === 'object' && n.type === 'attachment';
+      var name = typeof n === 'object' ? n.name : n;
+      return { name: name, type: isAttachment ? 'attachment' : 'heading', mode: 'ai', included: true, body: '' };
+    });
   }
 
   var DOC_TYPE_SECTIONS = {
@@ -189,20 +196,30 @@ async function render(container) {
     var list = container.querySelector('#hwpf-sections-list');
     list.innerHTML = sections.map(function (s, i) {
       var aiActive = s.mode === 'ai';
+      var isAttach = s.type === 'attachment';
       var manualBox = '';
       if (s.mode === 'manual' && s.included) {
-        var placeholder = '자유롭게 한 줄씩 적으세요. 자동으로 마크다운 규칙이 적용됩니다.\n\n예시 입력:\n학생 자발성 강조\n안전사고 예방\n  세부 지침 작성\n※ 비고 사항\n\n→ 자동 변환 결과:\n◦ 학생 자발성 강조\n◦ 안전사고 예방\n  - 세부 지침 작성\n※ 비고 사항';
+        var placeholder = isAttach
+          ? '붙임 자료 내용을 자유롭게 입력하세요.\n\n예시:\n설문지 양식 1부\n수업 계획서 1부'
+          : '자유롭게 한 줄씩 적으세요. 자동으로 마크다운 규칙이 적용됩니다.\n\n예시 입력:\n학생 자발성 강조\n안전사고 예방\n  세부 지침 작성\n※ 비고 사항\n\n→ 자동 변환 결과:\n◦ 학생 자발성 강조\n◦ 안전사고 예방\n  - 세부 지침 작성\n※ 비고 사항';
         manualBox =
-          '<div style="padding:6px 10px 10px 36px;background:#f0f9ff;border-top:1px dashed #93c5fd">' +
-            '<div style="font-size:11px;color:#0369a1;margin-bottom:4px">✍️ 직접 작성 — 한 줄씩 자유롭게 입력하면 자동으로 ◦ / 세부항목 형식이 적용됩니다 (커서 떠날 때 변환)</div>' +
-            '<textarea class="hwpf-sec-body" placeholder="' + escapeHtml(placeholder) + '" style="width:100%;min-height:90px;font-family:\'D2Coding\',Consolas,monospace;font-size:12px;line-height:1.5;padding:8px;border:1px solid #93c5fd;border-radius:6px;background:#fff;resize:vertical;box-sizing:border-box">' + escapeHtml(s.body || '') + '</textarea>' +
+          '<div style="padding:6px 10px 10px 36px;background:' + (isAttach ? '#f0f4ff' : '#f0f9ff') + ';border-top:1px dashed ' + (isAttach ? '#18304b55' : '#93c5fd') + '">' +
+            '<div style="font-size:11px;color:' + (isAttach ? '#18304b' : '#0369a1') + ';margin-bottom:4px">✍️ 직접 작성 — ' + (isAttach ? '붙임 자료 제목/설명을 입력하세요' : '한 줄씩 자유롭게 입력하면 자동으로 ◦ / 세부항목 형식이 적용됩니다 (커서 떠날 때 변환)') + '</div>' +
+            '<textarea class="hwpf-sec-body" placeholder="' + escapeHtml(placeholder) + '" style="width:100%;min-height:60px;font-family:\'D2Coding\',Consolas,monospace;font-size:12px;line-height:1.5;padding:8px;border:1px solid ' + (isAttach ? '#18304b55' : '#93c5fd') + ';border-radius:6px;background:#fff;resize:vertical;box-sizing:border-box">' + escapeHtml(s.body || '') + '</textarea>' +
           '</div>';
       }
-      return '<div class="hwpf-sec-wrap" data-idx="' + i + '" style="border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:' + (s.included ? '#fff' : '#f5f5f5') + ';overflow:hidden">' +
+      // 타입 토글 (대제목 / 붙임)
+      var typeToggle =
+        '<div style="display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden;font-size:11px;margin-right:2px">' +
+          '<button class="hwpf-sec-type" data-type="heading" style="border:0;padding:3px 7px;background:' + (!isAttach ? '#18304b' : '#fff') + ';color:' + (!isAttach ? '#fff' : '#666') + ';cursor:pointer;white-space:nowrap">대제목</button>' +
+          '<button class="hwpf-sec-type" data-type="attachment" style="border:0;padding:3px 7px;background:' + (isAttach ? '#18304b' : '#fff') + ';color:' + (isAttach ? '#fff' : '#666') + ';cursor:pointer;white-space:nowrap">📎붙임</button>' +
+        '</div>';
+      return '<div class="hwpf-sec-wrap" data-idx="' + i + '" style="border:1px solid ' + (isAttach ? '#18304b44' : 'var(--border)') + ';border-radius:8px;margin-bottom:6px;background:' + (s.included ? '#fff' : '#f5f5f5') + ';overflow:hidden">' +
         '<div class="hwpf-sec-row" style="display:flex;align-items:center;gap:8px;padding:8px">' +
           '<span class="hwpf-sec-handle" draggable="true" title="드래그하여 순서 변경" style="cursor:grab;color:#999;font-size:14px;user-select:none;padding:4px 6px">⋮⋮</span>' +
           '<input type="checkbox" class="hwpf-sec-inc" ' + (s.included ? 'checked' : '') + ' style="cursor:pointer">' +
           '<input type="text" class="hwpf-sec-name input" value="' + escapeHtml(s.name) + '" style="flex:1;font-size:13px;padding:4px 6px">' +
+          typeToggle +
           '<div style="display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden;font-size:12px">' +
             '<button class="hwpf-sec-mode" data-mode="ai" style="border:0;padding:4px 8px;background:' + (aiActive ? '#7c3aed' : '#fff') + ';color:' + (aiActive ? '#fff' : '#666') + ';cursor:pointer">🤖 AI</button>' +
             '<button class="hwpf-sec-mode" data-mode="manual" style="border:0;padding:4px 8px;background:' + (!aiActive ? '#0ea5e9' : '#fff') + ';color:' + (!aiActive ? '#fff' : '#666') + ';cursor:pointer">✍️ 직접</button>' +
@@ -222,6 +239,12 @@ async function render(container) {
       });
       wrap.querySelector('.hwpf-sec-name').addEventListener('input', function (e) {
         sections[idx].name = e.target.value;
+      });
+      wrap.querySelectorAll('.hwpf-sec-type').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          sections[idx].type = btn.getAttribute('data-type');
+          renderSectionsList();
+        });
       });
       wrap.querySelectorAll('.hwpf-sec-mode').forEach(function (btn) {
         btn.addEventListener('click', function () {
@@ -309,34 +332,41 @@ async function render(container) {
 
   // 직접 작성 섹션의 본문을 최종 마크다운의 해당 대제목 아래에 주입.
   // 사용자가 textarea에서 이미 채워넣은 섹션은 건드리지 않음 (textarea 우선).
+  var SECTION_HEADER_RE = /^\s*(대제목|붙임)\s*[:：]\s*(.+?)\s*$/;
+
   function injectManualSectionBodies(md) {
     var manualWithBody = sections.filter(function (s) {
       return s.included && s.mode === 'manual' && s.body && s.body.trim() && s.name && s.name.trim();
     });
     if (!manualWithBody.length) return md;
-    var byName = {};
-    manualWithBody.forEach(function (s) { byName[s.name.trim()] = normalizeManualBody(s.body).trim(); });
+    // key: "대제목:이름" or "붙임:이름"
+    var byKey = {};
+    manualWithBody.forEach(function (s) {
+      var tag = s.type === 'attachment' ? '붙임' : '대제목';
+      byKey[tag + ':' + s.name.trim()] = normalizeManualBody(s.body).trim();
+    });
 
     var lines = md.split('\n');
     var out = [];
     var i = 0;
     while (i < lines.length) {
       out.push(lines[i]);
-      var m = lines[i].match(/^\s*대제목\s*[:：]\s*(.+?)\s*$/);
-      if (m && byName.hasOwnProperty(m[1])) {
-        // 이 대제목과 다음 대제목 사이의 본문 수집
-        var j = i + 1;
-        var hasContent = false;
-        while (j < lines.length && !/^\s*대제목\s*[:：]/.test(lines[j])) {
-          if (lines[j].trim()) hasContent = true;
-          j++;
-        }
-        if (!hasContent) {
-          // 비어있으면 사용자 본문 주입
-          byName[m[1]].split('\n').forEach(function (l) { out.push(l); });
-          out.push(''); // 다음 대제목과 한 줄 띄움
-          i = j;
-          continue;
+      var m = lines[i].match(SECTION_HEADER_RE);
+      if (m) {
+        var key = m[1] + ':' + m[2];
+        if (byKey.hasOwnProperty(key)) {
+          var j = i + 1;
+          var hasContent = false;
+          while (j < lines.length && !SECTION_HEADER_RE.test(lines[j])) {
+            if (lines[j].trim()) hasContent = true;
+            j++;
+          }
+          if (!hasContent) {
+            byKey[key].split('\n').forEach(function (l) { out.push(l); });
+            out.push('');
+            i = j;
+            continue;
+          }
         }
       }
       i++;
@@ -456,7 +486,11 @@ async function render(container) {
     closeSectionsModal();
   });
   container.querySelector('#hwpf-sections-add').addEventListener('click', function () {
-    sections.push({ name: '새 섹션', mode: 'ai', included: true });
+    sections.push({ name: '새 섹션', type: 'heading', mode: 'ai', included: true, body: '' });
+    renderSectionsList();
+  });
+  container.querySelector('#hwpf-sections-add-attach').addEventListener('click', function () {
+    sections.push({ name: '붙임 자료', type: 'attachment', mode: 'ai', included: true, body: '' });
     renderSectionsList();
   });
   container.querySelector('#hwpf-sections-reset').addEventListener('click', function () {
@@ -492,7 +526,7 @@ async function render(container) {
       topic: topicEl.value.trim(),
       docType: typeEl.value,
       school: schoolEl.value.trim(),
-      sections: includedSections.map(function (s) { return { name: s.name, mode: s.mode }; })
+      sections: includedSections.map(function (s) { return { name: s.name, mode: s.mode, type: s.type || 'heading' }; })
     });
     if (r && r.ok) {
       try {
