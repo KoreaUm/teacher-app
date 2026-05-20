@@ -769,14 +769,21 @@ async function init() {
   });
 }
 
+function getEffectiveMenuPageOptions() {
+  const isAdmin = window.appAuthGetState ? window.appAuthGetState()?.isAdmin : false;
+  const extra = isAdmin ? [{ key: 'user_management', label: '\uD68C\uC6D0 \uAD00\uB9AC' }] : [];
+  return MENU_PAGE_OPTIONS.concat(extra);
+}
+
 function renderMenuConfigEditor() {
   const root = document.getElementById('menu-config-editor');
   if (!root) return;
 
+  const allOptions = getEffectiveMenuPageOptions();
   const assigned = new Set(menuConfigState.flatMap((group) => group.items));
 
   root.innerHTML = menuConfigState.map((group, groupIndex) => {
-    const availableOptions = MENU_PAGE_OPTIONS
+    const availableOptions = allOptions
       .filter((page) => !assigned.has(page.key) || group.items.includes(page.key))
       .filter((page) => !group.items.includes(page.key))
       .map((page) => `<option value="${page.key}">${page.label}</option>`)
@@ -797,7 +804,7 @@ function renderMenuConfigEditor() {
 
         <div class="menu-items-list">
           ${group.items.map((itemKey, itemIndex) => {
-            const item = MENU_PAGE_OPTIONS.find((page) => page.key === itemKey);
+            const item = allOptions.find((page) => page.key === itemKey);
             if (!item) return '';
             return `
               <div class="menu-item-row">
@@ -1028,7 +1035,7 @@ function sanitizeMenuConfig(groups) {
     const label = String(group.label || '').trim() || `\uBC94\uC8FC ${index + 1}`;
     const key = String(group.key || `group_${index}`).trim() || `group_${index}`;
     const items = group.items.filter((itemKey) => {
-      if (!MENU_PAGE_OPTIONS.some((page) => page.key === itemKey)) return false;
+      if (!getEffectiveMenuPageOptions().some((page) => page.key === itemKey)) return false;
       if (used.has(itemKey)) return false;
       used.add(itemKey);
       return true;
@@ -1036,7 +1043,7 @@ function sanitizeMenuConfig(groups) {
     return { key, label, items };
   }).filter((group) => group.items.length > 0);
 
-  MENU_PAGE_OPTIONS.forEach((page) => {
+  getEffectiveMenuPageOptions().forEach((page) => {
     if (!used.has(page.key)) {
       if (!next.length) next.push({ key: 'group_0', label: '\uAE30\uD0C0', items: [] });
       next[next.length - 1].items.push(page.key);
