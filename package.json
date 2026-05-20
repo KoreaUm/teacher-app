@@ -1,6 +1,6 @@
 {
   "name": "teacher-app",
-  "version": "2.0.110",
+  "version": "2.0.111",
   "description": "쌤포트 Electron 앱",
   "author": "충상",
   "main": "main.js",
@@ -67,7 +67,9 @@
         {
           "from": "python-embed",
           "to": "python-embed",
-          "filter": ["**/*"]
+          "filter": [
+            "**/*"
+          ]
         }
       ]
     },
