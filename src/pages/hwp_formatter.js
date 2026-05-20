@@ -157,16 +157,23 @@ async function render(container) {
   }
 
   // ── 섹션 구성 상태 (세션 메모리, 영구 저장 X) ─────────────
-  function defaultSections() {
-    return [
-      { name: '관련 근거',     mode: 'ai', included: true, body: '' },
-      { name: '추진 목적',     mode: 'ai', included: true, body: '' },
-      { name: '추진 방침',     mode: 'ai', included: true, body: '' },
-      { name: '세부 추진 계획', mode: 'ai', included: true, body: '' },
-      { name: '기대 효과',     mode: 'ai', included: true, body: '' }
-    ];
+  function makeSections(names) {
+    return names.map(function (n) { return { name: n, mode: 'ai', included: true, body: '' }; });
   }
-  var sections = defaultSections();
+
+  var DOC_TYPE_SECTIONS = {
+    '계획서':    ['관련 근거', '추진 목적', '추진 방침', '세부 추진 계획', '기대 효과'],
+    '결과보고서': ['관련 근거', '행사(사업) 개요', '추진 결과', '예산 집행 현황', '성과 및 시사점'],
+    '가정통신문': ['인사말', '안내 사항', '협조 및 요청 사항', '문의처'],
+    '회의록':    ['회의 개요', '보고 사항', '협의 사항', '결정 사항'],
+  };
+
+  function defaultSections(docType) {
+    var names = DOC_TYPE_SECTIONS[docType] || DOC_TYPE_SECTIONS['계획서'];
+    return makeSections(names);
+  }
+
+  var sections = defaultSections(savedType);
   var dragIdx = -1;
 
   function updateSectionsSummary() {
@@ -453,10 +460,20 @@ async function render(container) {
     renderSectionsList();
   });
   container.querySelector('#hwpf-sections-reset').addEventListener('click', function () {
-    if (confirm('섹션 구성을 기본값으로 되돌릴까요?')) {
-      sections = defaultSections();
+    if (confirm('섹션 구성을 현재 양식의 기본값으로 되돌릴까요?')) {
+      sections = defaultSections(typeEl.value);
       renderSectionsList();
     }
+  });
+
+  // 양식 변경 시 섹션 자동 프리셋
+  typeEl.addEventListener('change', function () {
+    api.setSetting('hwp_doctype', typeEl.value);
+    sections = defaultSections(typeEl.value);
+    updateSectionsSummary();
+    // 모달이 열려있으면 목록도 갱신
+    var modal = container.querySelector('#hwpf-sections-modal');
+    if (modal && modal.style.display !== 'none') renderSectionsList();
   });
   container.querySelector('#hwpf-sections-modal').addEventListener('click', function (e) {
     if (e.target.id === 'hwpf-sections-modal') closeSectionsModal();
