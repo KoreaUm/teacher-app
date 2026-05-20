@@ -72,7 +72,16 @@ async function render(container) {
   const _hasOldTools = menuConfigState.some((g) => g.key === 'tools' && Array.isArray(g.items) && g.items.length >= 5);
   if (_hasOldTools) {
     menuConfigState = cloneMenuGroups(DEFAULT_MENU_GROUPS);
-    scheduleMenuAutosave(); // 변환된 기본값을 DB에 저장
+    scheduleMenuAutosave();
+  }
+  // 삭제된 페이지 키를 저장된 메뉴 설정에서 제거
+  const _REMOVED_KEYS = new Set(['doc_deadline', 'neis_helper', 'class_budget', 'newsletter', 'efficiency']);
+  const _hadRemovedKeys = menuConfigState.some((g) => g.items && g.items.some((k) => _REMOVED_KEYS.has(k)));
+  if (_hadRemovedKeys) {
+    menuConfigState.forEach((g) => {
+      if (g.items) g.items = g.items.filter((k) => !_REMOVED_KEYS.has(k));
+    });
+    scheduleMenuAutosave();
   }
   shortcutState = parseShortcuts(settings.quick_links_config);
   subjectColorState = parseSubjectColors(settings.class_timetable_subject_colors, classSubjects);
