@@ -1596,11 +1596,11 @@
     return batch.commit();
   };
 
-  window.appAuthSendPasswordReset = function (email) {
+  window.appAuthAdminResetPassword = function (targetUid) {
     ensureFirebase();
     if (!isAdminProfile(authProfile)) return Promise.reject(new Error("관리자만 사용할 수 있습니다."));
-    if (!email) return Promise.reject(new Error("이메일 주소가 없습니다."));
-    return firebaseAuth.sendPasswordResetEmail(email);
+    if (!targetUid) return Promise.reject(new Error("대상 사용자 정보가 없습니다."));
+    return callGradesHttpFunction("adminResetPasswordHttp", { targetUid: targetUid });
   };
 
   window.appNoticeGet = function () {

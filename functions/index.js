@@ -207,6 +207,32 @@ exports.verifyGradesPasswordHttp = functions.https.onRequest(async (req, res) =>
   }
 });
 
+exports.adminResetPasswordHttp = functions.https.onRequest(async (req, res) => {
+  if (req.method === 'OPTIONS') return sendJson(res, 204, {});
+  if (req.method !== 'POST') return sendJson(res, 405, { ok: false, message: 'POST만 지원합니다.' });
+  try {
+    const body = req.body || {};
+    const uid = await uidFromRequest(req, body);
+    const user = await getUser(uid);
+    if (!isAdmin(user)) {
+      throw new functions.https.HttpsError('permission-denied', '관리자만 사용할 수 있습니다.');
+    }
+
+    const targetUid = String(body.targetUid || '').trim();
+    if (!targetUid) {
+      throw new functions.https.HttpsError('invalid-argument', '대상 사용자 정보가 없습니다.');
+    }
+    if (targetUid === uid) {
+      throw new functions.https.HttpsError('invalid-argument', '본인 비밀번호는 초기화할 수 없습니다.');
+    }
+
+    await admin.auth().updateUser(targetUid, { password: '000000' });
+    return sendJson(res, 200, { ok: true });
+  } catch (error) {
+    return sendError(res, error);
+  }
+});
+
 exports.setGradesPasswordHttp = functions.https.onRequest(async (req, res) => {
   if (req.method === 'OPTIONS') return sendJson(res, 204, {});
   if (req.method !== 'POST') return sendJson(res, 405, { ok: false, message: 'POST만 지원합니다.' });

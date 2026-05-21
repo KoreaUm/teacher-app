@@ -263,12 +263,15 @@ function renderUserList() {
   root.querySelectorAll('.user-reset-pw-btn').forEach((button) => {
     button.addEventListener('click', async () => {
       const targetName = button.dataset.name || button.dataset.email;
-      if (!confirm(`${targetName}에게 비밀번호 재설정 이메일을 보낼까요?\n\n해당 사용자의 이메일(${button.dataset.email})로 재설정 링크가 발송됩니다.`)) return;
+      if (!confirm(`${targetName}의 비밀번호를 000000으로 초기화할까요?\n\n초기화 후 사용자에게 새 비밀번호(000000)를 알려주세요.`)) return;
       try {
-        await window.appAuthSendPasswordReset(button.dataset.email);
-        toast(`${targetName}에게 비밀번호 재설정 이메일을 보냈습니다.`, 'success');
+        button.disabled = true;
+        await window.appAuthAdminResetPassword(button.dataset.uid);
+        toast(`${targetName}의 비밀번호가 000000으로 초기화되었습니다.`, 'success');
       } catch (error) {
-        toast(error?.message || '이메일 발송에 실패했습니다.', 'error');
+        toast(error?.message || '비밀번호 초기화에 실패했습니다.', 'error');
+      } finally {
+        button.disabled = false;
       }
     });
   });
