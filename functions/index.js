@@ -227,6 +227,7 @@ exports.adminResetPasswordHttp = functions.https.onRequest(async (req, res) => {
     }
 
     await admin.auth().updateUser(targetUid, { password: '000000' });
+    await db.collection('users').doc(targetUid).set({ active: true }, { merge: true });
     return sendJson(res, 200, { ok: true });
   } catch (error) {
     return sendError(res, error);
