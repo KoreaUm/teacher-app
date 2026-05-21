@@ -251,6 +251,7 @@ function renderUserList() {
           ${user.uid === state?.uid ? '<span class="settings-note">내 계정</span>' : ''}
           ${!user.deleted && user.gradeAccess ? `<button class="btn btn-secondary btn-sm user-grade-off-btn" data-uid="${escapeHtml(user.uid)}">성적권한 해제</button>` : ''}
           ${!user.deleted && !user.gradeAccess ? `<button class="btn btn-primary btn-sm user-grade-on-btn" data-uid="${escapeHtml(user.uid)}">성적권한 부여</button>` : ''}
+          ${!user.deleted ? `<button class="btn btn-secondary btn-sm user-reset-pw-btn" data-uid="${escapeHtml(user.uid)}" data-email="${escapeHtml(user.email)}" data-name="${escapeHtml(user.displayName || user.email)}">비밀번호 초기화</button>` : ''}
           ${user.uid !== state?.uid && !user.deleted && user.active ? `<button class="btn btn-secondary btn-sm user-disable-btn" data-uid="${escapeHtml(user.uid)}">사용 중지</button>` : ''}
           ${user.uid !== state?.uid && !user.deleted && !user.active ? `<button class="btn btn-primary btn-sm user-enable-btn" data-uid="${escapeHtml(user.uid)}">다시 허용</button>` : ''}
           ${user.uid !== state?.uid && !user.deleted ? `<button class="btn btn-danger btn-sm user-delete-btn" data-uid="${escapeHtml(user.uid)}" data-name="${escapeHtml(user.displayName || user.email)}">계정 삭제</button>` : ''}
@@ -258,6 +259,19 @@ function renderUserList() {
       </div>
     </div>
   `).join('');
+
+  root.querySelectorAll('.user-reset-pw-btn').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const targetName = button.dataset.name || button.dataset.email;
+      if (!confirm(`${targetName}에게 비밀번호 재설정 이메일을 보낼까요?\n\n해당 사용자의 이메일(${button.dataset.email})로 재설정 링크가 발송됩니다.`)) return;
+      try {
+        await window.appAuthSendPasswordReset(button.dataset.email);
+        toast(`${targetName}에게 비밀번호 재설정 이메일을 보냈습니다.`, 'success');
+      } catch (error) {
+        toast(error?.message || '이메일 발송에 실패했습니다.', 'error');
+      }
+    });
+  });
 
   root.querySelectorAll('.user-disable-btn').forEach((button) => {
     button.addEventListener('click', async () => {

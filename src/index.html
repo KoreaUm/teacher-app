@@ -1596,6 +1596,13 @@
     return batch.commit();
   };
 
+  window.appAuthSendPasswordReset = function (email) {
+    ensureFirebase();
+    if (!isAdminProfile(authProfile)) return Promise.reject(new Error("관리자만 사용할 수 있습니다."));
+    if (!email) return Promise.reject(new Error("이메일 주소가 없습니다."));
+    return firebaseAuth.sendPasswordResetEmail(email);
+  };
+
   window.appNoticeGet = function () {
     ensureFirebase();
     if (!authUser) return Promise.resolve(null);
