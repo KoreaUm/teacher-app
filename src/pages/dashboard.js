@@ -123,17 +123,9 @@ async function render(c){
     <div class="card-header">
       <span class="card-title">✅ 오늘의 할일</span>
       <div style="display:flex;align-items:center;gap:5px">
-        <select class="sb-sel" id="todo-start-sel">
-          <option value="0">시작: 오늘</option>
-          <option value="-1">어제부터</option>
-          <option value="-2">2일전부터</option>
-        </select>
-        <select class="sb-sel" id="todo-span-sel">
-          <option value="3">기간: 3일</option>
-          <option value="5">기간: 5일</option>
-          <option value="7">기간: 7일</option>
-        </select>
-        <button class="sb-sel" id="todo-cleanup-btn" title="지난 할일 정리" style="cursor:pointer;font-size:13px;padding:0 6px">🗑️</button>
+        <button class="btn btn-secondary btn-xs" id="todo-sort-btn" onclick="window.__dtTogSort()" title="마감일 순 정렬">마감순</button>
+        <button class="sb-sel" id="todo-cleanup-btn" onclick="window.__dtTogHideDone()" title="완료된 할일 숨기기" style="cursor:pointer;font-size:13px;padding:0 6px">✅</button>
+        <button class="btn btn-primary btn-xs" id="todo-add-btn" onclick="window.__dtAdd('')">+ 추가</button>
       </div>
     </div>
     <div class="scroll-area" id="todo-by-date" style="flex:1;padding:0 0 6px"></div>
@@ -169,9 +161,9 @@ async function render(c){
     <div class="card-header">
       <span class="card-title">🗓️ 개인 시간표</span>
       <div style="display:flex;align-items:center;gap:4px">
-        <label class="toggle-switch" title="같은 번호는 같은 색으로 표시" style="width:36px;height:22px">
+        <label class="toggle-switch toggle-switch-sm" title="같은 번호는 같은 색으로 표시">
           <input type="checkbox" id="tt-number-color-toggle">
-          <span class="toggle-track" style="border-radius:22px"></span>
+          <span class="toggle-track"></span>
         </label>
         <button class="btn-icon-flat" onclick="navigateTo('timetable')" title="편집">✏️</button>
       </div>
@@ -641,6 +633,10 @@ async function loadMeal(dateStr){
 // 할일 (날짜별 그룹)
 // ─────────────────────────────────────────────────────────
 const TODO_ORDER_KEY = 'todo_manual_order';
+const TODO_SORT_KEY = 'todo_sort_mode';
+const TODO_HIDE_DONE_KEY = 'todo_hide_done';
+let dashTodoSortMode = 'deadline';
+let dashTodoHideDone = false;
 
 function sortDashboardTodos(todos, manualOrder){
   const active=applyDashboardTodoOrder(baseDashboardTodoSort(todos.filter(todo=>!todo.is_done)), manualOrder);
@@ -649,7 +645,9 @@ function sortDashboardTodos(todos, manualOrder){
 }
 
 function getDashboardVisibleTodos(todos, manualOrder){
-  const active=applyDashboardTodoOrder(baseDashboardTodoSort(todos.filter(todo=>!todo.is_done)), manualOrder);
+  const effectiveOrder = dashTodoSortMode === 'deadline' ? [] : manualOrder;
+  const active=applyDashboardTodoOrder(baseDashboardTodoSort(todos.filter(todo=>!todo.is_done)), effectiveOrder);
+  if(dashTodoHideDone) return active;
   const done=baseDashboardTodoSort(todos.filter(todo=>!!todo.is_done)).slice(0,5);
   return [...active,...done];
 }
@@ -699,8 +697,28 @@ async function saveDashboardTodoOrder(order){
 async function refreshTodos(){
   const container=document.getElementById('todo-by-date');
   if(!container)return;
-  const controls=container.closest('.card')?.querySelector('.card-header > div');
-  if(controls) controls.innerHTML=`<button class="btn btn-primary btn-xs" onclick="window.__dtAdd('')">+ 추가</button>`;
+  try{
+    const saved=await api.getSetting(TODO_SORT_KEY,'deadline');
+    dashTodoSortMode=(saved==='manual')?'manual':'deadline';
+  }catch(e){}
+  try{
+    const saved=await api.getSetting(TODO_HIDE_DONE_KEY,'false');
+    dashTodoHideDone=saved==='true';
+  }catch(e){}
+  const hideBtn=document.getElementById('todo-cleanup-btn');
+  if(hideBtn){
+    hideBtn.title=dashTodoHideDone?'완료된 할일 표시':'완료된 할일 숨기기';
+    hideBtn.style.background=dashTodoHideDone?'var(--accent)':'';
+    hideBtn.style.color=dashTodoHideDone?'#fff':'';
+    hideBtn.style.borderColor=dashTodoHideDone?'var(--accent)':'';
+  }
+  const sortBtn=document.getElementById('todo-sort-btn');
+  if(sortBtn){
+    const active=dashTodoSortMode==='deadline';
+    sortBtn.textContent=active?'마감순 ✓':'마감순';
+    sortBtn.classList.toggle('btn-primary',active);
+    sortBtn.classList.toggle('btn-secondary',!active);
+  }
   const todoItems=await api.getTodos(true);
   window.__todoMap=Object.fromEntries(todoItems.map(todo=>[todo.id,todo]));
   const manualOrder=await loadDashboardTodoOrder();
@@ -710,7 +728,7 @@ async function refreshTodos(){
     return;
   }
   container.innerHTML=sorted.map(todo=>renderTodoRow(todo)).join('');
-  bindDashboardTodoDragSort(container);
+  if(dashTodoSortMode!=='deadline') bindDashboardTodoDragSort(container);
   return;
   if(controls) controls.innerHTML=`<button class="btn btn-primary btn-xs" onclick="window.__dtAdd('')">+ 추가</button>`;
   const all=await api.getTodos(true);
@@ -747,6 +765,11 @@ window.__dtTog=async(id)=>{await api.toggleTodo(id);await syncCloudIfPossible();
 window.__dtDel=async(id)=>{await api.deleteTodo(id);await syncCloudIfPossible();refreshTodos();};
 window.__dtAdd=(ds)=>showTodoModal(ds);
 window.__dtOpen=(id)=>showTodoEdit(id);
+window.__dtTogSort=async()=>{
+  dashTodoSortMode=dashTodoSortMode==='deadline'?'manual':'deadline';
+  await api.setSetting(TODO_SORT_KEY,dashTodoSortMode);
+  refreshTodos();
+};
 
 function bindDashboardTodoDragSort(container){
   let draggedRow=null;
@@ -795,53 +818,11 @@ function bindDashboardTodoDragSort(container){
   });
 }
 
-// 🗑️ 지난 할일 정리
-document.getElementById('todo-cleanup-btn')?.addEventListener('click', async ()=>{
-  const all = await api.getTodos(true);
-  const todayStr = today();
-  const expired = all.filter(t => t.deadline && t.deadline < todayStr);
-  const done    = all.filter(t => t.is_done);
-  const expiredCount = expired.length;
-  const doneCount    = done.filter(t => !t.deadline || t.deadline >= todayStr).length;
-
-  showModal(`
-    <div class="modal-header"><span class="modal-title">🗑️ 할일 정리</span><button class="modal-close" data-close>✕</button></div>
-    <div class="modal-body" style="padding:16px 20px">
-      <p style="margin:0 0 16px;color:var(--text2);font-size:14px">정리할 항목을 선택하세요.</p>
-      <div style="display:flex;flex-direction:column;gap:10px">
-        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:12px;border:1px solid var(--border);border-radius:8px">
-          <input type="checkbox" id="cleanup-expired" ${expiredCount?'checked':'disabled'}>
-          <div>
-            <div style="font-weight:600">기간 만료된 할일 삭제</div>
-            <div style="font-size:12px;color:var(--text3)">마감일이 오늘 이전인 항목 ${expiredCount}개</div>
-          </div>
-        </label>
-        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:12px;border:1px solid var(--border);border-radius:8px">
-          <input type="checkbox" id="cleanup-done" ${doneCount?'checked':'disabled'}>
-          <div>
-            <div style="font-weight:600">완료된 할일 삭제</div>
-            <div style="font-size:12px;color:var(--text3)">완료 처리된 항목 ${done.length}개</div>
-          </div>
-        </label>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-secondary" data-close>취소</button>
-      <button class="btn btn-danger" id="cleanup-confirm">삭제</button>
-    </div>`);
-
-  document.getElementById('cleanup-confirm').onclick = async ()=>{
-    const delExpired = document.getElementById('cleanup-expired')?.checked;
-    const delDone    = document.getElementById('cleanup-done')?.checked;
-    let count = 0;
-    if(delExpired) for(const t of expired){ await api.deleteTodo(t.id); count++; }
-    if(delDone)    for(const t of done){    await api.deleteTodo(t.id); count++; }
-    if(count) await syncCloudIfPossible();
-    closeModal();
-    refreshTodos();
-    toast(`${count}개 삭제되었습니다.`, 'success');
-  };
-});
+window.__dtTogHideDone=async()=>{
+  dashTodoHideDone=!dashTodoHideDone;
+  await api.setSetting(TODO_HIDE_DONE_KEY,String(dashTodoHideDone));
+  refreshTodos();
+};
 
 function renderTodoRow(todo){
   const done=!!todo.is_done;
@@ -1416,13 +1397,54 @@ async function runAI(){
   const parsedTodos=parseAITodoLines(result?.result||'');
   btn.disabled=false;btn.textContent='🤖 AI 추출';
   if(result?.error){res.style.color='var(--danger)';res.textContent=`오류: ${result.error}`;return;}
-  let aiSaved=0;
-  for(const todo of parsedTodos){
-    await api.addTodo({...todo,priority:'보통',category:'AI추출',is_ai_generated:true,source_text:text});
-    aiSaved++;
-  }
-  if(aiSaved){res.style.color='var(--success)';res.textContent=`할일 ${aiSaved}개를 추가했습니다.`;document.getElementById('ai-input').value='';refreshTodos();}
-  else{res.style.color='var(--warning)';res.textContent='추출된 할일이 없습니다.';}
+  if(!parsedTodos.length){res.style.color='var(--warning)';res.textContent='추출된 할일이 없습니다.';return;}
+  res.style.display='none';
+  showModal(`
+    <div class="modal-header">
+      <span class="modal-title">🤖 AI 추출 결과</span>
+      <button class="modal-close" data-close>✕</button>
+    </div>
+    <div class="modal-body" style="padding:12px 20px;max-height:400px;overflow-y:auto">
+      <p style="margin:0 0 10px;font-size:13px;color:var(--text2)">추가할 할일을 선택하세요. (${parsedTodos.length}개 추출됨)</p>
+      <div style="display:flex;flex-direction:column;gap:6px" id="ai-todo-list">
+        ${parsedTodos.map((t,i)=>`
+          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg)">
+            <input type="checkbox" data-ai-idx="${i}" checked style="margin-top:2px;flex-shrink:0">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;font-weight:500;color:var(--text)">${escapeHtml(t.title)}</div>
+              ${t.deadline?`<div style="font-size:11px;color:var(--text3);margin-top:2px">📅 ${t.deadline}</div>`:''}
+            </div>
+          </label>`).join('')}
+      </div>
+    </div>
+    <div class="modal-footer" style="display:flex;align-items:center;justify-content:space-between">
+      <button class="btn btn-secondary btn-sm" id="ai-sel-toggle" style="font-size:12px">전체 해제</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary" data-close>취소</button>
+        <button class="btn btn-primary" id="ai-confirm-btn">추가</button>
+      </div>
+    </div>`);
+
+  document.getElementById('ai-sel-toggle').onclick=function(){
+    const checks=[...document.querySelectorAll('#ai-todo-list input[type=checkbox]')];
+    const allChecked=checks.every(c=>c.checked);
+    checks.forEach(c=>c.checked=!allChecked);
+    this.textContent=allChecked?'전체 선택':'전체 해제';
+  };
+
+  document.getElementById('ai-confirm-btn').onclick=async()=>{
+    const checks=[...document.querySelectorAll('#ai-todo-list input[type=checkbox]')];
+    const selected=checks.filter(c=>c.checked).map(c=>parsedTodos[Number(c.dataset.aiIdx)]).filter(Boolean);
+    if(!selected.length){toast('선택된 항목이 없습니다.','error');return;}
+    for(const todo of selected){
+      await api.addTodo({...todo,priority:'보통',category:'AI추출',is_ai_generated:true,source_text:text});
+    }
+    await syncCloudIfPossible();
+    closeModal();
+    document.getElementById('ai-input').value='';
+    refreshTodos();
+    toast(`할일 ${selected.length}개를 추가했습니다.`,'success');
+  };
   return;
   btn.disabled=false;btn.textContent='🤖 AI 추출';
   if(result.error){res.style.color='var(--danger)';res.textContent=`오류: ${result.error}`;return;}

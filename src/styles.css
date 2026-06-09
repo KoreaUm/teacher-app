@@ -40,6 +40,11 @@
 }
 .toggle-switch input:checked + .toggle-track::after { transform: translateX(20px); }
 
+.toggle-switch-sm { width: 36px; height: 22px; }
+.toggle-switch-sm .toggle-track { border-radius: 22px; }
+.toggle-switch-sm .toggle-track::after { width: 18px; height: 18px; top: 2px; left: 2px; }
+.toggle-switch-sm input:checked + .toggle-track::after { transform: translateX(14px); }
+
 /* ── 디자인 토큰 ───────────────────────────────────────── */
 :root {
   /* Notion 팔레트 */
