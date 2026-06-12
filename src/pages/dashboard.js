@@ -123,7 +123,7 @@ async function render(c){
     <div class="card-header">
       <span class="card-title">✅ 오늘의 할일</span>
       <div style="display:flex;align-items:center;gap:5px">
-        <button class="btn btn-secondary btn-xs" id="todo-sort-btn" onclick="window.__dtTogSort()" title="마감일 순 정렬">마감순</button>
+        <button class="btn btn-secondary btn-xs" id="todo-sort-btn" onclick="window.__dtTogSort()" title="마감일 순으로 정렬">마감순↑</button>
         <button class="sb-sel" id="todo-cleanup-btn" onclick="window.__dtTogHideDone()" title="완료된 할일 숨기기" style="cursor:pointer;font-size:13px;padding:0 6px">✅</button>
         <button class="btn btn-primary btn-xs" id="todo-add-btn" onclick="window.__dtAdd('')">+ 추가</button>
       </div>
@@ -633,9 +633,7 @@ async function loadMeal(dateStr){
 // 할일 (날짜별 그룹)
 // ─────────────────────────────────────────────────────────
 const TODO_ORDER_KEY = 'todo_manual_order';
-const TODO_SORT_KEY = 'todo_sort_mode';
 const TODO_HIDE_DONE_KEY = 'todo_hide_done';
-let dashTodoSortMode = 'deadline';
 let dashTodoHideDone = false;
 
 function sortDashboardTodos(todos, manualOrder){
@@ -645,8 +643,7 @@ function sortDashboardTodos(todos, manualOrder){
 }
 
 function getDashboardVisibleTodos(todos, manualOrder){
-  const effectiveOrder = dashTodoSortMode === 'deadline' ? [] : manualOrder;
-  const active=applyDashboardTodoOrder(baseDashboardTodoSort(todos.filter(todo=>!todo.is_done)), effectiveOrder);
+  const active=applyDashboardTodoOrder(baseDashboardTodoSort(todos.filter(todo=>!todo.is_done)), manualOrder);
   if(dashTodoHideDone) return active;
   const done=baseDashboardTodoSort(todos.filter(todo=>!!todo.is_done)).slice(0,5);
   return [...active,...done];
@@ -698,10 +695,6 @@ async function refreshTodos(){
   const container=document.getElementById('todo-by-date');
   if(!container)return;
   try{
-    const saved=await api.getSetting(TODO_SORT_KEY,'deadline');
-    dashTodoSortMode=(saved==='manual')?'manual':'deadline';
-  }catch(e){}
-  try{
     const saved=await api.getSetting(TODO_HIDE_DONE_KEY,'false');
     dashTodoHideDone=saved==='true';
   }catch(e){}
@@ -712,13 +705,6 @@ async function refreshTodos(){
     hideBtn.style.color=dashTodoHideDone?'#fff':'';
     hideBtn.style.borderColor=dashTodoHideDone?'var(--accent)':'';
   }
-  const sortBtn=document.getElementById('todo-sort-btn');
-  if(sortBtn){
-    const active=dashTodoSortMode==='deadline';
-    sortBtn.textContent=active?'마감순 ✓':'마감순';
-    sortBtn.classList.toggle('btn-primary',active);
-    sortBtn.classList.toggle('btn-secondary',!active);
-  }
   const todoItems=await api.getTodos(true);
   window.__todoMap=Object.fromEntries(todoItems.map(todo=>[todo.id,todo]));
   const manualOrder=await loadDashboardTodoOrder();
@@ -728,7 +714,7 @@ async function refreshTodos(){
     return;
   }
   container.innerHTML=sorted.map(todo=>renderTodoRow(todo)).join('');
-  if(dashTodoSortMode!=='deadline') bindDashboardTodoDragSort(container);
+  bindDashboardTodoDragSort(container);
   return;
   if(controls) controls.innerHTML=`<button class="btn btn-primary btn-xs" onclick="window.__dtAdd('')">+ 추가</button>`;
   const all=await api.getTodos(true);
@@ -766,8 +752,7 @@ window.__dtDel=async(id)=>{await api.deleteTodo(id);await syncCloudIfPossible();
 window.__dtAdd=(ds)=>showTodoModal(ds);
 window.__dtOpen=(id)=>showTodoEdit(id);
 window.__dtTogSort=async()=>{
-  dashTodoSortMode=dashTodoSortMode==='deadline'?'manual':'deadline';
-  await api.setSetting(TODO_SORT_KEY,dashTodoSortMode);
+  await saveDashboardTodoOrder([]);
   refreshTodos();
 };
 
