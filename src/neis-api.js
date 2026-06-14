@@ -2,7 +2,7 @@ const https = require('https');
 
 function fetchJson(url) {
   return new Promise((resolve, reject) => {
-    https.get(url, { rejectUnauthorized: false }, (res) => {
+    https.get(url, (res) => {
       let data = '';
       res.on('data', d => data += d);
       res.on('end', () => {
