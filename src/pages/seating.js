@@ -28,8 +28,10 @@ async function render(c) {
     </div>
     <div id="seat-info" style="font-size:12px;color:var(--text3);margin-bottom:8px"></div>
     <div id="seat-wrap">
-      <div id="seat-board">📋 칠판</div>
+      <div style="font-size:11px;color:var(--text3);text-align:center;margin-bottom:4px">↑ 교실 뒤쪽</div>
       <div id="seat-grid"></div>
+      <div style="font-size:11px;color:var(--text3);text-align:center;margin-top:4px">교사 시점 (칠판 쪽) ↓</div>
+      <div id="seat-board">📋 칠판</div>
     </div>
   </div>`;
 }
@@ -113,7 +115,16 @@ function resetSeats() {
   save();
 }
 
-// ── 그리드 렌더 ──────────────────────────────────────────
+// ── 교사 시점 표시 순서 (행 역순 + 열 역순 = 180° 회전) ──
+function teacherViewOrder() {
+  const order = [];
+  for (let r = rows - 1; r >= 0; r--)
+    for (let c = cols - 1; c >= 0; c--)
+      order.push(r * cols + c);
+  return order;
+}
+
+// ── 그리드 렌더 (교사 시점: 칠판 아래, 학생 위쪽부터) ───
 function renderGrid() {
   const grid = document.getElementById('seat-grid');
   if (!grid) return;
@@ -122,7 +133,7 @@ function renderGrid() {
   grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
   grid.innerHTML = '';
 
-  for (let i = 0; i < rows * cols; i++) {
+  for (const i of teacherViewOrder()) {
     const sid = assignments[i];
     const s   = sid ? studentMap[sid] : null;
     const div = document.createElement('div');
@@ -177,7 +188,8 @@ async function downloadImage() {
   const CW   = 90, CH = 54;   // 셀 크기
   const BOARD_H = 40, TITLE_H = 40;
   const W = PAD * 2 + cols * CW + (cols - 1) * GAP;
-  const H = TITLE_H + BOARD_H + GAP + rows * CH + (rows - 1) * GAP + PAD;
+  // 위: 제목 / 중간: 학생 좌석 / 아래: 칠판 + 패딩
+  const H = TITLE_H + GAP + rows * CH + (rows - 1) * GAP + GAP + BOARD_H + PAD;
 
   const canvas = document.createElement('canvas');
   const dpr    = 2; // 고해상도
@@ -196,24 +208,17 @@ async function downloadImage() {
   ctx.textAlign = 'center';
   ctx.fillText(title, W / 2, 26);
 
-  // 칠판
-  const bx = PAD, by = TITLE_H;
-  const bw = W - PAD * 2, bh = BOARD_H;
-  ctx.fillStyle = '#2d6a4f';
-  roundRect(ctx, bx, by, bw, bh, 8);
-  ctx.fillStyle = '#fff';
-  ctx.font = 'bold 15px "Apple SD Gothic Neo", "Malgun Gothic", sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('📋 칠판', W / 2, by + bh / 2 + 5);
-
-  // 좌석
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
+  // 좌석 (교사 시점: 뒷줄 → 앞줄, 오른쪽→왼쪽)
+  for (let r = rows - 1; r >= 0; r--) {
+    for (let c = cols - 1; c >= 0; c--) {
       const i   = r * cols + c;
       const sid = assignments[i];
       const s   = sid ? studentMap[sid] : null;
-      const x   = PAD + c * (CW + GAP);
-      const y   = TITLE_H + BOARD_H + GAP + r * (CH + GAP);
+      // 화면상 위치: r=rows-1이 displayRow=0(맨 위), c=cols-1이 displayCol=0(맨 왼)
+      const displayRow = (rows - 1 - r);
+      const displayCol = (cols - 1 - c);
+      const x   = PAD + displayCol * (CW + GAP);
+      const y   = TITLE_H + GAP + displayRow * (CH + GAP);
 
       // 카드 배경
       ctx.fillStyle = s ? '#ffffff' : '#f0f0f0';
@@ -240,6 +245,17 @@ async function downloadImage() {
       }
     }
   }
+
+  // 칠판 (이미지 맨 아래)
+  const bx = PAD, bh = BOARD_H;
+  const by = TITLE_H + GAP + rows * CH + (rows - 1) * GAP + GAP;
+  const bw = W - PAD * 2;
+  ctx.fillStyle = '#2d6a4f';
+  roundRect(ctx, bx, by, bw, bh, 8);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 15px "Apple SD Gothic Neo", "Malgun Gothic", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('📋 칠판', W / 2, by + bh / 2 + 5);
 
   // 다운로드
   const url = canvas.toDataURL('image/png');
