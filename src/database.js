@@ -275,6 +275,12 @@ class AppDatabase {
     `);
     this._ensureTodoCalendarColumn();
     this._ensureCounselingColumns();
+    this._ensureClassGroupColumns();
+  }
+
+  _ensureClassGroupColumns() {
+    try { this.db.exec("ALTER TABLE students ADD COLUMN class_group TEXT DEFAULT ''"); } catch (_) {}
+    try { this.db.exec("ALTER TABLE assessments ADD COLUMN class_group TEXT DEFAULT ''"); } catch (_) {}
   }
 
   _ensureTodoCalendarColumn() {
@@ -502,23 +508,7 @@ class AppDatabase {
 
   addStudent(data) {
     const result = this.db.prepare(
-      'INSERT INTO students(number,name,gender,birth_date,phone,parent_phone,address,note) VALUES(?,?,?,?,?,?,?,?)'
-    ).run(
-      data.number,
-      data.name,
-      data.gender || '',
-      data.birth_date || '',
-      data.phone || '',
-      data.parent_phone || '',
-      data.address || '',
-      data.note || ''
-    );
-    return result.lastInsertRowid;
-  }
-
-  updateStudent(id, data) {
-    this.db.prepare(
-      'UPDATE students SET number=?,name=?,gender=?,birth_date=?,phone=?,parent_phone=?,address=?,note=? WHERE id=?'
+      'INSERT INTO students(number,name,gender,birth_date,phone,parent_phone,address,note,class_group) VALUES(?,?,?,?,?,?,?,?,?)'
     ).run(
       data.number,
       data.name,
@@ -528,6 +518,24 @@ class AppDatabase {
       data.parent_phone || '',
       data.address || '',
       data.note || '',
+      data.class_group || ''
+    );
+    return result.lastInsertRowid;
+  }
+
+  updateStudent(id, data) {
+    this.db.prepare(
+      'UPDATE students SET number=?,name=?,gender=?,birth_date=?,phone=?,parent_phone=?,address=?,note=?,class_group=? WHERE id=?'
+    ).run(
+      data.number,
+      data.name,
+      data.gender || '',
+      data.birth_date || '',
+      data.phone || '',
+      data.parent_phone || '',
+      data.address || '',
+      data.note || '',
+      data.class_group || '',
       id
     );
     return true;
@@ -541,13 +549,14 @@ class AppDatabase {
   importStudentsCSV(rows) {
     this.db.prepare('DELETE FROM students').run();
     const insert = this.db.prepare(
-      'INSERT INTO students(number,name,gender,birth_date,phone,parent_phone,address,note) VALUES(?,?,?,?,?,?,?,?)'
+      'INSERT INTO students(number,name,class_group,gender,birth_date,phone,parent_phone,address,note) VALUES(?,?,?,?,?,?,?,?,?)'
     );
     const transaction = this.db.transaction((items) => {
       for (const row of items) {
         insert.run(
           row.number,
           row.name,
+          row.class_group || '',
           row.gender || '',
           row.birth_date || '',
           row.phone || '',
@@ -777,15 +786,15 @@ class AppDatabase {
 
   addAssessment(data) {
     const result = this.db.prepare(
-      'INSERT INTO assessments(name,subject,type,date,max_score,weight,note) VALUES(?,?,?,?,?,?,?)'
-    ).run(data.name, data.subject || '', data.type || '수행', data.date || '', data.max_score || 100, data.weight || 1, data.note || '');
+      'INSERT INTO assessments(name,subject,type,date,max_score,weight,note,class_group) VALUES(?,?,?,?,?,?,?,?)'
+    ).run(data.name, data.subject || '', data.type || '수행', data.date || '', data.max_score || 100, data.weight || 1, data.note || '', data.class_group || '');
     return result.lastInsertRowid;
   }
 
   updateAssessment(id, data) {
     this.db.prepare(
-      'UPDATE assessments SET name=?,subject=?,type=?,date=?,max_score=?,weight=?,note=? WHERE id=?'
-    ).run(data.name, data.subject || '', data.type || '수행', data.date || '', data.max_score || 100, data.weight || 1, data.note || '', id);
+      'UPDATE assessments SET name=?,subject=?,type=?,date=?,max_score=?,weight=?,note=?,class_group=? WHERE id=?'
+    ).run(data.name, data.subject || '', data.type || '수행', data.date || '', data.max_score || 100, data.weight || 1, data.note || '', data.class_group || '', id);
     return true;
   }
 

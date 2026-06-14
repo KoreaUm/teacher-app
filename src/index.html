@@ -2954,7 +2954,10 @@
       var externalProvider = settings.ai_engine === "gemini" ? "gemini" : ((settings.ai_engine === "claude" || settings.ai_engine === "cloud") ? "claude" : "");
       var sensitivePage = /학생|상담|성적|출석|관찰|수업|AI 분석/.test(getCurrentPageLabel() || "") || currentPage === "counseling" || currentPage === "students" || currentPage === "grades" || currentPage === "ai_analysis";
       var localEngine = (settings.ai_engine === "local_lite" || settings.ai_engine === "local_basic" || settings.ai_engine === "local_pro") ? settings.ai_engine : "";
-      if (sensitivePage && !localEngine) localEngine = "local_lite";
+      // 클라우드 모드에서 민감 페이지는 강제로 로컬로 떨어뜨리지 않는다.
+      // 대신 메인 프로세스가 학생 식별정보를 가명화(학생A/B…)해서 전송하고 응답을 복원한다.
+      // 단, 클라우드를 쓸 수 없는 상태(외부 provider/API 키 없음)면 안전하게 로컬로 폴백.
+      if (sensitivePage && !localEngine && !(externalProvider && settings.ai_api_key)) localEngine = "local_lite";
       if (localEngine && api.aiLocalChat) {
         return api.aiLocalChat({
           engine: localEngine,

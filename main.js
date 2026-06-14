@@ -250,15 +250,67 @@ function anonymizeSensitiveText(text) {
   return value;
 }
 
-function containsStudentSensitiveText(text) {
-  return /학생|학번|성적|내신|출결|결석|지각|조퇴|상담|관찰|학부모|보호자|위험도|생기부|생활기록부|졸업생|현학생|취업|자격증/.test(String(text || ''));
+// 학생 식별정보를 클라우드로 보내기 전에 가짜 토큰으로 바꾸기 위한 매핑 생성.
+// 매핑(누가 학생A인지)은 이 프로세스 메모리에만 존재하고 외부로 나가지 않는다.
+function pseudonymLabel(index) {
+  let n = index;
+  let suffix = '';
+  do {
+    suffix = String.fromCharCode(65 + (n % 26)) + suffix;
+    n = Math.floor(n / 26) - 1;
+  } while (n >= 0);
+  return `학생${suffix}`;
 }
 
-function blockExternalStudentData() {
-  return {
-    error: '학생 정보가 포함될 수 있는 내용은 외부 AI/클라우드로 전송하지 않습니다. 로컬 AI를 사용해 주세요.',
-    privacyBlocked: true
-  };
+function buildStudentPseudonymMap() {
+  let students = [];
+  try { students = db.getStudents() || []; } catch { students = []; }
+  const forward = []; // {from(실제 식별정보), to(가명)} — 길이 긴 것부터 치환
+  const reverse = []; // {from(가명), to(실제 이름)} — 응답 복원용
+  students.forEach((stu, i) => {
+    const pseudo = pseudonymLabel(i);
+    const name = String(stu && stu.name || '').trim();
+    if (name.length >= 2) {
+      forward.push({ from: name, to: pseudo });
+      reverse.push({ from: pseudo, to: name });
+    }
+    const phone = String(stu && stu.phone || '').trim();
+    if (phone.length >= 7) forward.push({ from: phone, to: `${pseudo}-연락처` });
+    const parentPhone = String(stu && stu.parent_phone || '').trim();
+    if (parentPhone.length >= 7) forward.push({ from: parentPhone, to: `${pseudo}-보호자연락처` });
+    const address = String(stu && stu.address || '').trim();
+    if (address.length >= 4) forward.push({ from: address, to: `${pseudo}-주소` });
+    const birth = String(stu && stu.birth_date || '').trim();
+    if (birth.length >= 6) forward.push({ from: birth, to: `${pseudo}-생년월일` });
+  });
+  // 부분 겹침("김민"이 "김민준"보다 먼저 치환되는 일) 방지를 위해 긴 것부터
+  forward.sort((a, b) => b.from.length - a.from.length);
+  return { forward, reverse };
+}
+
+// 클라우드 전송 전: 실제 식별정보 → 가명 토큰. 매핑에 없는 잔여 PII는 정규식 안전망으로 추가 제거.
+function pseudonymizeForCloud(text, map) {
+  let value = String(text || '');
+  if (map && Array.isArray(map.forward)) {
+    map.forward.forEach(({ from, to }) => {
+      if (!from) return;
+      value = value.split(from).join(to);
+    });
+  }
+  return anonymizeSensitiveText(value);
+}
+
+// 응답 복원: 가명 토큰 → 실제 이름. "학생AA"가 "학생A"보다 먼저 복원되도록 긴 것부터.
+function depseudonymizeFromCloud(text, map) {
+  let value = String(text || '');
+  if (map && Array.isArray(map.reverse)) {
+    const ordered = [...map.reverse].sort((a, b) => b.from.length - a.from.length);
+    ordered.forEach(({ from, to }) => {
+      if (!from || !to) return;
+      value = value.split(from).join(to);
+    });
+  }
+  return value;
 }
 
 function normalizeAssistantAddressing(answer) {
@@ -402,7 +454,7 @@ function downloadFile(url, destination, onProgress) {
 
 function httpsGet(url, callback) {
   if (!url.startsWith('https:')) return http.get(url, callback);
-  return https.get(url, { rejectUnauthorized: false }, callback);
+  return https.get(url, callback);
 }
 
 function runCommand(command, args, options = {}) {
@@ -1317,7 +1369,7 @@ ipcMain.handle('gcal-oauth-start', async (e, legacyClientId = '', legacyClientSe
         if (clientSecret) tokenPayload.client_secret = clientSecret;
         const body = new URLSearchParams(tokenPayload).toString();
         const tokenRes = await new Promise((r2) => {
-          const req2 = https.request({ hostname: 'oauth2.googleapis.com', path: '/token', method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) }, rejectUnauthorized: false }, (res2) => {
+          const req2 = https.request({ hostname: 'oauth2.googleapis.com', path: '/token', method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) } }, (res2) => {
             let d = ''; res2.on('data', c => d += c); res2.on('end', () => { try { r2(JSON.parse(d)); } catch { r2({}); } });
           }); req2.on('error', () => r2({})); req2.write(body); req2.end();
         });
@@ -1337,7 +1389,7 @@ ipcMain.handle('gcal-refresh-token', async (e, arg1 = '', arg2 = '', arg3 = '') 
   if (clientSecret) tokenPayload.client_secret = clientSecret; // 환경변수 설정 시에만 포함
   const body = new URLSearchParams(tokenPayload).toString();
   return new Promise((resolve) => {
-    const req = https.request({ hostname: 'oauth2.googleapis.com', path: '/token', method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) }, rejectUnauthorized: false }, (r) => {
+    const req = https.request({ hostname: 'oauth2.googleapis.com', path: '/token', method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) } }, (r) => {
       let d = ''; r.on('data', c => d += c); r.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve({ error: '파싱 오류' }); } });
     }); req.on('error', err => resolve({ error: err.message })); req.write(body); req.end();
   });
@@ -1354,7 +1406,6 @@ function googleCalendarRequest(accessToken, pathName, method = 'GET', payload = 
         'Authorization': `Bearer ${accessToken}`,
         ...(payload ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } : {})
       },
-      rejectUnauthorized: false
     }, (res) => {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
@@ -1400,7 +1451,6 @@ function googleTasksRequest(accessToken, pathName, method = 'GET', payload = nul
         'Authorization': `Bearer ${accessToken}`,
         ...(payload ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } : {})
       },
-      rejectUnauthorized: false
     }, (res) => {
       let data = '';
       res.on('data', (chunk) => data += chunk);
@@ -1790,9 +1840,11 @@ ipcMain.handle('ai-assistant-chat', async (e, payload = {}) => {
     const model = String(payload.model || '');
     const page = String(payload.page || '현재 페이지');
     const sensitive = !!payload.sensitive || isStudentSensitivePage(page);
-    if (sensitive) return blockExternalStudentData();
-    const question = sensitive ? anonymizeSensitiveText(payload.question || '') : String(payload.question || '');
-    const context = sensitive ? anonymizeSensitiveText(payload.context || '') : String(payload.context || '');
+    // 민감 페이지면 차단 대신 가명화: 식별정보는 가짜 토큰으로 바꿔 전송하고, 응답을 받으면 로컬에서 복원한다.
+    const pseudoMap = sensitive ? buildStudentPseudonymMap() : null;
+    const rawQuestion = String(payload.question || '');
+    const question = sensitive ? pseudonymizeForCloud(rawQuestion, pseudoMap) : rawQuestion;
+    const context = sensitive ? pseudonymizeForCloud(payload.context || '', pseudoMap) : String(payload.context || '');
     if (!apiKey || !question) return { error: 'AI 설정 또는 질문이 비어 있습니다.' };
     if (/^(안녕|안녕하세요|하이|hello|hi)$/i.test(String(payload.question || '').trim())) {
       return { result: '선생님, 안녕하세요. 오늘 쌤포트에서 어떤 업무를 도와드릴까요?' };
@@ -1803,7 +1855,7 @@ ipcMain.handle('ai-assistant-chat', async (e, payload = {}) => {
         '모든 답변은 반드시 "선생님,"으로 시작하세요.',
         '사용자는 학생이 아니라 교사입니다. 사용자를 "학생"이라고 부르지 말고 "선생님"이라고 부르세요.',
         '사용자는 학생 상담/공문/시간표/할일/학사 업무를 빠르게 처리하려고 합니다.',
-        sensitive ? '입력 내용은 외부 전송 전 익명화되었습니다. 실제 이름, 번호, 연락처를 추정하거나 복원하지 마세요.' : '',
+        sensitive ? '입력의 학생 식별정보는 "학생A", "학생B" 같은 가명으로 치환되어 있습니다. 답변에서도 이 가명을 그대로 사용하고, 실제 이름·번호·연락처를 추정하거나 만들어내지 마세요.' : '',
         '학생 상담과 개인정보는 매우 민감하므로 단정적 진단, 의료적 판단, 낙인 표현을 피하고 학교 절차와 교사의 최종 판단을 존중하세요.',
         '고정 안내문처럼 답하지 말고, 사용자의 질문과 현재 페이지 맥락을 반영해 구체적으로 답하세요.',
         '가능하면 바로 쓸 수 있는 문장, 확인할 항목, 다음 행동을 포함하세요.',
@@ -1815,7 +1867,11 @@ ipcMain.handle('ai-assistant-chat', async (e, payload = {}) => {
     const result = provider === 'gemini'
       ? await runGemini(apiKey, model || 'gemini-2.5-flash', '', options)
       : await runClaude(apiKey, model || 'claude-haiku-4-5', '', options);
-    if (result?.result) result.result = normalizeAssistantAddressing(result.result);
+    if (result?.result) {
+      result.result = normalizeAssistantAddressing(result.result);
+      // 클라우드 응답의 가명을 로컬에서 실제 이름으로 복원해 사용자에게 표시
+      if (pseudoMap) result.result = depseudonymizeFromCloud(result.result, pseudoMap);
+    }
     return result;
   } catch (err) {
     return { error: err.message };
@@ -1931,7 +1987,6 @@ async function runClaude(apiKey, model, text, options = {}) {
         'anthropic-version': '2023-06-01',
         'Content-Length': Buffer.byteLength(body),
       },
-      rejectUnauthorized: false,
     }, (res) => {
       let data = '';
       res.on('data', (chunk) => {
@@ -1984,13 +2039,13 @@ async function runGemini(apiKey, model, text, options = {}) {
     bodyObj.systemInstruction = { parts: [{ text: options.system }] };
   }
   const body = JSON.stringify(bodyObj);
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${useModel}:generateContent?key=${apiKey}`;
+  // API 키는 URL 쿼리(로그/히스토리에 남을 수 있음) 대신 헤더로 전달
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${useModel}:generateContent`;
 
   return new Promise((resolve) => {
     const req = https.request(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
-      rejectUnauthorized: false,
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), 'x-goog-api-key': apiKey },
     }, (res) => {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });

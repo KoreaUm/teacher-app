@@ -8,6 +8,7 @@ const TEXT = {
   attendance: "\uCD9C\uC11D \uAD00\uB9AC",
   dailyMemo: "\uD559\uAE09 \uBA54\uBAA8",
   timetable: "\uC2DC\uAC04\uD45C \uAD00\uB9AC",
+  seating: "\uC790\uB9AC \uBC30\uCE58",
   records: "\uAE30\uB85D",
   counseling: "\uC0C1\uB2F4 \uC77C\uC9C0",
   observations: "\uAD00\uCC30 \uAE30\uB85D",
@@ -51,6 +52,7 @@ const MENU_GROUPS = [
       { key: "attendance", label: TEXT.attendance },
       { key: "daily_memo", label: TEXT.dailyMemo },
       { key: "timetable", label: TEXT.timetable },
+      { key: "seating", label: TEXT.seating },
     ],
   },
   {

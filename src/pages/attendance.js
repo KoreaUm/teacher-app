@@ -66,7 +66,14 @@ async function render(container) {
 }
 
 async function init() {
-  students = await api.getStudents();
+  const allStudents = await api.getStudents();
+  const classYear = await api.getSetting('class_year', '');
+  const classNum  = await api.getSetting('class_num', '');
+  const myClass   = (classYear && classNum) ? `${classYear}학년 ${classNum}반` : '';
+  // class_group이 비어있는 학생(기존 학생) 또는 우리 반과 일치하는 학생만 표시
+  students = myClass
+    ? allStudents.filter(s => !s.class_group || s.class_group === myClass)
+    : allStudents;
   document.querySelectorAll('.tab-btn').forEach((button) => {
     button.onclick = () => {
       document.querySelectorAll('.tab-btn').forEach((item) => item.classList.remove('active'));

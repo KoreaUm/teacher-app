@@ -1994,6 +1994,40 @@ tbody tr:hover { background: var(--hover); }
 .student-card .name { font-size: 15px; font-weight: 700; color: var(--text); }
 .student-card .phone { font-size: 12px; color: var(--text2); }
 
+/* ══════════════ 자리 배치 ══════════════════════════════ */
+#seat-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+#seat-board {
+  width: 100%; max-width: 900px;
+  background: #2d6a4f; color: #fff;
+  text-align: center; font-weight: 700; font-size: 15px;
+  padding: 10px 0; border-radius: 8px; letter-spacing: 2px;
+}
+#seat-grid {
+  display: grid; gap: 10px;
+  width: 100%; max-width: 900px;
+}
+.seat-cell {
+  background: var(--card);
+  border: 1.5px solid var(--accent);
+  border-radius: 8px;
+  padding: 8px 6px;
+  text-align: center;
+  cursor: pointer;
+  min-height: 54px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  transition: box-shadow 0.15s, transform 0.1s;
+  user-select: none;
+}
+.seat-cell:hover { box-shadow: 0 0 0 3px var(--accent-l); transform: translateY(-1px); }
+.seat-cell.selected { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-l); }
+.seat-cell.selected .seat-num,
+.seat-cell.selected .seat-name { color: #fff; }
+.seat-cell.empty { background: var(--bg); border-color: var(--border); border-style: dashed; cursor: default; }
+.seat-cell.empty:hover { box-shadow: none; transform: none; }
+.seat-num { font-size: 11px; color: var(--text3); font-weight: 600; }
+.seat-name { font-size: 14px; font-weight: 700; color: var(--text); }
+.seat-empty { font-size: 11px; color: var(--border); }
+
 /* ══════════════ 출결 페이지 ════════════════════════════ */
 .att-table th, .att-table td { text-align: center; padding: 8px 6px; }
 .att-table td:first-child, .att-table th:first-child { text-align: left; padding-left: 12px; }
