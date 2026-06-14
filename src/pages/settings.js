@@ -17,6 +17,7 @@ const MENU_PAGE_OPTIONS = [
   { key: 'attendance',       label: '출석 관리' },
   { key: 'daily_memo',       label: '학급 메모' },
   { key: 'timetable',        label: '시간표 관리' },
+  { key: 'seating',          label: '자리 배치' },
   { key: 'counseling',       label: '상담 일지' },
   { key: 'observations',     label: '관찰 기록' },
   { key: 'lessons',          label: '수업 지도' },
@@ -36,7 +37,7 @@ const MENU_PAGE_OPTIONS = [
 ];
 
 const DEFAULT_MENU_GROUPS = [
-  { key: 'class',      label: '학급 관리', items: ['students', 'attendance', 'daily_memo', 'timetable'] },
+  { key: 'class',      label: '학급 관리', items: ['students', 'attendance', 'daily_memo', 'timetable', 'seating'] },
   { key: 'records',    label: '학생 기록', items: ['counseling', 'observations', 'lessons'] },
   { key: 'evaluation', label: '평가',     items: ['assessments', 'submissions', 'statistics', 'ai_analysis'] },
   { key: 'admin',      label: '업무',     items: ['official_document', 'hwp_formatter'] },
