@@ -579,8 +579,10 @@ async function loadWeather(){
     if(el) el.textContent=`${region} · 습도 ${w.humidity}%`;
     if(ea&&w.pm10!=null){
       const lv=w.pm10<=30?'좋음':w.pm10<=80?'보통':w.pm10<=150?'나쁨':'매우나쁨';
-      const cl=w.pm10<=30?'#86efac':w.pm10<=80?'#fde68a':w.pm10<=150?'#fca5a5':'#d8b4fe';
-      ea.innerHTML=`<span style="color:${cl};font-weight:600">미세 ${lv}</span>`;
+      // 연한 배경에서도 보이도록 진한 글씨 + 연한 배경 배지로 표시
+      const cl=w.pm10<=30?'#15803d':w.pm10<=80?'#a16207':w.pm10<=150?'#b91c1c':'#7e22ce';
+      const bg=w.pm10<=30?'#dcfce7':w.pm10<=80?'#fef9c3':w.pm10<=150?'#fee2e2':'#f3e8ff';
+      ea.innerHTML=`<span style="color:${cl};background:${bg};font-weight:700;padding:1px 7px;border-radius:8px;font-size:0.85em">미세 ${lv}</span>`;
     }
   }catch(e){}
 }
