@@ -138,6 +138,7 @@ async function render(container) {
           </div>
           <div class="form-row"><label>\uAD50\uC0AC\uBA85</label><input class="input" id="st" value="${escapeHtml(settings.teacher_name || '')}" placeholder="\uC608: \uC784\uC7AC\uD658"></div>
           <div class="form-row"><label>\uB0A0\uC528 \uC9C0\uC5ED</label><input class="input" id="sr" value="${escapeHtml(settings.weather_region || '\uC11C\uC6B8')}" placeholder="\uC608: \uC11C\uC6B8"></div>
+          <div class="form-row"><label>\uD558\uB8E8 \uAD50\uC2DC \uC218</label><input class="input" id="spc" type="number" min="1" max="12" value="${escapeHtml(settings.period_count || '7')}" placeholder="\uC608: 7"></div>
           <div class="settings-actions">
             <button class="btn btn-primary btn-sm" id="sv-cl">\uC800\uC7A5</button>
           </div>
@@ -442,6 +443,7 @@ async function init() {
   autosaveSetting('sn', 'class_num', { after: () => window.updateClassInfo?.() });
   autosaveSetting('st', 'teacher_name', { after: () => window.updateClassInfo?.() });
   autosaveSetting('sr', 'weather_region');
+  autosaveSetting('spc', 'period_count', { read: (el) => String(Math.min(12, Math.max(1, Number(el.value) || 7))) });
   autosaveSetting('se', 'edu_office_code');
   autosaveSetting('ss', 'school_code');
   document.querySelectorAll('input[name="ai-engine"]').forEach((input) => {
@@ -596,6 +598,7 @@ async function init() {
     await api.setSetting('class_num', document.getElementById('sn').value.trim());
     await api.setSetting('teacher_name', document.getElementById('st').value.trim());
     await api.setSetting('weather_region', document.getElementById('sr').value.trim());
+    await api.setSetting('period_count', String(Math.min(12, Math.max(1, Number(document.getElementById('spc').value) || 7))));
     toast('\uC800\uC7A5\uB418\uC5C8\uC2B5\uB2C8\uB2E4', 'success');
     if (typeof updateClassInfo === 'function') updateClassInfo();
   };
