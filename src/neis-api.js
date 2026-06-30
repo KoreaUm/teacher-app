@@ -66,13 +66,27 @@ async function getWeather(region) {
     const c = json.current_condition[0];
     const code = parseInt(c.weatherCode);
     const emoji = weatherEmoji(code);
-    return {
+    const result = {
       temp: c.temp_C,
       feels: c.FeelsLikeC,
       humidity: c.humidity,
       desc: c.weatherDesc?.[0]?.value || '',
       emoji
     };
+    // 미세먼지: wttr.in의 위경도로 Open-Meteo 대기질 API 조회 (무료, 키 불필요)
+    try {
+      const area = json.nearest_area?.[0];
+      const lat = area?.latitude, lon = area?.longitude;
+      if (lat != null && lon != null) {
+        const aqUrl = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm10,pm2_5`;
+        const aq = await fetchJson(aqUrl);
+        if (aq?.current) {
+          if (aq.current.pm10 != null) result.pm10 = Math.round(aq.current.pm10);
+          if (aq.current.pm2_5 != null) result.pm25 = Math.round(aq.current.pm2_5);
+        }
+      }
+    } catch(_) { /* 대기질 실패는 무시 (온도는 그대로 표시) */ }
+    return result;
   } catch(e) {
     return { error: e.message };
   }

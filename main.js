@@ -1644,6 +1644,10 @@ ipcMain.handle('neis-get-calendar', async (e, eduCode, schoolCode, yearMonth) =>
   try { return await neisApi.getCalendar(eduCode, schoolCode, yearMonth); } catch (err) { return []; }
 });
 
+ipcMain.handle('neis-get-weather', async (e, region) => {
+  try { return await neisApi.getWeather(region); } catch (err) { return { error: err.message }; }
+});
+
 
 ipcMain.handle('ai-extract-todos', async (e, apiKey, model, provider, text) => {
   try {
