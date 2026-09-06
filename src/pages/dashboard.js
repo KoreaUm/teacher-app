@@ -1373,7 +1373,7 @@ async function runAI(){
   const text=document.getElementById('ai-input').value.trim();
   if(!text){toast('텍스트를 입력하세요','error');return;}
   const engine=await api.getSetting('ai_engine','local_lite');
-  const model=await api.getSetting('ai_model','claude-opus-4-5');
+  const model=await api.getSetting('ai_model','claude-opus-5');
   const provider=await api.getSetting('ai_provider','claude');
   const useLocal=engine==='local_lite';
   const apiKey=useLocal?'':await api.getSetting('ai_api_key','');

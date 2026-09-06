@@ -1,9 +1,9 @@
 (function () {
 const MODEL_OPTIONS = {
   claude: [
-    { value: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
-    { value: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
-    { value: 'claude-opus-4-5', label: 'Claude Opus 4.5' },
+    { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
+    { value: 'claude-sonnet-5', label: 'Claude Sonnet 5' },
+    { value: 'claude-opus-5', label: 'Claude Opus 5' },
   ],
   gemini: [
     { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
@@ -37,12 +37,10 @@ const MENU_PAGE_OPTIONS = [
 ];
 
 const DEFAULT_MENU_GROUPS = [
-  { key: 'class',      label: '학급 관리', items: ['students', 'attendance', 'daily_memo', 'timetable', 'seating'] },
-  { key: 'records',    label: '학생 기록', items: ['counseling', 'observations', 'lessons'] },
-  { key: 'evaluation', label: '평가',     items: ['assessments', 'submissions', 'statistics', 'ai_analysis'] },
-  { key: 'admin',      label: '업무',     items: ['official_document', 'hwp_formatter'] },
-  { key: 'utility',    label: '편의',     items: ['meal', 'school_calendar', 'calculator', 'lesson_materials', 'todos', 'sticky_notes'] },
-  { key: 'settings',   label: '설정',     items: ['settings'] },
+  { key: 'class',    label: '학급',     items: ['students', 'attendance', 'daily_memo', 'timetable', 'seating'] },
+  { key: 'records',  label: '기록·평가', items: ['counseling', 'observations', 'lessons', 'ai_analysis', 'assessments', 'submissions', 'statistics'] },
+  { key: 'work',     label: '업무·문서', items: ['official_document', 'hwp_formatter', 'meal', 'school_calendar', 'calculator', 'lesson_materials', 'todos', 'sticky_notes'] },
+  { key: 'settings', label: '설정',     items: ['settings'] },
 ];
 
 const DEFAULT_SHORTCUTS = [

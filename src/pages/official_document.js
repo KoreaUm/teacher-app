@@ -315,7 +315,7 @@
           setText("od-draft-output", "설정에서 AI API 키를 입력하세요.");
           return;
         }
-        var model = await api.getSetting("ai_model", "claude-sonnet-4-6");
+        var model = await api.getSetting("ai_model", "claude-sonnet-5");
         var provider = await api.getSetting("ai_provider", "claude");
         aiBtn.disabled = true;
         aiBtn.textContent = "AI 생성 중…";
@@ -772,7 +772,7 @@
         // AI vision/document으로 추출
         var apiKey = await api.getSetting("ai_api_key", "");
         if (!apiKey) { setStatus("설정에서 AI API 키를 입력하세요."); return; }
-        var model    = await api.getSetting("ai_model", "claude-sonnet-4-6");
+        var model    = await api.getSetting("ai_model", "claude-sonnet-5");
         var provider = await api.getSetting("ai_provider", "claude");
         setStatus("AI가 견적서를 분석 중입니다…");
         var reader = new FileReader();

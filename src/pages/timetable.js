@@ -189,7 +189,7 @@ async function runTimetableAI() {
     return;
   }
 
-  const model = await api.getSetting('ai_model', 'claude-opus-4-5');
+  const model = await api.getSetting('ai_model', 'claude-opus-5');
   const provider = await api.getSetting('ai_provider', 'claude');
   const text = document.getElementById('tt-ai-input').value.trim();
   const button = document.getElementById('tt-ai-run');

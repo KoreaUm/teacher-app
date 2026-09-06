@@ -1870,7 +1870,7 @@ ipcMain.handle('ai-assistant-chat', async (e, payload = {}) => {
     };
     const result = provider === 'gemini'
       ? await runGemini(apiKey, model || 'gemini-2.5-flash', '', options)
-      : await runClaude(apiKey, model || 'claude-haiku-4-5', '', options);
+      : await runClaude(apiKey, model || 'claude-haiku-4-5-20251001', '', options);
     if (result?.result) {
       result.result = normalizeAssistantAddressing(result.result);
       // 클라우드 응답의 가명을 로컬에서 실제 이름으로 복원해 사용자에게 표시
