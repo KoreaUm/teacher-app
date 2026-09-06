@@ -2,12 +2,13 @@
 let userList = [];
 let searchKeyword = '';
 let statusFilter = 'all';
+let selectedUids = new Set();
 
 async function render(container) {
   const authState = window.appAuthGetState ? window.appAuthGetState() : null;
   if (!authState?.isAdmin) {
     container.innerHTML = `
-      <div class="page-wrap" style="max-width:920px">
+      <div class="page-wrap" style="max-width:920px;margin:0 auto">
         <div class="page-header">
           <h1 class="page-header-title">회원 관리</h1>
         </div>
@@ -20,7 +21,7 @@ async function render(container) {
   }
 
   container.innerHTML = `
-    <div class="page-wrap" style="max-width:920px">
+    <div class="page-wrap" style="max-width:920px;margin:0 auto">
       <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
         <h1 class="page-header-title">회원 관리</h1>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -93,6 +94,13 @@ async function render(container) {
         </div>
 
         <div id="user-management-summary" class="settings-note" style="margin-bottom:12px"></div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text)">
+            <input type="checkbox" id="user-select-all">
+            전체 선택
+          </label>
+          <button class="btn btn-danger btn-sm" id="user-bulk-delete-btn" disabled>선택 삭제 (<span id="user-bulk-delete-count">0</span>)</button>
+        </div>
         <div id="user-management-list" style="display:flex;flex-direction:column;gap:10px;max-height:560px;overflow:auto;padding-right:4px"></div>
       </section>
     </div>
@@ -134,6 +142,21 @@ async function init() {
       await render(document.getElementById('page-content'));
       await init();
     });
+  });
+
+  document.getElementById('user-select-all')?.addEventListener('change', (event) => {
+    const checked = event.target.checked;
+    const boxes = document.querySelectorAll('.user-select-checkbox');
+    boxes.forEach((box) => {
+      box.checked = checked;
+      if (checked) selectedUids.add(box.dataset.uid);
+      else selectedUids.delete(box.dataset.uid);
+    });
+    updateBulkDeleteButton();
+  });
+
+  document.getElementById('user-bulk-delete-btn')?.addEventListener('click', async () => {
+    await bulkDeleteSelected();
   });
 
   await loadUsers(false);
@@ -230,21 +253,34 @@ function renderUserList() {
   const deletedCount = userList.filter((user) => user.deleted).length;
   summary.textContent = `전체 ${userList.length}명 중 사용 중 ${activeCount}명, 사용 중지 ${blockedCount}명, 삭제 ${deletedCount}명`;
 
+  const selectableUids = new Set(
+    filtered.filter((user) => user.uid !== state?.uid && !user.deleted).map((user) => user.uid)
+  );
+  selectedUids.forEach((uid) => {
+    if (!selectableUids.has(uid)) selectedUids.delete(uid);
+  });
+
   if (!filtered.length) {
     root.innerHTML = '<div class="settings-note">조건에 맞는 사용자가 없습니다.</div>';
+    updateBulkDeleteButton();
     return;
   }
 
-  root.innerHTML = filtered.map((user) => `
+  root.innerHTML = filtered.map((user) => {
+    const canSelect = user.uid !== state?.uid && !user.deleted;
+    return `
     <div class="menu-group-card" style="padding:14px 16px">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap">
-        <div style="flex:1;min-width:240px">
+        <div style="flex:1;min-width:240px;display:flex;gap:10px;align-items:flex-start">
+          ${canSelect ? `<input type="checkbox" class="user-select-checkbox" data-uid="${escapeHtml(user.uid)}" style="margin-top:3px" ${selectedUids.has(user.uid) ? 'checked' : ''}>` : '<span style="width:13px;display:inline-block"></span>'}
+          <div>
           <div style="font-size:14px;font-weight:700;color:var(--text)">${escapeHtml(user.displayName || user.email)}</div>
           <div class="settings-note" style="margin-top:4px">${escapeHtml(user.email)}</div>
           <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
             <span class="chip ${user.role === 'admin' ? 'primary' : ''}">${user.role === 'admin' ? '관리자' : '사용자'}</span>
             <span class="chip ${user.deleted ? 'danger' : (user.active ? 'success' : 'danger')}">${user.deleted ? '삭제됨' : (user.active ? '사용 중' : '사용 중지')}</span>
             ${user.gradeAccess ? '<span class="chip primary">성적관리 권한</span>' : ''}
+          </div>
           </div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
@@ -258,7 +294,19 @@ function renderUserList() {
         </div>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
+
+  root.querySelectorAll('.user-select-checkbox').forEach((box) => {
+    box.addEventListener('change', () => {
+      if (box.checked) selectedUids.add(box.dataset.uid);
+      else selectedUids.delete(box.dataset.uid);
+      const allBox = document.getElementById('user-select-all');
+      if (allBox) allBox.checked = selectableUids.size > 0 && [...selectableUids].every((uid) => selectedUids.has(uid));
+      updateBulkDeleteButton();
+    });
+  });
+  updateBulkDeleteButton();
 
   root.querySelectorAll('.user-reset-pw-btn').forEach((button) => {
     button.addEventListener('click', async () => {
@@ -318,6 +366,39 @@ function renderUserList() {
       await loadUsers(false);
     });
   });
+}
+
+function updateBulkDeleteButton() {
+  const button = document.getElementById('user-bulk-delete-btn');
+  const countEl = document.getElementById('user-bulk-delete-count');
+  if (countEl) countEl.textContent = String(selectedUids.size);
+  if (button) button.disabled = selectedUids.size === 0;
+}
+
+async function bulkDeleteSelected() {
+  const uids = [...selectedUids];
+  if (!uids.length) return;
+  const targets = userList.filter((user) => uids.includes(user.uid));
+  const names = targets.map((user) => user.displayName || user.email).join(', ');
+  const confirmed = window.confirm(`선택한 ${uids.length}개 계정을 삭제할까요?\n\n${names}\n\n삭제하면 이 앱에서 다시 로그인할 수 없고, 시간표/할 일 같은 연동 데이터도 함께 정리됩니다.`);
+  if (!confirmed) return;
+
+  const button = document.getElementById('user-bulk-delete-btn');
+  if (button) button.disabled = true;
+
+  let successCount = 0;
+  for (const uid of uids) {
+    try {
+      await window.appAuthDeleteUser(uid);
+      successCount += 1;
+    } catch (error) {
+      toast(error?.message || '일부 계정 삭제에 실패했습니다.', 'error');
+    }
+  }
+
+  selectedUids.clear();
+  toast(`${successCount}개 계정을 삭제했습니다.`, 'success');
+  await loadUsers(false);
 }
 
 function escapeHtml(value = '') {

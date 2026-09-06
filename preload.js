@@ -137,6 +137,12 @@ contextBridge.exposeInMainWorld('api', {
   setOpacity: (val) => ipcRenderer.send('window-set-opacity', val),
   getOpacity: () => ipcRenderer.invoke('window-get-opacity'),
   widgetMode: (flag) => ipcRenderer.send('window-widget-mode', flag),
+  closeWidgetWindow: () => ipcRenderer.send('widget-window-close'),
+  onWidgetWindowClosed: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('widget-window-closed', handler);
+    return () => ipcRenderer.removeListener('widget-window-closed', handler);
+  },
   getUpdateStatus: () => ipcRenderer.invoke('get-update-status'),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   downloadUpdate: () => ipcRenderer.invoke('download-update'),

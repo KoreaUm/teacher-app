@@ -18,9 +18,7 @@ let db;
 let mainWindow;
 let tray = null;
 let isQuitting = false;
-let isWidgetMode   = false;
-let widgetInterval = null;
-let savedBounds    = null;
+let widgetWindow = null;
 let isClosingAfterCloudSync = false;
 let activeDbUserId = '';
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
@@ -802,12 +800,58 @@ function createWindow() {
     }
   });
 
-  // 위젯 모드 중 최소화되면 즉시 복원
-  mainWindow.on('minimize', () => {
-    if (isWidgetMode && mainWindow && !mainWindow.isDestroyed()) {
-      setTimeout(() => {
-        if (!mainWindow.isDestroyed()) mainWindow.restore();
-      }, 50);
+}
+
+function createWidgetWindow() {
+  if (widgetWindow && !widgetWindow.isDestroyed()) {
+    widgetWindow.focus();
+    return;
+  }
+
+  const { width: screenWidth } = screen.getPrimaryDisplay().workAreaSize;
+  const defaultBounds = { width: 280, height: 340, x: screenWidth - 300, y: 60 };
+  let bounds = defaultBounds;
+  try {
+    const saved = JSON.parse(db.getSetting('widget_window_bounds', '') || 'null');
+    if (saved && typeof saved === 'object') bounds = { ...defaultBounds, ...saved };
+  } catch (_) {}
+
+  widgetWindow = new BrowserWindow({
+    ...bounds,
+    minWidth: 220,
+    minHeight: 200,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: true,
+    hasShadow: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+    show: false,
+  });
+
+  widgetWindow.setAlwaysOnTop(true, 'screen-saver');
+  widgetWindow.loadFile(path.join(__dirname, 'src/widget.html'));
+
+  widgetWindow.once('ready-to-show', () => widgetWindow.show());
+
+  const saveBounds = () => {
+    if (widgetWindow && !widgetWindow.isDestroyed()) {
+      db.setSetting('widget_window_bounds', JSON.stringify(widgetWindow.getBounds()));
+    }
+  };
+  widgetWindow.on('move', saveBounds);
+  widgetWindow.on('resize', saveBounds);
+
+  widgetWindow.on('closed', () => {
+    widgetWindow = null;
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('widget-window-closed');
     }
   });
 }
@@ -960,29 +1004,15 @@ ipcMain.handle('export-app-manual-pdf', async () => {
 });
 
 ipcMain.on('window-widget-mode', (e, active) => {
-  isWidgetMode = active;
   if (active) {
-    // 현재 크기 저장
-    savedBounds = mainWindow.getBounds();
-    // 주 화면 전체 크기로 확장
-    const { width, height } = screen.getPrimaryDisplay().workAreaSize;
-    mainWindow.setBounds({ x: 0, y: 0, width, height });
-    mainWindow.setAlwaysOnTop(false);
-    mainWindow.setSkipTaskbar(true);
-    // 클릭을 투명 영역만 통과시킴 (카드 영역은 렌더러에서 관리)
-    mainWindow.setIgnoreMouseEvents(false);
-  } else {
-    if (widgetInterval) { clearInterval(widgetInterval); widgetInterval = null; }
-    mainWindow.setSkipTaskbar(false);
-    mainWindow.setAlwaysOnTop(false);
-    mainWindow.setIgnoreMouseEvents(false);
-    // 저장된 크기로 복원
-    if (savedBounds) {
-      mainWindow.setBounds(savedBounds);
-      savedBounds = null;
-    }
-    mainWindow.focus();
+    createWidgetWindow();
+  } else if (widgetWindow && !widgetWindow.isDestroyed()) {
+    widgetWindow.close();
   }
+});
+
+ipcMain.on('widget-window-close', () => {
+  if (widgetWindow && !widgetWindow.isDestroyed()) widgetWindow.close();
 });
 
 ipcMain.handle('switch-user-database', (e, uid, options = {}) => {

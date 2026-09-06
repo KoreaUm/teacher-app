@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>쌤포트 위젯</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    font-family: -apple-system, "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+    overflow: hidden;
+    user-select: none;
+  }
+  #card {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: rgba(28, 30, 38, 0.62);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.14);
+    box-shadow: 0 8px 28px rgba(0,0,0,0.35);
+    color: #fff;
+    overflow: hidden;
+  }
+  #header {
+    -webkit-app-region: drag;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px 6px 14px;
+    flex-shrink: 0;
+  }
+  #date {
+    font-size: 12px;
+    font-weight: 600;
+    opacity: 0.85;
+    letter-spacing: 0.2px;
+  }
+  #close-btn {
+    -webkit-app-region: no-drag;
+    width: 20px;
+    height: 20px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.12);
+    color: #fff;
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #close-btn:hover { background: rgba(255,90,90,0.75); }
+  #tabs {
+    -webkit-app-region: no-drag;
+    display: flex;
+    gap: 6px;
+    padding: 0 12px 8px;
+    flex-shrink: 0;
+  }
+  .tab-btn {
+    border: none;
+    background: rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.7);
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .tab-btn.active {
+    background: #6ea8fe;
+    color: #0d1526;
+  }
+  #title {
+    padding: 0 14px 6px;
+    font-size: 13px;
+    font-weight: 700;
+    opacity: 0.95;
+    flex-shrink: 0;
+  }
+  .tt-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 6px 6px;
+    border-radius: 8px;
+    font-size: 12.5px;
+  }
+  .tt-row:hover { background: rgba(255,255,255,0.08); }
+  .tt-period {
+    flex-shrink: 0;
+    width: 20px;
+    text-align: center;
+    font-weight: 700;
+    opacity: 0.6;
+    font-size: 11px;
+  }
+  .tt-subject { flex: 1; }
+  .tt-room { opacity: 0.55; font-size: 10.5px; }
+  #list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 2px 10px 12px;
+  }
+  #list::-webkit-scrollbar { width: 6px; }
+  #list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
+  .todo-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 6px 6px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    line-height: 1.35;
+  }
+  .todo-row:hover { background: rgba(255,255,255,0.08); }
+  .todo-dot {
+    margin-top: 5px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: #6ea8fe;
+  }
+  .todo-dot.urgent { background: #ff6b6b; }
+  .todo-text { flex: 1; word-break: break-word; }
+  .todo-deadline { opacity: 0.6; font-size: 10.5px; margin-top: 1px; }
+  #empty {
+    padding: 20px 14px;
+    font-size: 12.5px;
+    opacity: 0.6;
+    text-align: center;
+  }
+
+</style>
+</head>
+<body>
+  <div id="card">
+    <div id="header">
+      <span id="date"></span>
+      <button id="close-btn" title="위젯 닫기">✕</button>
+    </div>
+    <div id="tabs">
+      <button class="tab-btn" data-tab="todo">✅ 할일</button>
+      <button class="tab-btn" data-tab="timetable">🗓️ 시간표</button>
+    </div>
+    <div id="title"></div>
+    <div id="list"></div>
+  </div>
+<script>
+  function fmtDate() {
+    const d = new Date();
+    const days = ['일','월','화','수','목','금','토'];
+    return `${d.getMonth() + 1}월 ${d.getDate()}일 (${days[d.getDay()]})`;
+  }
+
+  function escapeHtml(s) {
+    return String(s || '').replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+  }
+
+  function isUrgent(deadline) {
+    if (!deadline) return false;
+    const today = new Date(); today.setHours(0,0,0,0);
+    const dl = new Date(deadline + 'T00:00:00');
+    return dl <= today;
+  }
+
+  async function renderTodos() {
+    const list = document.getElementById('list');
+    document.getElementById('title').textContent = '✅ 오늘의 할일';
+    try {
+      const todos = (await window.api.getTodos(false)) || [];
+      todos.sort((a, b) => (a.deadline || '9999').localeCompare(b.deadline || '9999'));
+      if (!todos.length) {
+        list.innerHTML = '<div id="empty">할일이 없습니다 🎉</div>';
+        return;
+      }
+      list.innerHTML = todos.slice(0, 30).map(t => `
+        <div class="todo-row">
+          <div class="todo-dot${isUrgent(t.deadline) ? ' urgent' : ''}"></div>
+          <div>
+            <div class="todo-text">${escapeHtml(t.title)}</div>
+            ${t.deadline ? `<div class="todo-deadline">${escapeHtml(t.deadline)}</div>` : ''}
+          </div>
+        </div>
+      `).join('');
+    } catch (err) {
+      list.innerHTML = '<div id="empty">불러오지 못했습니다</div>';
+    }
+  }
+
+  const TT_DAYS = ['월', '화', '수', '목', '금'];
+
+  async function renderTimetable() {
+    const list = document.getElementById('list');
+    const dow = new Date().getDay();
+    const dayIndex = dow >= 1 && dow <= 5 ? dow - 1 : -1;
+    document.getElementById('title').textContent = dayIndex === -1
+      ? '🗓️ 시간표 (주말)'
+      : `🗓️ 오늘(${TT_DAYS[dayIndex]}) 시간표`;
+    if (dayIndex === -1) {
+      list.innerHTML = '<div id="empty">주말에는 수업이 없습니다 🌤️</div>';
+      return;
+    }
+    try {
+      const cells = (await window.api.getTimetable()) || [];
+      const today = cells
+        .filter(c => c.day_of_week === dayIndex && c.subject)
+        .sort((a, b) => a.period - b.period);
+      if (!today.length) {
+        list.innerHTML = '<div id="empty">등록된 시간표가 없습니다</div>';
+        return;
+      }
+      list.innerHTML = today.map(c => `
+        <div class="tt-row">
+          <div class="tt-period">${escapeHtml(c.period)}</div>
+          <div class="tt-subject">${escapeHtml(c.subject)}</div>
+          ${c.room ? `<div class="tt-room">${escapeHtml(c.room)}</div>` : ''}
+        </div>
+      `).join('');
+    } catch (err) {
+      list.innerHTML = '<div id="empty">불러오지 못했습니다</div>';
+    }
+  }
+
+  const RENDERERS = { todo: renderTodos, timetable: renderTimetable };
+  let activeTab = localStorage.getItem('widget_active_tab') || 'todo';
+  if (!RENDERERS[activeTab]) activeTab = 'todo';
+
+  function setActiveTab(tab) {
+    activeTab = tab;
+    localStorage.setItem('widget_active_tab', tab);
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.tab === tab);
+    });
+    RENDERERS[tab]();
+  }
+
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => setActiveTab(btn.dataset.tab));
+  });
+
+  document.getElementById('date').textContent = fmtDate();
+  document.getElementById('close-btn').addEventListener('click', () => {
+    window.api.closeWidgetWindow();
+  });
+
+  setActiveTab(activeTab);
+  setInterval(() => RENDERERS[activeTab](), 60000);
+</script>
+</body>
+</html>
