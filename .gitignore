@@ -12,3 +12,4 @@ temp_*.xlsx
 *.db-wal
 Thumbs.db
 .DS_Store
+*.hwpx
