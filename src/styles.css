@@ -88,18 +88,6 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* ── 위젯 모드 ── */
-body.widget-mode #titlebar { display: none !important; }
-body.widget-mode #app-layout { height: 100vh; }
-body.widget-mode #widget-mode-btn {
-  display: flex !important;
-  position: fixed;
-  bottom: 20px; right: 20px;
-  z-index: 9999;
-  opacity: 0.5;
-  transition: opacity .2s;
-}
-body.widget-mode #widget-mode-btn:hover { opacity: 1; }
 button { font-family: inherit; cursor: pointer; }
 input, textarea, select { font-family: inherit; }
 a { color: var(--accent); text-decoration: none; }
@@ -457,6 +445,22 @@ a { color: var(--accent); text-decoration: none; }
 .tab-group.open .tab-group-label::after {
   color: var(--accent-d);
   transform: translateY(-50%) rotate(180deg);
+}
+.tab-group-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 6px;
+  color: var(--text3);
+  flex-shrink: 0;
+}
+.tab-group-icon svg { width: 16px; height: 16px; }
+.tab-group:hover .tab-group-icon,
+.tab-group.open .tab-group-icon,
+.tab-group.selected .tab-group-icon {
+  color: var(--accent-d);
 }
 .tab-group-text {
   font-size: 12px;
@@ -2022,8 +2026,15 @@ tbody tr:hover { background: var(--hover); }
 .seat-cell.selected { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-l); }
 .seat-cell.selected .seat-num,
 .seat-cell.selected .seat-name { color: #fff; }
-.seat-cell.empty { background: var(--bg); border-color: var(--border); border-style: dashed; cursor: default; }
-.seat-cell.empty:hover { box-shadow: none; transform: none; }
+.seat-cell.empty { background: var(--bg); border-color: var(--border); border-style: dashed; }
+.seat-cell.blocked {
+  background: repeating-linear-gradient(45deg, var(--bg), var(--bg) 6px, var(--border) 6px, var(--border) 7px);
+  border-color: var(--border); border-style: solid;
+}
+.seat-cell.blocked:hover { box-shadow: none; transform: none; }
+.seat-cell.locked { position: relative; border-color: #1d4ed8; box-shadow: inset 0 0 0 1px #1d4ed8; }
+.seat-x { font-size: 18px; font-weight: 700; color: var(--text3); }
+.seat-lock { position: absolute; top: 3px; left: 5px; font-size: 11px; }
 .seat-num { font-size: 11px; color: var(--text3); font-weight: 600; }
 .seat-name { font-size: 14px; font-weight: 700; color: var(--text); }
 .seat-empty { font-size: 11px; color: var(--border); }
