@@ -70,10 +70,15 @@
       '      </div>',
       '      <div class="card official-doc-output-card">',
       '        <div class="official-doc-output-head">',
-      '          <h3>생성 결과</h3>',
-      '          <button id="od-copy-draft-btn" class="btn btn-secondary btn-sm">복사</button>',
+      '          <h3>제목</h3>',
+      '          <button id="od-copy-title-btn" class="btn btn-secondary btn-sm">제목 복사</button>',
       '        </div>',
-      '        <pre id="od-draft-output" class="official-doc-output">왼쪽 항목을 입력한 뒤 [공문 초안 생성]을 누르세요.</pre>',
+      '        <pre id="od-title-output" class="official-doc-output" style="min-height:auto">왼쪽 항목을 입력한 뒤 [공문 초안 생성]을 누르세요.</pre>',
+      '        <div class="official-doc-output-head" style="margin-top:12px">',
+      '          <h3>본문</h3>',
+      '          <button id="od-copy-body-btn" class="btn btn-secondary btn-sm">본문 복사</button>',
+      '        </div>',
+      '        <pre id="od-body-output" class="official-doc-output"></pre>',
       '      </div>',
       '    </div>',
       '  </section>',
@@ -103,6 +108,30 @@
       '          <h3>학교폭력 공문 자동완성</h3>',
       '          <span>공문 번호를 선택하면 해당 양식이 자동으로 채워집니다.</span>',
       '        </div>',
+      '        <details class="sv-settings-box">',
+      '          <summary>학교 기본 정보 설정 (한 번만 입력하면 계속 재사용됩니다)</summary>',
+      '          <label>학교명',
+      '            <input id="sv-school-name-input" placeholder="예: 한국고등학교">',
+      '          </label>',
+      '          <label>전담기구 위원 명단',
+      '            <div class="sv-committee-add-row">',
+      '              <select id="sv-committee-role-select">',
+      '                <option value="교장">교장</option>',
+      '                <option value="교감">교감</option>',
+      '                <option value="책임교사">책임교사</option>',
+      '                <option value="보건교사">보건교사</option>',
+      '                <option value="전문상담교사">전문상담교사</option>',
+      '                <option value="학부모위원">학부모위원</option>',
+      '                <option value="학교전담경찰관">학교전담경찰관</option>',
+      '                <option value="__custom">직접 입력</option>',
+      '              </select>',
+      '              <input id="sv-committee-role-custom" placeholder="역할 직접 입력" hidden>',
+      '              <input id="sv-committee-name-input" placeholder="이름">',
+      '              <button type="button" id="sv-committee-add-btn" class="btn btn-secondary btn-sm">+ 추가</button>',
+      '            </div>',
+      '            <div id="sv-committee-list" class="sv-committee-list"></div>',
+      '          </label>',
+      '        </details>',
       '        <label>공문 선택',
       '          <select id="sv-doc-select">',
       '            <option value="">-- 공문을 선택하세요 --</option>',
@@ -117,10 +146,15 @@
       '      </div>',
       '      <div class="card official-doc-output-card">',
       '        <div class="official-doc-output-head">',
-      '          <h3>생성 결과</h3>',
-      '          <button id="sv-copy-btn" class="btn btn-secondary btn-sm">복사</button>',
+      '          <h3>제목</h3>',
+      '          <button id="sv-copy-title-btn" class="btn btn-secondary btn-sm">제목 복사</button>',
       '        </div>',
-      '        <pre id="sv-doc-output" class="official-doc-output">왼쪽에서 공문을 선택하고 항목을 입력한 뒤 [공문 생성]을 누르세요.\n\n충청북도교육청 2026. 학교폭력 사안처리 A to Z 서식 기반 자동완성입니다.\n공문 양식은 PDF 원본과 동일하게 유지됩니다.</pre>',
+      '        <pre id="sv-doc-title-output" class="official-doc-output" style="min-height:auto">왼쪽에서 공문을 선택하고 항목을 입력한 뒤 [공문 생성]을 누르세요.</pre>',
+      '        <div class="official-doc-output-head" style="margin-top:12px">',
+      '          <h3>본문</h3>',
+      '          <button id="sv-copy-body-btn" class="btn btn-secondary btn-sm">본문 복사</button>',
+      '        </div>',
+      '        <div id="sv-doc-body-output" class="official-doc-output"></div>',
       '      </div>',
       '    </div>',
       '  </section>',
@@ -233,10 +267,102 @@
     box.textContent = "아직 필요한 항목: " + missing.join(", ");
   }
 
+  function writeRichClipboard(text, htmlInner) {
+    if (!text) return;
+    var inner = htmlInner != null ? htmlInner : escapeHtml(text).replace(/\n/g, "<br>");
+    var html = '<div style="font-family:\'돋움\',Dotum,sans-serif;font-size:12pt;">' + inner + "</div>";
+    if (navigator.clipboard && window.ClipboardItem) {
+      try {
+        var item = new ClipboardItem({
+          "text/plain": new Blob([text], { type: "text/plain" }),
+          "text/html": new Blob([html], { type: "text/html" })
+        });
+        navigator.clipboard.write([item]).catch(function () {
+          if (navigator.clipboard.writeText) navigator.clipboard.writeText(text);
+        });
+        return;
+      } catch (e) {
+        // fall through to plain-text copy
+      }
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text);
+  }
+
   function copyTextFrom(id) {
     var text = document.getElementById(id) ? document.getElementById(id).textContent : "";
-    if (!text) return;
-    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text);
+    writeRichClipboard(text);
+  }
+
+  // sv 공문 서식은 앞(수신 기관 등)·뒤(협조자/시행/전화번호 등) 정형 문구를 뺀
+  // "제목" 줄부터 "끝." 줄까지의 본문만 붙여넣기에 필요하다.
+  function extractSvDocBody(text) {
+    var lines = text.split("\n");
+    var startIdx = -1;
+    var endIdx = -1;
+    for (var i = 0; i < lines.length; i++) {
+      if (startIdx === -1 && /^제목\s/.test(lines[i])) startIdx = i;
+      if (lines[i].indexOf("끝.") !== -1) endIdx = i;
+    }
+    if (startIdx === -1) return text;
+    if (endIdx === -1 || endIdx < startIdx) endIdx = lines.length - 1;
+    return lines.slice(startIdx, endIdx + 1).join("\n");
+  }
+
+  // 항목(1., 2. ...) 사이의 빈 줄은 제거하고, "붙임" 앞의 빈 줄만 유지한다.
+  function compactSvLines(lines) {
+    var out = [];
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      if (line.trim() === "") {
+        var j = i + 1;
+        while (j < lines.length && lines[j].trim() === "") j++;
+        var nextLine = j < lines.length ? lines[j] : "";
+        if (/^붙임/.test(nextLine.trim()) && out.length && out[out.length - 1].trim() !== "") {
+          out.push("");
+        }
+        i = j - 1;
+        continue;
+      }
+      out.push(line);
+    }
+    return out;
+  }
+
+  // 본문을 "제목" 줄과 그 아래 나머지(1. 관련~끝.)로 분리한다.
+  function splitSvDoc(text) {
+    var body = extractSvDocBody(text);
+    var lines = compactSvLines(body.split("\n"));
+    var titleLine = lines[0] || "";
+    var title = titleLine.replace(/^제목\s*/, "");
+    var rest = lines.slice(1).join("\n").replace(/^\n+/, "");
+    return { title: title, rest: rest };
+  }
+
+  // 사실확인 요청/회신처럼 표로 보여줘야 하는 항목을 [라벨, 값] 배열로부터 HTML 표로 만든다.
+  function buildSvTableHtml(rows) {
+    var trs = rows.map(function (r) {
+      return '<tr><td class="sv-table-label">' + escapeHtml(r[0]).replace(/\n/g, "<br>") +
+        '</td><td class="sv-table-value">' + escapeHtml(r[1]).replace(/\n/g, "<br>") + "</td></tr>";
+    }).join("");
+    return '<table class="sv-fact-table">' + trs + "</table>";
+  }
+
+  function buildSvTablePlain(rows) {
+    return rows.map(function (r) { return r[0] + "\t" + r[1].replace(/\n/g, " "); }).join("\n");
+  }
+
+  // "{{TABLE}}" 표시가 있으면 실제 표(html)/탭 구분 표(plain)로 바꿔 렌더링·복사용 결과를 만든다.
+  function renderSvBody(rawBody, tableRows) {
+    if (!tableRows) {
+      return { html: escapeHtml(rawBody).replace(/\n/g, "<br>"), plain: rawBody };
+    }
+    var parts = rawBody.split("{{TABLE}}");
+    var before = parts[0] || "";
+    var after = parts[1] || "";
+    return {
+      html: escapeHtml(before).replace(/\n/g, "<br>") + buildSvTableHtml(tableRows) + escapeHtml(after).replace(/\n/g, "<br>"),
+      plain: before + buildSvTablePlain(tableRows) + after
+    };
   }
 
   function switchTab(tab) {
@@ -266,10 +392,23 @@
     }).join("");
   }
 
+  // 상태/오류 메시지는 제목 칸에, 본문 칸은 비워서 표시한다.
+  function setDraftStatus(msg) {
+    setText("od-title-output", msg);
+    setText("od-body-output", "");
+  }
+
+  // "제목" 줄부터 "끝."까지만 뽑아 제목/본문으로 나누고, 항목 사이 불필요한 빈 줄을 정리해 표시한다.
+  function setDraftResult(text) {
+    var parts = splitSvDoc(text);
+    setText("od-title-output", parts.title);
+    setText("od-body-output", parts.rest);
+  }
+
   function init() {
     var rules = window.OfficialDocumentRules;
     if (!rules) {
-      setText("od-draft-output", "공문 작성 규칙 모듈을 불러오지 못했습니다.");
+      setDraftStatus("공문 작성 규칙 모듈을 불러오지 못했습니다.");
       return;
     }
 
@@ -284,10 +423,10 @@
         var missing = rules.validateDraftInput(input);
         showMissing(missing);
         if (missing.length) {
-          setText("od-draft-output", "필수 항목을 먼저 채워 주세요. 공문 내용은 임의로 만들지 않습니다.");
+          setDraftStatus("필수 항목을 먼저 채워 주세요. 공문 내용은 임의로 만들지 않습니다.");
           return;
         }
-        setText("od-draft-output", rules.buildDraft(input));
+        setDraftResult(rules.buildDraft(input));
       });
     }
 
@@ -307,19 +446,19 @@
         var missing = rules.validateDraftInput(input);
         showMissing(missing);
         if (missing.length) {
-          setText("od-draft-output", "필수 항목을 먼저 채워 주세요. 공문 내용은 임의로 만들지 않습니다.");
+          setDraftStatus("필수 항목을 먼저 채워 주세요. 공문 내용은 임의로 만들지 않습니다.");
           return;
         }
         var apiKey = await api.getSetting("ai_api_key", "");
         if (!apiKey) {
-          setText("od-draft-output", "설정에서 AI API 키를 입력하세요.");
+          setDraftStatus("설정에서 AI API 키를 입력하세요.");
           return;
         }
         var model = await api.getSetting("ai_model", "claude-sonnet-5");
         var provider = await api.getSetting("ai_provider", "claude");
         aiBtn.disabled = true;
         aiBtn.textContent = "AI 생성 중…";
-        setText("od-draft-output", "AI가 공문서 작성법 기준에 따라 공문을 작성 중입니다…");
+        setDraftStatus("AI가 공문서 작성법 기준에 따라 공문을 작성 중입니다…");
         var inputSummary = [
           "문서 유형: " + input.documentType,
           "수신자: " + (input.recipients || "없음"),
@@ -338,15 +477,19 @@
         aiBtn.disabled = false;
         aiBtn.textContent = "✨ AI로 생성";
         if (result.error) {
-          setText("od-draft-output", "AI 오류: " + result.error);
+          setDraftStatus("AI 오류: " + result.error);
+        } else if (result.result) {
+          setDraftResult(result.result);
         } else {
-          setText("od-draft-output", result.result || "결과 없음");
+          setDraftStatus("결과 없음");
         }
       });
     }
 
-    var copyDraftBtn = document.getElementById("od-copy-draft-btn");
-    if (copyDraftBtn) copyDraftBtn.addEventListener("click", function () { copyTextFrom("od-draft-output"); });
+    var copyTitleBtn = document.getElementById("od-copy-title-btn");
+    if (copyTitleBtn) copyTitleBtn.addEventListener("click", function () { copyTextFrom("od-title-output"); });
+    var copyBodyBtn = document.getElementById("od-copy-body-btn");
+    if (copyBodyBtn) copyBodyBtn.addEventListener("click", function () { copyTextFrom("od-body-output"); });
     var copyReviewBtn = document.getElementById("od-copy-review-btn");
     if (copyReviewBtn) copyReviewBtn.addEventListener("click", function () { copyTextFrom("od-review-output"); });
 
@@ -363,6 +506,192 @@
     ];
     var svTemplates = window.SVDocumentTemplates || [];
     var svSelect = document.getElementById("sv-doc-select");
+
+    var SV_SCHOOL_NAME_KEY = "sv_school_name";
+    var SV_COMMITTEE_KEY = "sv_committee_members";
+    var SV_WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
+    var refDocComposers = [];
+
+    function getSchoolName() {
+      try { return (localStorage.getItem(SV_SCHOOL_NAME_KEY) || "").trim(); } catch (e) { return ""; }
+    }
+
+    function getCommitteeList() {
+      try {
+        return (localStorage.getItem(SV_COMMITTEE_KEY) || "")
+          .split("\n").map(function (s) { return s.trim(); }).filter(Boolean);
+      } catch (e) { return []; }
+    }
+
+    var schoolNameInput = document.getElementById("sv-school-name-input");
+    if (schoolNameInput) {
+      schoolNameInput.value = getSchoolName();
+      schoolNameInput.addEventListener("input", function () {
+        try { localStorage.setItem(SV_SCHOOL_NAME_KEY, schoolNameInput.value); } catch (e) {}
+        refDocComposers.forEach(function (fn) { fn(); });
+      });
+    }
+
+    function saveCommitteeList(list) {
+      try { localStorage.setItem(SV_COMMITTEE_KEY, list.join("\n")); } catch (e) {}
+    }
+
+    function renderCommitteeList() {
+      var listEl = document.getElementById("sv-committee-list");
+      if (!listEl) return;
+      var list = getCommitteeList();
+      if (!list.length) {
+        listEl.innerHTML = '<small>등록된 위원이 없습니다. 역할과 이름을 입력하고 [+ 추가]를 눌러 등록하세요.</small>';
+        return;
+      }
+      listEl.innerHTML = list.map(function (name, i) {
+        return '<span class="sv-committee-chip">' + escapeHtml(name) +
+          '<button type="button" class="sv-committee-remove-btn" data-idx="' + i + '" title="삭제">×</button></span>';
+      }).join("");
+      listEl.querySelectorAll(".sv-committee-remove-btn").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var idx = parseInt(btn.getAttribute("data-idx"), 10);
+          var current = getCommitteeList();
+          current.splice(idx, 1);
+          saveCommitteeList(current);
+          renderCommitteeList();
+          if (document.getElementById("sv-members-checks")) wireMembersField();
+        });
+      });
+    }
+
+    var committeeRoleSelect = document.getElementById("sv-committee-role-select");
+    var committeeRoleCustom = document.getElementById("sv-committee-role-custom");
+    var committeeNameInput = document.getElementById("sv-committee-name-input");
+    var committeeAddBtn = document.getElementById("sv-committee-add-btn");
+    if (committeeRoleSelect) {
+      committeeRoleSelect.addEventListener("change", function () {
+        committeeRoleCustom.hidden = committeeRoleSelect.value !== "__custom";
+        if (!committeeRoleCustom.hidden) committeeRoleCustom.focus();
+      });
+    }
+    if (committeeAddBtn) {
+      committeeAddBtn.addEventListener("click", function () {
+        var role = committeeRoleSelect.value === "__custom" ? committeeRoleCustom.value.trim() : committeeRoleSelect.value;
+        var name = committeeNameInput.value.trim();
+        if (!role || !name) return;
+        var current = getCommitteeList();
+        current.push(role + " " + name);
+        saveCommitteeList(current);
+        committeeNameInput.value = "";
+        committeeNameInput.focus();
+        renderCommitteeList();
+        if (document.getElementById("sv-members-checks")) wireMembersField();
+      });
+    }
+    if (committeeNameInput) {
+      committeeNameInput.addEventListener("keydown", function (e) {
+        // 한글 입력(IME) 조합 중 Enter는 무시 — 그렇지 않으면 조합 확정 Enter와
+        // 실제 Enter가 연속으로 들어와 같은 이름이 두 번(마지막 글자만) 추가된다.
+        if (e.key !== "Enter" || e.isComposing || e.keyCode === 229) return;
+        e.preventDefault();
+        committeeAddBtn.click();
+      });
+    }
+    renderCommitteeList();
+
+    // "0000학교-0000(2026.00.00.)"처럼 자기 학교명이 들어가는 기안번호/공문번호 필드인지 판별.
+    // "학교지원센터-..." 등 상대 기관 문서번호는 학교명을 자동으로 넣지 않는다.
+    function isOwnSchoolDocField(fld) {
+      if (!fld.ph || fld.id === "caseNo" || fld.big) return false;
+      if (fld.ph.indexOf("\n") !== -1) return false;
+      if (fld.ph.indexOf("학교지원센터") !== -1) return false;
+      return /학교/.test(fld.ph) && fld.ph.indexOf("-") !== -1 && fld.ph.indexOf("(") !== -1;
+    }
+
+    function wireRefDocField(fld) {
+      var schoolSpan = document.getElementById("sv-f-" + fld.id + "-school");
+      var docNoInput = document.getElementById("sv-f-" + fld.id + "-docno");
+      var dateInput = document.getElementById("sv-f-" + fld.id + "-date");
+      var hidden = document.getElementById("sv-f-" + fld.id);
+      if (!schoolSpan || !docNoInput || !dateInput || !hidden) return;
+      var suffixMatch = fld.ph.match(/\)([^)]*)$/);
+      var suffix = suffixMatch ? suffixMatch[1] : "";
+      function compose() {
+        var school = getSchoolName() || "○○○○학교";
+        schoolSpan.textContent = school + "-";
+        var docNo = docNoInput.value.trim();
+        var dateStr = "";
+        if (dateInput.value) {
+          var d = new Date(dateInput.value + "T00:00:00");
+          dateStr = d.getFullYear() + "." + (d.getMonth() + 1) + "." + d.getDate() + ".";
+        }
+        hidden.value = school + "-" + docNo + (dateStr ? "(" + dateStr + ")" : "") + suffix;
+      }
+      docNoInput.addEventListener("input", compose);
+      dateInput.addEventListener("change", compose);
+      refDocComposers.push(compose);
+      compose();
+    }
+
+    function wireSessionNoField() {
+      var select = document.getElementById("sv-f-sessionNo-select");
+      var custom = document.getElementById("sv-f-sessionNo-custom");
+      var hidden = document.getElementById("sv-f-sessionNo");
+      if (!select || !custom || !hidden) return;
+      function compose() {
+        if (select.value === "__custom") {
+          custom.hidden = false;
+          hidden.value = custom.value;
+        } else {
+          custom.hidden = true;
+          hidden.value = select.value;
+        }
+      }
+      select.addEventListener("change", compose);
+      custom.addEventListener("input", compose);
+      compose();
+    }
+
+    function wireDatetimeField(fld) {
+      var dateInput = document.getElementById("sv-f-datetime-date");
+      var timeInput = document.getElementById("sv-f-datetime-time");
+      var hidden = document.getElementById("sv-f-datetime");
+      if (!dateInput || !timeInput || !hidden) return;
+      var trailing = /~\s*$/.test(fld.ph || "") ? " ~" : "";
+      function compose() {
+        var datePart = "";
+        if (dateInput.value) {
+          var d = new Date(dateInput.value + "T00:00:00");
+          datePart = d.getFullYear() + "." + (d.getMonth() + 1) + "." + d.getDate() + ".(" + SV_WEEKDAYS[d.getDay()] + ")";
+        }
+        var timePart = timeInput.value || "";
+        hidden.value = (datePart ? datePart + " " : "") + timePart + trailing;
+      }
+      dateInput.addEventListener("change", compose);
+      timeInput.addEventListener("input", compose);
+      compose();
+    }
+
+    function wireMembersField() {
+      var checksEl = document.getElementById("sv-members-checks");
+      var extraInput = document.getElementById("sv-f-members-extra");
+      var hidden = document.getElementById("sv-f-members");
+      if (!checksEl || !extraInput || !hidden) return;
+      var list = getCommitteeList();
+      if (!list.length) {
+        checksEl.innerHTML = '<small>위 "학교 기본 정보 설정"에서 전담기구 위원 명단을 먼저 등록해 두면 체크박스로 고를 수 있습니다.</small>';
+      } else {
+        checksEl.innerHTML = list.map(function (name, i) {
+          return '<label class="sv-member-check"><input type="checkbox" checked data-name="' + escapeHtml(name) + '" id="sv-member-chk-' + i + '"> ' + escapeHtml(name) + '</label>';
+        }).join("");
+      }
+      function compose() {
+        var checked = Array.prototype.slice.call(checksEl.querySelectorAll('input[type="checkbox"]:checked'))
+          .map(function (el) { return el.getAttribute("data-name"); });
+        var extra = extraInput.value.split(",").map(function (s) { return s.trim(); }).filter(Boolean);
+        hidden.value = checked.concat(extra).join(", ");
+      }
+      checksEl.querySelectorAll('input[type="checkbox"]').forEach(function (el) { el.addEventListener("change", compose); });
+      extraInput.addEventListener("input", compose);
+      compose();
+    }
+
     if (svSelect && svTemplates.length) {
       SV_GROUPS.forEach(function (grp) {
         var optgroup = document.createElement("optgroup");
@@ -378,6 +707,15 @@
         svSelect.appendChild(optgroup);
       });
 
+      var SV_CASE_NO_KEY = "sv_last_case_no";
+
+      function incrementCaseNo(str) {
+        var m = str.match(/(\d+)(\D*)$/);
+        if (!m) return str;
+        var next = String(parseInt(m[1], 10) + 1);
+        return str.slice(0, str.length - m[0].length) + next + m[2];
+      }
+
       svSelect.addEventListener("change", function () {
         var id = parseInt(svSelect.value, 10);
         var tpl = svTemplates.find(function (t) { return t.id === id; });
@@ -385,9 +723,48 @@
         var fieldsEl = document.getElementById("sv-doc-fields");
         if (!tpl || !descEl || !fieldsEl) return;
         descEl.textContent = "[" + tpl.category + "] " + tpl.desc;
+        refDocComposers.length = 0;
         fieldsEl.innerHTML = tpl.fields.map(function (fld) {
           var isTextarea = (fld.ph && fld.ph.indexOf("\n") !== -1) || fld.big;
           var req = fld.req ? '<span class="sv-req">*</span>' : '<small>선택</small>';
+          if (fld.id === "caseNo") {
+            return '<label>' + escapeHtml(fld.label) + ' ' + req +
+              '<span class="sv-caseno-row"><input id="sv-f-caseNo" placeholder="' + escapeHtml(fld.ph || "") + '">' +
+              '<button type="button" id="sv-caseno-inc-btn" class="btn btn-secondary btn-sm" title="다음 사안번호로 +1">다음 사안 +1</button></span></label>';
+          }
+          if (fld.id === "sessionNo") {
+            var opts = ["제1회", "제2회", "제3회", "제4회", "제5회", "제6회", "제7회", "제8회", "제9회", "제10회"]
+              .map(function (o) { return '<option value="' + o + '">' + o + '</option>'; }).join("");
+            return '<label>' + escapeHtml(fld.label) + ' ' + req +
+              '<span class="sv-sessionno-row">' +
+                '<select id="sv-f-sessionNo-select">' + opts + '<option value="__custom">직접 입력</option></select>' +
+                '<input id="sv-f-sessionNo-custom" placeholder="예: 제11회" hidden>' +
+              '</span>' +
+              '<input type="hidden" id="sv-f-sessionNo"></label>';
+          }
+          if (fld.id === "datetime") {
+            return '<label>' + escapeHtml(fld.label) + ' ' + req +
+              '<span class="sv-datetime-row">' +
+                '<input type="date" id="sv-f-datetime-date">' +
+                '<input type="time" id="sv-f-datetime-time">' +
+              '</span>' +
+              '<input type="hidden" id="sv-f-datetime"></label>';
+          }
+          if (fld.id === "members") {
+            return '<label>' + escapeHtml(fld.label) + ' ' + req +
+              '<div id="sv-members-checks" class="sv-members-checks"></div>' +
+              '<input id="sv-f-members-extra" placeholder="명단에 없는 위원 추가(쉼표로 구분)">' +
+              '<input type="hidden" id="sv-f-members"></label>';
+          }
+          if (isOwnSchoolDocField(fld)) {
+            return '<label>' + escapeHtml(fld.label) + ' ' + req +
+              '<span class="sv-refdoc-row">' +
+                '<span class="sv-refdoc-school" id="sv-f-' + fld.id + '-school"></span>' +
+                '<input id="sv-f-' + fld.id + '-docno" class="sv-refdoc-docno" placeholder="문서번호(예: 123)">' +
+                '<input type="date" id="sv-f-' + fld.id + '-date" class="sv-refdoc-date">' +
+              '</span>' +
+              '<input type="hidden" id="sv-f-' + fld.id + '"></label>';
+          }
           if (isTextarea) {
             return '<label>' + escapeHtml(fld.label) + ' ' + req +
               '<textarea id="sv-f-' + fld.id + '" rows="3" placeholder="' + escapeHtml(fld.ph || "") + '"></textarea></label>';
@@ -395,22 +772,62 @@
           return '<label>' + escapeHtml(fld.label) + ' ' + req +
             '<input id="sv-f-' + fld.id + '" placeholder="' + escapeHtml(fld.ph || "") + '"></label>';
         }).join("");
+
+        var caseNoInput = document.getElementById("sv-f-caseNo");
+        if (caseNoInput) {
+          var lastCaseNo = "";
+          try { lastCaseNo = localStorage.getItem(SV_CASE_NO_KEY) || ""; } catch (e) {}
+          if (lastCaseNo) caseNoInput.value = lastCaseNo;
+          caseNoInput.addEventListener("input", function () {
+            try { localStorage.setItem(SV_CASE_NO_KEY, caseNoInput.value); } catch (e) {}
+          });
+          var incBtn = document.getElementById("sv-caseno-inc-btn");
+          if (incBtn) {
+            incBtn.addEventListener("click", function () {
+              caseNoInput.value = incrementCaseNo(caseNoInput.value || "");
+              try { localStorage.setItem(SV_CASE_NO_KEY, caseNoInput.value); } catch (e) {}
+            });
+          }
+        }
+
+        if (document.getElementById("sv-f-sessionNo-select")) wireSessionNoField();
+        if (document.getElementById("sv-f-datetime-date")) {
+          var datetimeFld = tpl.fields.find(function (f) { return f.id === "datetime"; });
+          if (datetimeFld) wireDatetimeField(datetimeFld);
+        }
+        if (document.getElementById("sv-members-checks")) wireMembersField();
+        tpl.fields.forEach(function (fld) {
+          if (isOwnSchoolDocField(fld)) wireRefDocField(fld);
+        });
       });
     }
+
+    var currentSvBodyPlain = "";
+    var currentSvBodyHtml = "";
 
     var svGenerateBtn = document.getElementById("sv-generate-btn");
     if (svGenerateBtn) {
       svGenerateBtn.addEventListener("click", function () {
         var id = parseInt(svSelect ? svSelect.value : "0", 10);
         var tpl = svTemplates.find(function (t) { return t.id === id; });
-        var outputEl = document.getElementById("sv-doc-output");
-        if (!tpl || !outputEl) return;
+        var titleEl = document.getElementById("sv-doc-title-output");
+        var bodyEl = document.getElementById("sv-doc-body-output");
+        if (!tpl || !titleEl || !bodyEl) return;
         var vals = {};
         tpl.fields.forEach(function (fld) {
           var el = document.getElementById("sv-f-" + fld.id);
           vals[fld.id] = el ? el.value : "";
         });
-        outputEl.textContent = tpl.generate(vals);
+        if (vals.caseNo) {
+          try { localStorage.setItem("sv_last_case_no", vals.caseNo); } catch (e) {}
+        }
+        var parts = splitSvDoc(tpl.generate(vals));
+        var tableRows = tpl.table ? tpl.table(vals) : null;
+        var rendered = renderSvBody(parts.rest, tableRows);
+        titleEl.textContent = parts.title;
+        bodyEl.innerHTML = rendered.html;
+        currentSvBodyPlain = rendered.plain;
+        currentSvBodyHtml = rendered.html;
       });
     }
 
@@ -419,13 +836,21 @@
       svClearBtn.addEventListener("click", function () {
         var fieldsEl = document.getElementById("sv-doc-fields");
         if (fieldsEl) fieldsEl.querySelectorAll("input, textarea").forEach(function (el) { el.value = ""; });
-        var outputEl = document.getElementById("sv-doc-output");
-        if (outputEl) outputEl.textContent = "왼쪽에서 공문을 선택하고 항목을 입력한 뒤 [공문 생성]을 누르세요.";
+        var titleEl = document.getElementById("sv-doc-title-output");
+        var bodyEl = document.getElementById("sv-doc-body-output");
+        if (titleEl) titleEl.textContent = "왼쪽에서 공문을 선택하고 항목을 입력한 뒤 [공문 생성]을 누르세요.";
+        if (bodyEl) bodyEl.textContent = "";
+        currentSvBodyPlain = "";
+        currentSvBodyHtml = "";
       });
     }
 
-    var svCopyBtn = document.getElementById("sv-copy-btn");
-    if (svCopyBtn) svCopyBtn.addEventListener("click", function () { copyTextFrom("sv-doc-output"); });
+    var svCopyTitleBtn = document.getElementById("sv-copy-title-btn");
+    if (svCopyTitleBtn) svCopyTitleBtn.addEventListener("click", function () { copyTextFrom("sv-doc-title-output"); });
+    var svCopyBodyBtn = document.getElementById("sv-copy-body-btn");
+    if (svCopyBodyBtn) svCopyBodyBtn.addEventListener("click", function () {
+      writeRichClipboard(currentSvBodyPlain, currentSvBodyHtml);
+    });
 
     // ── 품의서 작성 ──────────────────────────────────────────
     function numberToKorean(num) {
