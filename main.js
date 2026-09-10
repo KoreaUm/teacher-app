@@ -18,7 +18,7 @@ let db;
 let mainWindow;
 let tray = null;
 let isQuitting = false;
-let widgetWindow = null;
+let widgetWindows = { todo: null, timetable: null, memo: null };
 let isClosingAfterCloudSync = false;
 let activeDbUserId = '';
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
@@ -802,21 +802,30 @@ function createWindow() {
 
 }
 
-function createWidgetWindow() {
-  if (widgetWindow && !widgetWindow.isDestroyed()) {
-    widgetWindow.focus();
+const WIDGET_DEFAULT_BOUNDS = {
+  todo: { width: 280, height: 340, xOffset: 300, y: 60 },
+  timetable: { width: 280, height: 340, xOffset: 600, y: 60 },
+  memo: { width: 280, height: 340, xOffset: 900, y: 60 },
+};
+
+function createWidgetWindow(type) {
+  if (!WIDGET_DEFAULT_BOUNDS[type]) return;
+  const existing = widgetWindows[type];
+  if (existing && !existing.isDestroyed()) {
+    existing.focus();
     return;
   }
 
   const { width: screenWidth } = screen.getPrimaryDisplay().workAreaSize;
-  const defaultBounds = { width: 280, height: 340, x: screenWidth - 300, y: 60 };
+  const def = WIDGET_DEFAULT_BOUNDS[type];
+  const defaultBounds = { width: def.width, height: def.height, x: screenWidth - def.xOffset, y: def.y };
   let bounds = defaultBounds;
   try {
-    const saved = JSON.parse(db.getSetting('widget_window_bounds', '') || 'null');
+    const saved = JSON.parse(db.getSetting(`widget_window_bounds_${type}`, '') || 'null');
     if (saved && typeof saved === 'object') bounds = { ...defaultBounds, ...saved };
   } catch (_) {}
 
-  widgetWindow = new BrowserWindow({
+  const win = new BrowserWindow({
     ...bounds,
     minWidth: 220,
     minHeight: 200,
@@ -834,24 +843,25 @@ function createWidgetWindow() {
     },
     show: false,
   });
+  widgetWindows[type] = win;
 
-  widgetWindow.setAlwaysOnTop(true, 'screen-saver');
-  widgetWindow.loadFile(path.join(__dirname, 'src/widget.html'));
+  win.setAlwaysOnTop(true, 'screen-saver');
+  win.loadFile(path.join(__dirname, 'src/widget.html'), { query: { type } });
 
-  widgetWindow.once('ready-to-show', () => widgetWindow.show());
+  win.once('ready-to-show', () => win.show());
 
   const saveBounds = () => {
-    if (widgetWindow && !widgetWindow.isDestroyed()) {
-      db.setSetting('widget_window_bounds', JSON.stringify(widgetWindow.getBounds()));
+    if (win && !win.isDestroyed()) {
+      db.setSetting(`widget_window_bounds_${type}`, JSON.stringify(win.getBounds()));
     }
   };
-  widgetWindow.on('move', saveBounds);
-  widgetWindow.on('resize', saveBounds);
+  win.on('move', saveBounds);
+  win.on('resize', saveBounds);
 
-  widgetWindow.on('closed', () => {
-    widgetWindow = null;
+  win.on('closed', () => {
+    widgetWindows[type] = null;
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('widget-window-closed');
+      mainWindow.webContents.send('widget-window-closed', type);
     }
   });
 }
@@ -1003,16 +1013,23 @@ ipcMain.handle('export-app-manual-pdf', async () => {
   }
 });
 
-ipcMain.on('window-widget-mode', (e, active) => {
+ipcMain.on('window-widget-mode', (e, type, active) => {
+  const win = widgetWindows[type];
   if (active) {
-    createWidgetWindow();
-  } else if (widgetWindow && !widgetWindow.isDestroyed()) {
-    widgetWindow.close();
+    createWidgetWindow(type);
+  } else if (win && !win.isDestroyed()) {
+    win.close();
   }
 });
 
-ipcMain.on('widget-window-close', () => {
-  if (widgetWindow && !widgetWindow.isDestroyed()) widgetWindow.close();
+ipcMain.handle('get-active-widgets', () => {
+  return Object.keys(widgetWindows).filter((type) => widgetWindows[type] && !widgetWindows[type].isDestroyed());
+});
+
+ipcMain.on('widget-window-close', (e) => {
+  const senderWin = BrowserWindow.fromWebContents(e.sender);
+  const type = Object.keys(widgetWindows).find((t) => widgetWindows[t] === senderWin);
+  if (type && senderWin && !senderWin.isDestroyed()) senderWin.close();
 });
 
 ipcMain.handle('switch-user-database', (e, uid, options = {}) => {

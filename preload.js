@@ -136,10 +136,11 @@ contextBridge.exposeInMainWorld('api', {
   alwaysOnTop: (flag) => ipcRenderer.send('window-always-on-top', flag),
   setOpacity: (val) => ipcRenderer.send('window-set-opacity', val),
   getOpacity: () => ipcRenderer.invoke('window-get-opacity'),
-  widgetMode: (flag) => ipcRenderer.send('window-widget-mode', flag),
+  widgetMode: (type, flag) => ipcRenderer.send('window-widget-mode', type, flag),
+  getActiveWidgets: () => ipcRenderer.invoke('get-active-widgets'),
   closeWidgetWindow: () => ipcRenderer.send('widget-window-close'),
   onWidgetWindowClosed: (callback) => {
-    const handler = () => callback();
+    const handler = (event, type) => callback(type);
     ipcRenderer.on('widget-window-closed', handler);
     return () => ipcRenderer.removeListener('widget-window-closed', handler);
   },

@@ -277,7 +277,7 @@ async function render(container) {
           </div>
         </section>
 
-        <section class="card settings-card">
+        <section class="card settings-card" id="settings-google">
           <div class="settings-head">
             <div>
               <div class="settings-title">✅ Google 계정 연동</div>

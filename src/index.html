@@ -42,7 +42,20 @@
         <button id="update-btn" class="topbar-btn" style="display:none">업데이트 확인</button>
         <button id="manual-btn" class="topbar-btn" title="기능 설명서">설명서</button>
         <button id="edit-layout-btn" class="topbar-btn" style="display:none">배열 편집</button>
-        <button id="widget-mode-btn" class="topbar-btn" style="display:none">데스크탑 위젯</button>
+        <div id="widget-mode-wrap" style="position:relative;display:none">
+          <button id="widget-mode-btn" class="topbar-btn">데스크탑 위젯</button>
+          <div id="widget-mode-panel" style="display:none;position:absolute;right:0;top:38px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px;box-shadow:var(--shadow-md);z-index:9999;min-width:170px">
+            <label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;font-size:13px">
+              <input type="checkbox" id="widget-toggle-todo"> ✅ 할일 위젯
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;font-size:13px">
+              <input type="checkbox" id="widget-toggle-timetable"> 🗓️ 시간표 위젯
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;font-size:13px">
+              <input type="checkbox" id="widget-toggle-memo"> 📝 메모 위젯
+            </label>
+          </div>
+        </div>
         <div style="position:relative">
           <button id="opacity-btn" class="topbar-btn" title="투명도 조절">투명도</button>
           <div id="opacity-panel" style="display:none;position:absolute;right:0;top:38px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 16px;box-shadow:var(--shadow-md);z-index:9999;align-items:center;gap:10px;white-space:nowrap;min-width:220px">
@@ -77,6 +90,7 @@
           </div>
         </div>
         <button id="ai-helper-btn" class="topbar-btn ai-helper-open" title="AI 도우미">AI 도우미</button>
+        <button id="google-connect-btn" class="topbar-btn" title="Google 계정 연동">🔗 Google 연동</button>
         <div class="vdiv"></div>
         <span id="header-date"></span>
       </div>
@@ -150,7 +164,6 @@
   }
   // ─────────────────────────────────────────────────────────
   var closeGroupTimer = null;
-  var widgetMode = false;
   var firebaseApp = null;
   var firebaseAuth = null;
   var firebaseDb = null;
@@ -725,7 +738,7 @@
       { key: "dashboard", title: "대시보드", desc: "홈 화면으로 이동", text: "홈 메인 대시보드 처음", run: function () { navigateTo("dashboard"); } },
       { key: "check_update", title: "업데이트 확인", desc: "새 버전 확인", text: "업데이트 확인 다운로드 설치 최신버전", run: function () { var btn = document.getElementById("update-btn"); if (btn) btn.click(); } },
       { key: "edit_layout", title: "대시보드 배열 편집", desc: "위젯 위치와 크기 변경", text: "배열 편집 위젯 위치 크기 대시보드", run: function () { navigateTo("dashboard").then(function () { var btn = document.getElementById("edit-layout-btn"); if (btn) btn.click(); }); } },
-      { key: "widget_mode", title: "데스크탑 위젯", desc: "오늘의 할일을 보여주는 작은 창을 화면에 띄우기", text: "위젯 모드 투명 미니 데스크탑", run: function () { var btn = document.getElementById("widget-mode-btn"); if (btn) btn.click(); } },
+      { key: "widget_mode", title: "데스크탑 위젯", desc: "할일·시간표를 보여주는 작은 창을 화면에 띄우기", text: "위젯 모드 투명 미니 데스크탑 할일 시간표", run: function () { var btn = document.getElementById("widget-mode-btn"); if (btn) btn.click(); } },
       { key: "opacity", title: "투명도 조절", desc: "창 투명도 패널 열기", text: "투명도 불투명 창 투명", run: function () { var btn = document.getElementById("opacity-btn"); if (btn) btn.click(); } }
     ];
 
@@ -2176,7 +2189,7 @@
 
   function setDashboardControls(isDashboard) {
     document.getElementById("edit-layout-btn").style.display = isDashboard ? "" : "none";
-    document.getElementById("widget-mode-btn").style.display = isDashboard ? "" : "none";
+    document.getElementById("widget-mode-wrap").style.display = isDashboard ? "" : "none";
   }
 
   function updateUpdateButton(state) {
@@ -2448,6 +2461,8 @@
         content.innerHTML = "";
         return Promise.resolve(mod.render(content)).then(function () {
           if (mod.init) return mod.init();
+        }).then(function () {
+          if (window.refreshGoogleConnectButton) window.refreshGoogleConnectButton();
         });
       })
       .catch(function (error) {
@@ -2569,6 +2584,37 @@
     });
   }
 
+  function initGoogleConnectButton() {
+    var btn = document.getElementById("google-connect-btn");
+    if (!btn) return;
+    function refreshLabel() {
+      Promise.resolve(window.api && window.api.getSetting ? window.api.getSetting("gcal_refresh_token", "") : "")
+        .then(function (token) {
+          if (token) {
+            btn.textContent = "✅ Google 연동됨";
+            btn.title = "Google 계정 연동 관리";
+          } else {
+            btn.textContent = "🔗 Google 연동";
+            btn.title = "Google 계정 연동하기";
+          }
+        })
+        .catch(function () {});
+    }
+    btn.addEventListener("click", function () {
+      navigateTo("settings").then(function () {
+        setTimeout(function () {
+          var section = document.getElementById("settings-google");
+          if (section) section.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 80);
+      });
+    });
+    window.refreshGoogleConnectButton = refreshLabel;
+    refreshLabel();
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden) refreshLabel();
+    });
+  }
+
   function initManualButton() {
     var btn = document.getElementById("manual-btn");
     if (!btn) return;
@@ -2608,17 +2654,44 @@
 
   function initWidgetButton() {
     var btn = document.getElementById("widget-mode-btn");
-    btn.addEventListener("click", function () {
-      widgetMode = !widgetMode;
-      this.classList.toggle("active", widgetMode);
-      this.textContent = widgetMode ? "데스크탑 위젯 닫기" : "데스크탑 위젯";
-      api.widgetMode(widgetMode);
+    var panel = document.getElementById("widget-mode-panel");
+    var checkboxes = {
+      todo: document.getElementById("widget-toggle-todo"),
+      timetable: document.getElementById("widget-toggle-timetable"),
+      memo: document.getElementById("widget-toggle-memo"),
+    };
+
+    btn.addEventListener("click", function (event) {
+      event.stopPropagation();
+      panel.style.display = panel.style.display === "block" ? "none" : "block";
     });
+    document.addEventListener("click", function () {
+      panel.style.display = "none";
+    });
+    panel.addEventListener("click", function (event) {
+      event.stopPropagation();
+    });
+
+    Object.keys(checkboxes).forEach(function (type) {
+      checkboxes[type].addEventListener("change", function () {
+        api.widgetMode(type, checkboxes[type].checked);
+        btn.classList.toggle("active", Object.keys(checkboxes).some(function (t) { return checkboxes[t].checked; }));
+      });
+    });
+
     if (api.onWidgetWindowClosed) {
-      api.onWidgetWindowClosed(function () {
-        widgetMode = false;
-        btn.classList.remove("active");
-        btn.textContent = "데스크탑 위젯";
+      api.onWidgetWindowClosed(function (type) {
+        if (checkboxes[type]) checkboxes[type].checked = false;
+        btn.classList.toggle("active", Object.keys(checkboxes).some(function (t) { return checkboxes[t].checked; }));
+      });
+    }
+
+    if (api.getActiveWidgets) {
+      api.getActiveWidgets().then(function (types) {
+        (types || []).forEach(function (type) {
+          if (checkboxes[type]) checkboxes[type].checked = true;
+        });
+        btn.classList.toggle("active", (types || []).length > 0);
       });
     }
   }
@@ -3216,6 +3289,7 @@
       initHomeButton();
       initUpdateButton();
       initManualButton();
+      initGoogleConnectButton();
       initWidgetButton();
       initEditButton();
       initOpacityPanel();
