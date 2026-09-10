@@ -423,6 +423,8 @@ a { color: var(--accent); text-decoration: none; }
   box-shadow: none;
 }
 .tab-group-label {
+  flex-direction: row;
+  align-items: center;
   min-height: 28px;
   padding: 0 16px 0 8px;
   border-radius: 7px;
